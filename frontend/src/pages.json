@@ -1,0 +1,19 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "AlphaReader",
+        "navigationBarBackgroundColor": "#0f172a",
+        "navigationBarTextStyle": "white"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "AlphaReader",
+    "navigationBarBackgroundColor": "#0f172a",
+    "backgroundColor": "#0f172a",
+    "backgroundTextStyle": "dark"
+  }
+}
