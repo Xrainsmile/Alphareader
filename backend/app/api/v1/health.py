@@ -1,6 +1,7 @@
 """Health-check endpoint – verifies DB & Redis connectivity."""
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,4 +33,6 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         status["redis"] = f"error: {e}"
         status["status"] = "degraded"
 
+    if status["status"] == "degraded":
+        return JSONResponse(content=status, status_code=503)
     return status

@@ -10,16 +10,21 @@ Logic:
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timezone, timedelta
 
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.news import News
 
 logger = logging.getLogger("alphareader.bridge")
 
 TOP_N = 10
+
+# Fixed timezone for China (UTC+8), used for date boundary calculations.
+# This avoids importing pytz/zoneinfo just for a fixed offset.
+_CN_TZ = timezone(timedelta(hours=8))
 
 META_PROMPT_TEMPLATE = """# Role: 资深金融分析助手
 # Context: 以下是{date_str}「{sector}」板块经 AI 筛选的高价值新闻（按重要性排序）：
@@ -66,11 +71,12 @@ async def generate_prompt_context(
         dict with keys: prompt, news_count, sector, date
     """
     if target_date is None:
-        target_date = date.today()
+        target_date = datetime.now(_CN_TZ).date()
 
     # Build query: today's news, optionally filtered by sector tag
-    day_start = datetime.combine(target_date, time.min).replace(tzinfo=timezone.utc)
-    day_end = datetime.combine(target_date, time.max).replace(tzinfo=timezone.utc)
+    # Use China timezone (UTC+8) for day boundaries to match user expectations
+    day_start = datetime.combine(target_date, time.min).replace(tzinfo=_CN_TZ)
+    day_end = datetime.combine(target_date, time.max).replace(tzinfo=_CN_TZ)
 
     conditions = [
         News.created_at >= day_start,

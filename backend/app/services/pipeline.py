@@ -57,44 +57,49 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
     async with async_session() as session:
         for item in items:
             try:
-                # For English news with translated title/summary, use Chinese versions
-                title = item.chinese_title or item.raw.title
-                summary = item.summary  # Already chinese_summary for EN items
+                # Use a savepoint so a single bad item doesn't roll back
+                # the entire transaction — other items remain committed.
+                async with session.begin_nested():
+                    # For English news with translated title/summary, use Chinese versions
+                    title = item.chinese_title or item.raw.title
+                    summary = item.summary  # Already chinese_summary for EN items
 
-                # Merge relevant_tickers into tags if present
-                tags = item.tags or item.raw.tags
-                if item.relevant_tickers:
-                    tickers_as_tags = [f"${t}" for t in item.relevant_tickers]
-                    tags = list(set((tags or []) + tickers_as_tags))
+                    # Merge relevant_tickers into tags if present
+                    tags = item.tags or item.raw.tags
+                    if item.relevant_tickers:
+                        tickers_as_tags = [f"${t}" for t in item.relevant_tickers]
+                        tags = list(set((tags or []) + tickers_as_tags))
 
-                stmt = (
-                    pg_insert(News)
-                    .values(
-                        title=title,
-                        content=item.raw.content,
-                        source=item.raw.source,
-                        url=item.raw.url,
-                        published_at=item.raw.published_at,
-                        ai_score=item.score,
-                        ai_summary=summary,
-                        tags=tags,
+                    stmt = (
+                        pg_insert(News)
+                        .values(
+                            title=title,
+                            content=item.raw.content,
+                            source=item.raw.source,
+                            url=item.raw.url,
+                            published_at=item.raw.published_at,
+                            ai_score=item.score,
+                            ai_summary=summary,
+                            tags=tags,
+                        )
+                        .on_conflict_do_nothing(index_elements=["url"])
                     )
-                    .on_conflict_do_nothing(index_elements=["url"])
-                )
-                result = await session.execute(stmt)
-                if result.rowcount and result.rowcount > 0:
-                    stored += 1
-                    stored_urls.append(item.raw.url)
-                    logger.debug("Stored: %s", item.raw.title[:60])
-                else:
-                    # ON CONFLICT DO NOTHING — URL already in DB, still mark as seen
-                    stored_urls.append(item.raw.url)
+                    result = await session.execute(stmt)
+                    if result.rowcount and result.rowcount > 0:
+                        stored += 1
+                        stored_urls.append(item.raw.url)
+                        logger.debug("Stored: %s", item.raw.title[:60])
+                    else:
+                        # ON CONFLICT DO NOTHING — URL already in DB, still mark as seen
+                        stored_urls.append(item.raw.url)
             except Exception as e:
                 errors += 1
                 logger.warning("Failed to store item '%s': %s", item.raw.title[:40], e)
-                # Do NOT add this URL to stored_urls — it will be retried next run
+                # Savepoint auto-rolled back; outer transaction still alive.
+                # Do NOT add this URL to stored_urls — it will be retried next run.
                 continue
 
+        # Commit all successful savepoints in one shot
         await session.commit()
 
     if errors:
@@ -180,18 +185,27 @@ async def run_pipeline() -> dict:
     # Also mark URLs that passed through the entire pipeline but were filtered
     # by DeepSeek (score < 6). These are legitimately processed and should not
     # be re-fetched. Collect all URLs from unique_items that reached scoring.
-    try:
-        scored_url_set = {item.raw.url for item in scored_items}
-        filtered_out_urls = [
-            item.url for item in unique_items
-            if item.url not in scored_url_set
-            and item.url not in (stored_urls or [])
-        ]
-        if filtered_out_urls:
-            await _mark_urls_as_seen(filtered_out_urls)
-            logger.info("Marked %d low-score/filtered URLs as seen", len(filtered_out_urls))
-    except Exception as e:
-        logger.warning("Failed to mark filtered URLs as seen: %s", e)
+    # BUT: only do this when the filter stage succeeded — if DeepSeek had errors,
+    # the empty result is due to API failure, not low news quality.
+    filter_had_errors = any("filter" in e for e in summary.get("errors", []))
+    if not filter_had_errors:
+        try:
+            scored_url_set = {item.raw.url for item in scored_items}
+            filtered_out_urls = [
+                item.url for item in unique_items
+                if item.url not in scored_url_set
+                and item.url not in (stored_urls or [])
+            ]
+            if filtered_out_urls:
+                await _mark_urls_as_seen(filtered_out_urls)
+                logger.info("Marked %d low-score/filtered URLs as seen", len(filtered_out_urls))
+        except Exception as e:
+            logger.warning("Failed to mark filtered URLs as seen: %s", e)
+    elif unique_items:
+        logger.warning(
+            "Skipping URL marking for %d items — DeepSeek filter had errors",
+            len(unique_items),
+        )
 
     # Clean up empty errors list for cleaner output
     if not summary["errors"]:

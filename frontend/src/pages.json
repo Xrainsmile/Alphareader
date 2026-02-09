@@ -5,7 +5,11 @@
       "style": {
         "navigationBarTitleText": "AlphaReader",
         "navigationBarBackgroundColor": "#0f172a",
-        "navigationBarTextStyle": "white"
+        "navigationBarTextStyle": "white",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "light",
+        "backgroundColor": "#0f172a",
+        "onReachBottomDistance": 100
       }
     }
   ],
@@ -14,6 +18,6 @@
     "navigationBarTitleText": "AlphaReader",
     "navigationBarBackgroundColor": "#0f172a",
     "backgroundColor": "#0f172a",
-    "backgroundTextStyle": "dark"
+    "backgroundTextStyle": "light"
   }
 }

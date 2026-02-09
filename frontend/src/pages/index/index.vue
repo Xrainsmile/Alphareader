@@ -22,20 +22,61 @@
       </view>
     </view>
 
+    <!-- 筛选器 -->
+    <view class="filter-bar">
+      <!-- 评分筛选 -->
+      <view class="filter-group">
+        <text class="filter-label">评分</text>
+        <view class="filter-chips">
+          <view
+            v-for="s in scoreOptions"
+            :key="s"
+            class="chip"
+            :class="{ 'chip-active': minScore === s }"
+            @click="onScoreChange(s)"
+          >
+            <text class="chip-text" :class="{ 'chip-text-active': minScore === s }">≥{{ s }}</text>
+          </view>
+        </view>
+      </view>
+      <!-- 来源筛选 -->
+      <view class="filter-group">
+        <text class="filter-label">来源</text>
+        <view class="filter-chips">
+          <view
+            class="chip"
+            :class="{ 'chip-active': !currentSource }"
+            @click="onSourceChange('')"
+          >
+            <text class="chip-text" :class="{ 'chip-text-active': !currentSource }">全部</text>
+          </view>
+          <view
+            v-for="src in sourceOptions"
+            :key="src"
+            class="chip"
+            :class="{ 'chip-active': currentSource === src }"
+            @click="onSourceChange(src)"
+          >
+            <text class="chip-text" :class="{ 'chip-text-active': currentSource === src }">{{ src }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
     <!-- 统计信息 -->
     <view class="stats-bar">
-      <text class="stats-text">共 {{ newsList.length }} 条高价值新闻</text>
+      <text class="stats-text">共 {{ total }} 条 · 已加载 {{ newsList.length }} 条</text>
       <text class="stats-text">评分 ≥ {{ minScore }}</text>
     </view>
 
     <!-- 新闻列表 -->
     <view class="news-list">
-      <view v-if="loading" class="loading-container">
+      <view v-if="loading && newsList.length === 0" class="loading-container">
         <text class="loading-text">加载中...</text>
       </view>
 
       <view v-else-if="newsList.length === 0" class="empty-container">
-        <text class="empty-text">暂无新闻，点击「刷新数据」抓取</text>
+        <text class="empty-text">暂无符合条件的新闻</text>
       </view>
 
       <view
@@ -62,6 +103,12 @@
           </view>
         </view>
       </view>
+
+      <!-- 加载更多状态 -->
+      <view v-if="newsList.length > 0" class="load-more">
+        <text v-if="loadingMore" class="load-more-text">加载更多...</text>
+        <text v-else-if="noMore" class="load-more-text">— 没有更多了 —</text>
+      </view>
     </view>
 
     <!-- 底部安全区 -->
@@ -72,33 +119,102 @@
 <script>
 import { fetchNews, generatePrompt } from '../../utils/api.js'
 
+const PAGE_SIZE = 20
+
 export default {
   data() {
     return {
       newsList: [],
+      total: 0,
+      offset: 0,
       loading: true,
+      loadingMore: false,
+      noMore: false,
       minScore: 6,
+      currentSource: '',
       promptLoading: false,
       promptCopied: false,
+      scoreOptions: [6, 7, 8, 9],
+      sourceOptions: ['财联社', '格隆汇', '36Kr', '东方财富'],
     }
   },
 
   onShow() {
-    this.loadNews()
+    this.resetAndLoad()
+  },
+
+  onPullDownRefresh() {
+    this.resetAndLoad().finally(() => {
+      uni.stopPullDownRefresh()
+    })
+  },
+
+  onReachBottom() {
+    this.loadMore()
   },
 
   methods: {
-    async loadNews() {
+    /** 重置列表并加载第一页 */
+    async resetAndLoad() {
+      this.newsList = []
+      this.offset = 0
+      this.noMore = false
       this.loading = true
       try {
-        const data = await fetchNews({ limit: 50, min_score: this.minScore })
-        this.newsList = data
+        const data = await fetchNews({
+          limit: PAGE_SIZE,
+          offset: 0,
+          min_score: this.minScore,
+          source: this.currentSource || undefined,
+        })
+        this.newsList = data.items || []
+        this.total = data.total || 0
+        this.offset = this.newsList.length
+        this.noMore = this.offset >= this.total
       } catch (e) {
         console.error('加载新闻失败:', e)
         uni.showToast({ title: '加载失败', icon: 'none' })
       } finally {
         this.loading = false
       }
+    },
+
+    /** 上拉加载更多 */
+    async loadMore() {
+      if (this.loadingMore || this.noMore || this.loading) return
+      this.loadingMore = true
+      try {
+        const data = await fetchNews({
+          limit: PAGE_SIZE,
+          offset: this.offset,
+          min_score: this.minScore,
+          source: this.currentSource || undefined,
+        })
+        const items = data.items || []
+        this.newsList = this.newsList.concat(items)
+        this.total = data.total || 0
+        this.offset += items.length
+        this.noMore = items.length < PAGE_SIZE || this.offset >= this.total
+      } catch (e) {
+        console.error('加载更多失败:', e)
+        uni.showToast({ title: '加载失败', icon: 'none' })
+      } finally {
+        this.loadingMore = false
+      }
+    },
+
+    /** 切换评分筛选 */
+    onScoreChange(score) {
+      if (this.minScore === score) return
+      this.minScore = score
+      this.resetAndLoad()
+    },
+
+    /** 切换来源筛选 */
+    onSourceChange(source) {
+      if (this.currentSource === source) return
+      this.currentSource = source
+      this.resetAndLoad()
     },
 
     async onCopyPrompt() {
@@ -184,39 +300,51 @@ export default {
   margin-top: 4rpx;
 }
 
-/* ── Pill Button ── */
-.pill {
+/* ── Filter Bar ── */
+.filter-bar {
+  margin: 16rpx 0 8rpx;
+  padding: 20rpx 24rpx;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1rpx solid rgba(51, 65, 85, 0.4);
+  border-radius: 20rpx;
+}
+.filter-group {
   display: flex;
   align-items: center;
-  background: rgba(59, 130, 246, 0.15);
-  border: 1rpx solid rgba(59, 130, 246, 0.3);
-  border-radius: 40rpx;
-  padding: 12rpx 28rpx;
+  margin-bottom: 16rpx;
 }
-.pill-active {
-  background: rgba(234, 179, 8, 0.15);
-  border-color: rgba(234, 179, 8, 0.3);
+.filter-group:last-child {
+  margin-bottom: 0;
 }
-.pill-dot {
-  width: 14rpx;
-  height: 14rpx;
-  border-radius: 50%;
-  background: #3b82f6;
-  margin-right: 12rpx;
-}
-.pill-active .pill-dot {
-  background: #eab308;
-}
-.dot-pulse {
-  animation: pulse 1.5s infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-.pill-text {
+.filter-label {
   font-size: 24rpx;
+  color: #64748b;
+  width: 72rpx;
+  flex-shrink: 0;
+}
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+.chip {
+  padding: 8rpx 24rpx;
+  border-radius: 28rpx;
+  background: rgba(51, 65, 85, 0.4);
+  border: 1rpx solid rgba(71, 85, 105, 0.4);
+  transition: all 0.2s;
+}
+.chip-active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+.chip-text {
+  font-size: 22rpx;
   color: #94a3b8;
+}
+.chip-text-active {
+  color: #60a5fa;
+  font-weight: 600;
 }
 
 /* ── Prompt Card ── */
@@ -369,6 +497,17 @@ export default {
   font-size: 20rpx;
   color: #475569;
   margin-left: auto;
+}
+
+/* ── Load More ── */
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 32rpx 0;
+}
+.load-more-text {
+  font-size: 24rpx;
+  color: #475569;
 }
 
 /* ── Safe Area ── */

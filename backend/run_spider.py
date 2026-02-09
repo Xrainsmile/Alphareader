@@ -6,7 +6,7 @@ import os
 sys.path.append('/app')
 
 # 1. 导入你的工具 (根据你的截图路径)
-from app.utils.redis import init_redis
+from app.redis import init_redis
 from app.services.pipeline import run_pipeline
 
 async def main():

@@ -29,9 +29,12 @@ function request(url, options = {}) {
   })
 }
 
-/** 获取新闻列表 */
-export function fetchNews({ limit = 30, min_score = 6, source, sector } = {}) {
-  const params = { limit, min_score }
+/**
+ * 获取新闻列表（分页）
+ * 返回 { items, total, limit, offset }
+ */
+export function fetchNews({ limit = 20, offset = 0, min_score = 6, source, sector } = {}) {
+  const params = { limit, offset, min_score }
   if (source) params.source = source
   if (sector) params.sector = sector
   return request('/news/', { data: params })
@@ -43,14 +46,4 @@ export function generatePrompt({ sector, date, top_n = 10 } = {}) {
   if (sector) params.sector = sector
   if (date) params.date = date
   return request('/bridge/generate_prompt', { data: params })
-}
-
-/** 触发 Pipeline */
-export function triggerPipeline() {
-  return request('/news/pipeline/run', { method: 'POST' })
-}
-
-/** 查询 Pipeline 状态 */
-export function getPipelineStatus() {
-  return request('/news/pipeline/status')
 }

@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.config import settings
 from app.services.pipeline import run_pipeline
 
 logger = logging.getLogger("alphareader.scheduler")
 
 scheduler = AsyncIOScheduler()
-
-# Pipeline runs every 2 hours
-PIPELINE_INTERVAL_HOURS = 2
 
 
 async def _pipeline_job():
@@ -30,14 +29,18 @@ def start_scheduler():
     """Register jobs and start the scheduler."""
     scheduler.add_job(
         _pipeline_job,
-        trigger=IntervalTrigger(hours=PIPELINE_INTERVAL_HOURS),
+        trigger=IntervalTrigger(hours=settings.PIPELINE_INTERVAL_HOURS),
         id="news_pipeline",
-        name="News Pipeline (every 2h)",
+        name=f"News Pipeline (every {settings.PIPELINE_INTERVAL_HOURS}h)",
         replace_existing=True,
         max_instances=1,
+        next_run_time=datetime.now(),  # run immediately on startup
     )
     scheduler.start()
-    logger.info("Scheduler started — pipeline will run every %d hours", PIPELINE_INTERVAL_HOURS)
+    logger.info(
+        "Scheduler started — pipeline runs every %dh (first run: now)",
+        settings.PIPELINE_INTERVAL_HOURS,
+    )
 
 
 def stop_scheduler():

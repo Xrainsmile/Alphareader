@@ -32,12 +32,6 @@ from app.utils.json_extractor import extract_json_from_deepseek
 
 logger = logging.getLogger("alphareader.deepseek")
 
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek-chat"
-BATCH_SIZE = 20
-SCORE_THRESHOLD = 6
-MAX_RETRIES = 2
-
 # Non-retryable error signatures from DeepSeek Trust & Safety
 _CONTENT_RISK_KEYWORDS = ("Content Exists Risk", "content_filter", "content_policy")
 
@@ -194,7 +188,7 @@ def _parse_response(raw_text: str, batch: list[RawNewsItem], is_english: bool) -
                 continue
 
             score = int(item.get("score", 0))
-            if score < SCORE_THRESHOLD:
+            if score < settings.DEEPSEEK_SCORE_THRESHOLD:
                 continue
 
             if is_english:
@@ -235,12 +229,22 @@ def _parse_response(raw_text: str, batch: list[RawNewsItem], is_english: bool) -
     return scored
 
 
-async def filter_batch(batch: list[RawNewsItem], is_english: bool = False) -> list[ScoredNewsItem]:
+async def filter_batch(
+    batch: list[RawNewsItem],
+    is_english: bool = False,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> list[ScoredNewsItem]:
     """Send a single batch (<=20 items) to DeepSeek for scoring with retry.
+
+    Args:
+        client: Optional shared httpx.AsyncClient. If provided, the caller
+                is responsible for its lifecycle. If None, a temporary client
+                is created (backward-compatible but less efficient).
 
     Error strategy:
       - 400 + "Content Exists Risk" → skip entire batch (no retry).
-      - 429 / 5xx / timeout → exponential backoff retry up to MAX_RETRIES.
+      - 429 / 5xx / timeout → exponential backoff retry.
     """
     if not batch:
         return []
@@ -253,7 +257,7 @@ async def filter_batch(batch: list[RawNewsItem], is_english: bool = False) -> li
     user_prompt = _build_user_prompt(batch, is_english)
 
     payload = {
-        "model": DEEPSEEK_MODEL,
+        "model": settings.DEEPSEEK_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -267,10 +271,15 @@ async def filter_batch(batch: list[RawNewsItem], is_english: bool = False) -> li
         "Content-Type": "application/json",
     }
 
-    for attempt in range(1, MAX_RETRIES + 1):
-        async with httpx.AsyncClient(timeout=90.0) as client:
+    # Use shared client if provided; otherwise create a temporary one
+    _owns_client = client is None
+    if _owns_client:
+        client = httpx.AsyncClient(timeout=90.0)
+
+    try:
+        for attempt in range(1, settings.DEEPSEEK_MAX_RETRIES + 1):
             try:
-                resp = await client.post(DEEPSEEK_API_URL, json=payload, headers=headers)
+                resp = await client.post(settings.DEEPSEEK_API_URL, json=payload, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
             except httpx.HTTPStatusError as e:
@@ -312,40 +321,47 @@ async def filter_batch(batch: list[RawNewsItem], is_english: bool = False) -> li
                     continue
                 return []
 
-        try:
-            raw_text = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError) as e:
-            logger.error("Unexpected DeepSeek response structure: %s", e)
-            return []
+            try:
+                raw_text = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError) as e:
+                logger.error("Unexpected DeepSeek response structure: %s", e)
+                return []
 
-        scored = _parse_response(raw_text, batch, is_english)
+            scored = _parse_response(raw_text, batch, is_english)
 
-        # If we got zero results but had items, might be a bad response — retry
-        if not scored and len(batch) > 3 and attempt < MAX_RETRIES:
-            logger.warning(
-                "DeepSeek returned 0 scored items for %d inputs (attempt %d/%d), "
-                "retrying...\n── Raw response (%d chars) ──\n%s",
-                len(batch), attempt, MAX_RETRIES, len(raw_text), raw_text[:1500],
-            )
-            await asyncio.sleep(2 * attempt)
-            continue
+            # If we got zero results but had items, might be a bad response — retry
+            if not scored and len(batch) > 3 and attempt < MAX_RETRIES:
+                logger.warning(
+                    "DeepSeek returned 0 scored items for %d inputs (attempt %d/%d), "
+                    "retrying...\n── Raw response (%d chars) ──\n%s",
+                    len(batch), attempt, MAX_RETRIES, len(raw_text), raw_text[:1500],
+                )
+                await asyncio.sleep(2 * attempt)
+                continue
 
-        logger.info("DeepSeek scored batch: %d/%d passed threshold (>=%d)",
-                     len(scored), len(batch), SCORE_THRESHOLD)
-        return scored
+            logger.info("DeepSeek scored batch: %d/%d passed threshold (>=%d)",
+                         len(scored), len(batch), SCORE_THRESHOLD)
+            return scored
+    finally:
+        if _owns_client:
+            await client.aclose()
 
     return []
 
 
 async def filter_news(items: list[RawNewsItem]) -> list[ScoredNewsItem]:
-    """Process all items in batches of BATCH_SIZE, return high-scoring items.
+    """Process all items in batches, return high-scoring items.
 
     Splits items into Chinese and English batches based on title language,
     applying the appropriate system prompt for each.
 
+    Uses a single shared httpx.AsyncClient for all batches to reuse TCP
+    connections and avoid repeated TLS handshakes.
+
     A failure in any single batch is logged and skipped — the pipeline
     continues processing remaining batches.
     """
+    batch_size = settings.DEEPSEEK_BATCH_SIZE
     cn_items: list[RawNewsItem] = []
     en_items: list[RawNewsItem] = []
 
@@ -360,25 +376,26 @@ async def filter_news(items: list[RawNewsItem]) -> list[ScoredNewsItem]:
     all_scored: list[ScoredNewsItem] = []
     skipped_batches = 0
 
-    # Process Chinese batches
-    for i in range(0, len(cn_items), BATCH_SIZE):
-        batch = cn_items[i : i + BATCH_SIZE]
-        try:
-            scored = await filter_batch(batch, is_english=False)
-            all_scored.extend(scored)
-        except Exception as e:
-            skipped_batches += 1
-            logger.error("CN batch %d-%d failed, skipping: %s", i, i + len(batch), e)
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        # Process Chinese batches
+        for i in range(0, len(cn_items), BATCH_SIZE):
+            batch = cn_items[i : i + BATCH_SIZE]
+            try:
+                scored = await filter_batch(batch, is_english=False, client=client)
+                all_scored.extend(scored)
+            except Exception as e:
+                skipped_batches += 1
+                logger.error("CN batch %d-%d failed, skipping: %s", i, i + len(batch), e)
 
-    # Process English batches
-    for i in range(0, len(en_items), BATCH_SIZE):
-        batch = en_items[i : i + BATCH_SIZE]
-        try:
-            scored = await filter_batch(batch, is_english=True)
-            all_scored.extend(scored)
-        except Exception as e:
-            skipped_batches += 1
-            logger.error("EN batch %d-%d failed, skipping: %s", i, i + len(batch), e)
+        # Process English batches
+        for i in range(0, len(en_items), batch_size):
+            batch = en_items[i : i + batch_size]
+            try:
+                scored = await filter_batch(batch, is_english=True, client=client)
+                all_scored.extend(scored)
+            except Exception as e:
+                skipped_batches += 1
+                logger.error("EN batch %d-%d failed, skipping: %s", i, i + len(batch), e)
 
     if skipped_batches:
         logger.warning("⚠️ %d batch(es) skipped due to errors", skipped_batches)
