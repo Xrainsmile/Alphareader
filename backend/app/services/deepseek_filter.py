@@ -19,7 +19,6 @@ Robustness:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -29,6 +28,7 @@ from langdetect import detect, LangDetectException
 
 from app.config import settings
 from app.services.rss_fetcher import RawNewsItem
+from app.utils.json_extractor import extract_json_from_deepseek
 
 logger = logging.getLogger("alphareader.deepseek")
 
@@ -49,7 +49,13 @@ SYSTEM_PROMPT_CN = """你是一个资深金融分析师。我会给你一批新�
 - 保留：含具体财务数据（营收、净利、增长率）、重大政策变动、央行动作、行业重大事件
 - 丢弃：口水文、政策喊话无数据、娱乐八卦、推广软文、无实质信息的评论
 
-请严格只返回一个 JSON 数组，不要输出任何解释文字，格式：
+⚠️ 输出格式要求（极其重要）：
+- 仅返回原始 JSON 数组，不要输出任何其他内容。
+- 禁止使用 <think> 标签或任何 XML 标签。
+- 禁止使用 Markdown 代码块（```）包裹。
+- 禁止在 JSON 前后添加解释文字、开场白或总结。
+
+JSON 格式：
 [{"id": 1, "score": 8, "reason": "含具体营收数据", "summary": "一句话摘要不超过50字", "tags": ["新能源", "财报"]}, ...]
 
 规则：
@@ -82,7 +88,13 @@ SYSTEM_PROMPT_EN = """你是一位资深全球宏观分析师，同时精通中�
   Non-Farm Payrolls → 非农就业 | Layoffs → 裁员 | M&A → 并购 |
   Market Cap → 市值 | P/E → 市盈率 | Downgrade → 下调评级 | Upgrade → 上调评级
 
-请严格只返回一个 JSON 数组，不要输出任何解释文字，格式：
+⚠️ 输出格式要求（极其重要）：
+- 仅返回原始 JSON 数组，不要输出任何其他内容。
+- 禁止使用 <think> 标签或任何 XML 标签。
+- 禁止使用 Markdown 代码块（```）包裹。
+- 禁止在 JSON 前后添加解释文字、开场白或总结。
+
+JSON 格式：
 [{"id": 1, "score": 9, "chinese_title": "英伟达第三季度财报超预期，盘后大涨", "chinese_summary": "英伟达公布第三季度营收350亿美元，同比增长94%，超出市场预期", "tags": ["人工智能", "半导体"], "relevant_tickers": ["NVDA"]}, ...]
 
 规则：
@@ -143,47 +155,28 @@ def _build_user_prompt(batch: list[RawNewsItem], is_english: bool) -> str:
 
 
 def _extract_json_array(raw_text: str) -> list[dict] | None:
-    """Multi-layer JSON extraction with fallback strategies."""
-    text = raw_text.strip()
+    """Extract a JSON array from DeepSeek LLM response.
 
-    # Strategy 1: Direct parse
-    try:
-        result = json.loads(text)
-        if isinstance(result, list):
-            return result
-        # Sometimes wrapped in {"results": [...]} or similar
-        if isinstance(result, dict):
-            for key in ("results", "data", "items", "news"):
-                if key in result and isinstance(result[key], list):
-                    return result[key]
-            # Maybe the dict values are the array items
-            if all(isinstance(v, dict) for v in result.values()):
-                return list(result.values())
-    except json.JSONDecodeError:
-        pass
+    Delegates to the shared json_extractor utility which handles
+    <think> tags, markdown fences, and filler text.
+    """
+    result = extract_json_from_deepseek(raw_text)
 
-    # Strategy 2: Strip markdown code fences
-    fence_pattern = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
-    match = fence_pattern.search(text)
-    if match:
-        try:
-            result = json.loads(match.group(1).strip())
-            if isinstance(result, list):
-                return result
-        except json.JSONDecodeError:
-            pass
+    if result is None:
+        return None
 
-    # Strategy 3: Find first [ ... ] bracket pair via regex
-    bracket_match = re.search(r"\[.*\]", text, re.DOTALL)
-    if bracket_match:
-        try:
-            result = json.loads(bracket_match.group())
-            if isinstance(result, list):
-                return result
-        except json.JSONDecodeError:
-            pass
+    if isinstance(result, list):
+        return result
 
-    logger.error("All JSON extraction strategies failed. Raw text (first 500 chars): %s", text[:500])
+    # Handle dict wrapper: {"results": [...]} etc.
+    if isinstance(result, dict):
+        for key in ("results", "data", "items", "news"):
+            if key in result and isinstance(result[key], list):
+                return result[key]
+        if all(isinstance(v, dict) for v in result.values()):
+            return list(result.values())
+
+    logger.error("Extracted JSON is not an array: %s", type(result).__name__)
     return None
 
 
@@ -329,7 +322,12 @@ async def filter_batch(batch: list[RawNewsItem], is_english: bool = False) -> li
 
         # If we got zero results but had items, might be a bad response — retry
         if not scored and len(batch) > 3 and attempt < MAX_RETRIES:
-            logger.warning("DeepSeek returned 0 scored items for %d inputs, retrying...", len(batch))
+            logger.warning(
+                "DeepSeek returned 0 scored items for %d inputs (attempt %d/%d), "
+                "retrying...\n── Raw response (%d chars) ──\n%s",
+                len(batch), attempt, MAX_RETRIES, len(raw_text), raw_text[:1500],
+            )
+            await asyncio.sleep(2 * attempt)
             continue
 
         logger.info("DeepSeek scored batch: %d/%d passed threshold (>=%d)",
