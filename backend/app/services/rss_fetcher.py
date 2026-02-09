@@ -43,9 +43,17 @@ DROP_PATTERNS = re.compile(
 REDIS_DEDUP_KEY = "alphareader:seen_urls"
 
 HTTP_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7",
+    "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
 }
+
+# HTTP status codes that trigger fallback to the next URL
+_FALLBACK_STATUS_CODES = {429, 503}
 
 
 @dataclass
@@ -371,9 +379,10 @@ def _parse_x_deltaone(raw_text: str) -> list[RawNewsItem]:
 @dataclass
 class FeedSource:
     name: str
-    url: str
+    url: str                                    # Primary URL
     parser: Callable
-    is_rss: bool = False  # True = fetch raw text and parse with feedparser
+    is_rss: bool = False                        # True = fetch raw text and parse with feedparser
+    fallback_urls: list[str] = field(default_factory=list)  # Tried in order if primary fails with 429/503
 
 
 FEED_SOURCES: list[FeedSource] = [
@@ -448,11 +457,18 @@ FEED_SOURCES: list[FeedSource] = [
         url="https://rsshub.app/twitter/user/DeItaone",
         parser=_parse_x_deltaone,
         is_rss=True,
+        fallback_urls=[
+            # RSSHub mirror instances (Twitter route)
+            "https://rsshub.rssforever.com/twitter/user/DeItaone",
+            "https://rsshub.pseudoyu.com/twitter/user/DeItaone",
+            # Telegram mirror — same content, different platform
+            "https://rsshub.app/telegram/channel/walterbloomberg",
+            "https://rsshub.rssforever.com/telegram/channel/walterbloomberg",
+        ],
     ),
 ]
 
-# RSSHub 备用实例列表（当主实例不可用时自动切换）
-# 可通过环境变量 RSSHUB_INSTANCES 覆盖（逗号分隔）
+# RSSHub 备用实例列表（可通过环境变量 RSSHUB_INSTANCES 覆盖，逗号分隔）
 import os as _os
 _RSSHUB_INSTANCES = [
     u.strip() for u in
@@ -464,9 +480,9 @@ _RSSHUB_INSTANCES = [
     "https://rsshub.pseudoyu.com",
 ]
 
-# Maximum retry attempts per RSSHub instance on 503
-_RSSHUB_MAX_RETRIES = 2
-_RSSHUB_BACKOFF_BASE = 2  # seconds; actual wait = base * 2^attempt
+# Exponential backoff config for 503 retries per URL
+_BACKOFF_MAX_RETRIES = 2
+_BACKOFF_BASE_SECONDS = 2  # actual wait = base * 2^attempt
 
 
 # ════════════════════════════════════════════════════════
@@ -502,14 +518,15 @@ async def _fetch_single_source(
 
         url_hash = _hash_url(item.url)
 
-        # Redis SADD: 1 = new, 0 = already seen
+        # Check if URL was already seen — do NOT mark as seen here.
+        # URLs are only marked after successful storage in the pipeline.
         try:
-            is_new = await r.sadd(REDIS_DEDUP_KEY, url_hash)
+            is_seen = await r.sismember(REDIS_DEDUP_KEY, url_hash)
         except Exception as e:
-            logger.warning("Redis SADD failed for %s, treating as new: %s", item.url[:60], e)
-            is_new = True
+            logger.warning("Redis SISMEMBER failed for %s, treating as new: %s", item.url[:60], e)
+            is_seen = False
 
-        if not is_new:
+        if is_seen:
             continue
 
         if not _should_keep(item.title, item.source):
@@ -526,11 +543,13 @@ async def _fetch_raw_items(
     client: httpx.AsyncClient,
     source: FeedSource,
 ) -> list[RawNewsItem] | None:
-    """Fetch + parse a single source. Returns None on total failure."""
+    """Fetch + parse a single source. Returns None on total failure.
 
-    # X/Walter Bloomberg: try multiple RSSHub instances with exponential backoff
-    if source.name == "X/Walter Bloomberg":
-        return await _fetch_rsshub_with_backoff(client, source)
+    If the source has fallback_urls, uses Primary → Fallback strategy:
+    each URL gets exponential-backoff retries on 429/503 before moving on.
+    """
+    if source.fallback_urls:
+        return await _fetch_with_fallback(client, source)
 
     try:
         resp = await client.get(source.url, timeout=20.0)
@@ -549,49 +568,72 @@ async def _fetch_raw_items(
         return None
 
 
-async def _fetch_rsshub_with_backoff(
+async def _fetch_with_fallback(
     client: httpx.AsyncClient,
     source: FeedSource,
 ) -> list[RawNewsItem] | None:
-    """Fetch X/Walter Bloomberg via RSSHub with exponential backoff per instance.
+    """Generic Primary → Fallback fetch with exponential backoff.
 
-    For each instance:
-      - On 503: retry up to _RSSHUB_MAX_RETRIES with exponential backoff.
-      - On other errors: move to next instance immediately.
+    Strategy per URL:
+      - On 429/503: exponential-backoff retry up to _BACKOFF_MAX_RETRIES.
+      - On success: parse and return.
+      - On other errors: skip to next URL immediately.
+
+    URL order: [source.url] + source.fallback_urls
     """
-    route = "/twitter/user/DeItaone"
+    all_urls = [source.url] + source.fallback_urls
 
-    for instance in _RSSHUB_INSTANCES:
-        url = f"{instance}{route}"
+    for url_idx, url in enumerate(all_urls):
+        label = "primary" if url_idx == 0 else f"fallback-{url_idx}"
 
-        for attempt in range(_RSSHUB_MAX_RETRIES + 1):
+        for attempt in range(_BACKOFF_MAX_RETRIES + 1):
             try:
                 resp = await client.get(url, timeout=20.0)
                 resp.raise_for_status()
-                logger.info("X/Walter Bloomberg fetched via %s", instance)
+
+                # Success — parse and return
+                logger.info(
+                    "%s fetched via %s (%s)", source.name, url[:60], label,
+                )
                 try:
-                    return source.parser(resp.text)
+                    if source.is_rss:
+                        return source.parser(resp.text)
+                    else:
+                        return source.parser(resp.json())
                 except Exception as e:
-                    logger.error("Parser error for %s (via %s): %s", source.name, instance, e)
+                    logger.error("Parser error for %s (%s): %s", source.name, url[:60], e)
                     return None
+
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 503 and attempt < _RSSHUB_MAX_RETRIES:
-                    wait = _RSSHUB_BACKOFF_BASE * (2 ** attempt)
+                status = e.response.status_code
+
+                if status in _FALLBACK_STATUS_CODES and attempt < _BACKOFF_MAX_RETRIES:
+                    wait = _BACKOFF_BASE_SECONDS * (2 ** attempt)
                     logger.warning(
-                        "RSSHub %s returned 503 (attempt %d/%d), "
-                        "retrying in %ds...",
-                        instance, attempt + 1, _RSSHUB_MAX_RETRIES + 1, wait,
+                        "%s %s returned %d (attempt %d/%d), retrying in %ds...",
+                        source.name, label, status,
+                        attempt + 1, _BACKOFF_MAX_RETRIES + 1, wait,
                     )
                     await asyncio.sleep(wait)
                     continue
-                else:
-                    logger.warning("RSSHub instance %s failed: %s", instance, e)
-                    break  # move to next instance
-            except Exception as e:
-                logger.warning("RSSHub instance %s failed: %s", instance, e)
-                break  # move to next instance
 
-    logger.warning("All RSSHub instances failed for X/Walter Bloomberg")
+                # Exhausted retries or non-fallback status — move to next URL
+                if status in _FALLBACK_STATUS_CODES and url_idx < len(all_urls) - 1:
+                    logger.warning(
+                        "⚠️ %s %s rate-limited (%d), switching to next fallback URL...",
+                        source.name, label, status,
+                    )
+                else:
+                    logger.warning(
+                        "%s %s failed: HTTP %d", source.name, label, status,
+                    )
+                break  # move to next URL
+
+            except Exception as e:
+                logger.warning("%s %s failed: %s", source.name, label, e)
+                break  # move to next URL
+
+    logger.warning("All URLs exhausted for %s — no data fetched", source.name)
     return None
 
 

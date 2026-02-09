@@ -5,29 +5,55 @@ This is the main entry point called by the scheduler.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.database import async_session
 from app.models.news import News
+from app.redis import get_redis
 from app.services.deepseek_filter import ScoredNewsItem, filter_news
-from app.services.rss_fetcher import fetch_all_feeds
+from app.services.rss_fetcher import REDIS_DEDUP_KEY, fetch_all_feeds
 from app.utils.deduplicator import NewsDeduplicator
 
 logger = logging.getLogger("alphareader.pipeline")
 
 
-async def _store_scored_items(items: list[ScoredNewsItem]) -> int:
-    """Upsert scored news items into PostgreSQL. Returns count of new rows.
+def _hash_url(url: str) -> str:
+    """SHA-256 hash of URL for Redis dedup set."""
+    return hashlib.sha256(url.encode()).hexdigest()
 
+
+async def _mark_urls_as_seen(urls: list[str]) -> None:
+    """Mark successfully stored URLs in Redis seen_urls set.
+
+    Only called AFTER items are confirmed stored in PostgreSQL.
+    """
+    if not urls:
+        return
+
+    r = get_redis()
+    hashes = [_hash_url(u) for u in urls]
+    try:
+        added = await r.sadd(REDIS_DEDUP_KEY, *hashes)
+        logger.info("Marked %d URL(s) as seen in Redis (SADD returned %d)", len(hashes), added)
+    except Exception as e:
+        logger.error("Failed to mark URLs as seen in Redis: %s", e)
+
+
+async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[str]]:
+    """Upsert scored news items into PostgreSQL.
+
+    Returns (count_of_new_rows, list_of_successfully_stored_urls).
     Per-item error isolation: a single bad item won't prevent others from being stored.
     """
     if not items:
-        return 0
+        return 0, []
 
     stored = 0
     errors = 0
+    stored_urls: list[str] = []
     async with async_session() as session:
         for item in items:
             try:
@@ -58,17 +84,23 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> int:
                 result = await session.execute(stmt)
                 if result.rowcount and result.rowcount > 0:
                     stored += 1
+                    stored_urls.append(item.raw.url)
+                    logger.debug("Stored: %s", item.raw.title[:60])
+                else:
+                    # ON CONFLICT DO NOTHING — URL already in DB, still mark as seen
+                    stored_urls.append(item.raw.url)
             except Exception as e:
                 errors += 1
                 logger.warning("Failed to store item '%s': %s", item.raw.title[:40], e)
+                # Do NOT add this URL to stored_urls — it will be retried next run
                 continue
 
         await session.commit()
 
     if errors:
         logger.warning("⚠️ %d item(s) failed to store", errors)
-    logger.info("Stored %d new scored items to DB", stored)
-    return stored
+    logger.info("Stored %d new scored items to DB (%d total processed)", stored, len(stored_urls))
+    return stored, stored_urls
 
 
 async def run_pipeline() -> dict:
@@ -130,13 +162,36 @@ async def run_pipeline() -> dict:
 
     # Step 4: Store to DB
     try:
-        stored_count = await _store_scored_items(scored_items)
+        stored_count, stored_urls = await _store_scored_items(scored_items)
     except Exception as e:
         logger.error("Store stage failed: %s", e)
         summary["errors"].append(f"store: {e}")
         stored_count = 0
+        stored_urls = []
 
     summary["stored"] = stored_count
+
+    # Step 5: Mark successfully stored URLs as seen in Redis
+    # This is CRITICAL — only mark URLs AFTER content is persisted to DB.
+    # Prevents the bug where URLs are locked as "seen" but data is lost.
+    if stored_urls:
+        await _mark_urls_as_seen(stored_urls)
+
+    # Also mark URLs that passed through the entire pipeline but were filtered
+    # by DeepSeek (score < 6). These are legitimately processed and should not
+    # be re-fetched. Collect all URLs from unique_items that reached scoring.
+    try:
+        scored_url_set = {item.raw.url for item in scored_items}
+        filtered_out_urls = [
+            item.url for item in unique_items
+            if item.url not in scored_url_set
+            and item.url not in (stored_urls or [])
+        ]
+        if filtered_out_urls:
+            await _mark_urls_as_seen(filtered_out_urls)
+            logger.info("Marked %d low-score/filtered URLs as seen", len(filtered_out_urls))
+    except Exception as e:
+        logger.warning("Failed to mark filtered URLs as seen: %s", e)
 
     # Clean up empty errors list for cleaner output
     if not summary["errors"]:
