@@ -10,6 +10,10 @@ Flow:
   3. Dedup against Redis set (url hash).
   4. Apply regex pre-filter (drop spam).
   5. Return list of RawNewsItem for downstream DeepSeek scoring.
+
+Robustness:
+  - RSSHub: exponential backoff on 503, multi-instance fallback.
+  - Per-source try/except: one source failure never crashes the pipeline.
 """
 
 from __future__ import annotations
@@ -448,11 +452,21 @@ FEED_SOURCES: list[FeedSource] = [
 ]
 
 # RSSHub 备用实例列表（当主实例不可用时自动切换）
+# 可通过环境变量 RSSHUB_INSTANCES 覆盖（逗号分隔）
+import os as _os
 _RSSHUB_INSTANCES = [
+    u.strip() for u in
+    _os.environ.get("RSSHUB_INSTANCES", "").split(",")
+    if u.strip()
+] or [
     "https://rsshub.app",
     "https://rsshub.rssforever.com",
     "https://rsshub.pseudoyu.com",
 ]
+
+# Maximum retry attempts per RSSHub instance on 503
+_RSSHUB_MAX_RETRIES = 2
+_RSSHUB_BACKOFF_BASE = 2  # seconds; actual wait = base * 2^attempt
 
 
 # ════════════════════════════════════════════════════════
@@ -464,48 +478,21 @@ async def _fetch_single_source(
     source: FeedSource,
     r: aioredis.Redis,
 ) -> list[RawNewsItem]:
-    """Fetch and parse one source, dedup against Redis."""
+    """Fetch and parse one source, dedup against Redis.
+
+    Error isolation: any exception is caught so one source never kills the pipeline.
+    RSSHub sources use exponential backoff on 503 + multi-instance fallback.
+    """
     items: list[RawNewsItem] = []
 
-    # X/Walter Bloomberg: try multiple RSSHub instances as fallback
-    if source.name == "X/Walter Bloomberg":
-        resp_text = None
-        route = "/twitter/user/DeItaone"
-        for instance in _RSSHUB_INSTANCES:
-            try:
-                url = f"{instance}{route}"
-                resp = await client.get(url, timeout=20.0)
-                resp.raise_for_status()
-                resp_text = resp.text
-                logger.info("X/Walter Bloomberg fetched via %s", instance)
-                break
-            except Exception as e:
-                logger.warning("RSSHub instance %s failed: %s", instance, e)
-                continue
-        if resp_text is None:
-            logger.warning("All RSSHub instances failed for X/Walter Bloomberg")
-            return items
-        try:
-            raw_items = source.parser(resp_text)
-        except Exception as e:
-            logger.error("Parser error for %s: %s", source.name, e)
-            return items
-    else:
-        try:
-            resp = await client.get(source.url, timeout=20.0)
-            resp.raise_for_status()
-        except Exception as e:
-            logger.warning("Failed to fetch %s: %s", source.name, e)
-            return items
+    try:
+        raw_items = await _fetch_raw_items(client, source)
+    except Exception as e:
+        logger.error("Unexpected error fetching %s: %s", source.name, e)
+        return items
 
-        try:
-            if source.is_rss:
-                raw_items = source.parser(resp.text)
-            else:
-                raw_items = source.parser(resp.json())
-        except Exception as e:
-            logger.error("Parser error for %s: %s", source.name, e)
-            return items
+    if raw_items is None:
+        return items
 
     logger.info("Parsed %d raw items from %s", len(raw_items), source.name)
 
@@ -516,7 +503,12 @@ async def _fetch_single_source(
         url_hash = _hash_url(item.url)
 
         # Redis SADD: 1 = new, 0 = already seen
-        is_new = await r.sadd(REDIS_DEDUP_KEY, url_hash)
+        try:
+            is_new = await r.sadd(REDIS_DEDUP_KEY, url_hash)
+        except Exception as e:
+            logger.warning("Redis SADD failed for %s, treating as new: %s", item.url[:60], e)
+            is_new = True
+
         if not is_new:
             continue
 
@@ -528,6 +520,79 @@ async def _fetch_single_source(
 
     logger.info("After dedup+filter: %d new items from %s", len(items), source.name)
     return items
+
+
+async def _fetch_raw_items(
+    client: httpx.AsyncClient,
+    source: FeedSource,
+) -> list[RawNewsItem] | None:
+    """Fetch + parse a single source. Returns None on total failure."""
+
+    # X/Walter Bloomberg: try multiple RSSHub instances with exponential backoff
+    if source.name == "X/Walter Bloomberg":
+        return await _fetch_rsshub_with_backoff(client, source)
+
+    try:
+        resp = await client.get(source.url, timeout=20.0)
+        resp.raise_for_status()
+    except Exception as e:
+        logger.warning("Failed to fetch %s: %s", source.name, e)
+        return None
+
+    try:
+        if source.is_rss:
+            return source.parser(resp.text)
+        else:
+            return source.parser(resp.json())
+    except Exception as e:
+        logger.error("Parser error for %s: %s", source.name, e)
+        return None
+
+
+async def _fetch_rsshub_with_backoff(
+    client: httpx.AsyncClient,
+    source: FeedSource,
+) -> list[RawNewsItem] | None:
+    """Fetch X/Walter Bloomberg via RSSHub with exponential backoff per instance.
+
+    For each instance:
+      - On 503: retry up to _RSSHUB_MAX_RETRIES with exponential backoff.
+      - On other errors: move to next instance immediately.
+    """
+    route = "/twitter/user/DeItaone"
+
+    for instance in _RSSHUB_INSTANCES:
+        url = f"{instance}{route}"
+
+        for attempt in range(_RSSHUB_MAX_RETRIES + 1):
+            try:
+                resp = await client.get(url, timeout=20.0)
+                resp.raise_for_status()
+                logger.info("X/Walter Bloomberg fetched via %s", instance)
+                try:
+                    return source.parser(resp.text)
+                except Exception as e:
+                    logger.error("Parser error for %s (via %s): %s", source.name, instance, e)
+                    return None
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 503 and attempt < _RSSHUB_MAX_RETRIES:
+                    wait = _RSSHUB_BACKOFF_BASE * (2 ** attempt)
+                    logger.warning(
+                        "RSSHub %s returned 503 (attempt %d/%d), "
+                        "retrying in %ds...",
+                        instance, attempt + 1, _RSSHUB_MAX_RETRIES + 1, wait,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                else:
+                    logger.warning("RSSHub instance %s failed: %s", instance, e)
+                    break  # move to next instance
+            except Exception as e:
+                logger.warning("RSSHub instance %s failed: %s", instance, e)
+                break  # move to next instance
+
+    logger.warning("All RSSHub instances failed for X/Walter Bloomberg")
+    return None
 
 
 async def fetch_all_feeds() -> list[RawNewsItem]:

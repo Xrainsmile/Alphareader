@@ -12,10 +12,13 @@ Robustness:
   - No response_format constraint (DeepSeek compatibility).
   - Multi-layer JSON extraction: direct parse → code fence strip → regex fallback.
   - Per-item error tolerance: bad items are skipped, not fatal.
+  - Smart error handling: "Content Exists Risk" (400) → skip batch, no retry.
+  - 5xx / 429 / timeout → exponential backoff retry.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -34,6 +37,9 @@ DEEPSEEK_MODEL = "deepseek-chat"
 BATCH_SIZE = 20
 SCORE_THRESHOLD = 6
 MAX_RETRIES = 2
+
+# Non-retryable error signatures from DeepSeek Trust & Safety
+_CONTENT_RISK_KEYWORDS = ("Content Exists Risk", "content_filter", "content_policy")
 
 # ── System Prompt: Chinese news ──
 SYSTEM_PROMPT_CN = """你是一个资深金融分析师。我会给你一批新闻标题和摘要。
@@ -237,7 +243,12 @@ def _parse_response(raw_text: str, batch: list[RawNewsItem], is_english: bool) -
 
 
 async def filter_batch(batch: list[RawNewsItem], is_english: bool = False) -> list[ScoredNewsItem]:
-    """Send a single batch (<=20 items) to DeepSeek for scoring with retry."""
+    """Send a single batch (<=20 items) to DeepSeek for scoring with retry.
+
+    Error strategy:
+      - 400 + "Content Exists Risk" → skip entire batch (no retry).
+      - 429 / 5xx / timeout → exponential backoff retry up to MAX_RETRIES.
+    """
     if not batch:
         return []
 
@@ -270,17 +281,40 @@ async def filter_batch(batch: list[RawNewsItem], is_english: bool = False) -> li
                 resp.raise_for_status()
                 data = resp.json()
             except httpx.HTTPStatusError as e:
-                logger.error("DeepSeek API HTTP %s (attempt %d/%d): %s",
-                             e.response.status_code, attempt, MAX_RETRIES, e.response.text[:300])
-                if attempt < MAX_RETRIES and e.response.status_code in (429, 500, 502, 503):
-                    import asyncio
+                status = e.response.status_code
+                body = e.response.text[:500]
+
+                # ── Content safety filter → skip immediately, no retry ──
+                if status == 400 and any(kw in body for kw in _CONTENT_RISK_KEYWORDS):
+                    titles = [it.title[:40] for it in batch[:3]]
+                    logger.warning(
+                        "⚠️ DeepSeek content safety triggered — skipping batch "
+                        "(%d items, first titles: %s)",
+                        len(batch), titles,
+                    )
+                    return []
+
+                logger.error(
+                    "DeepSeek API HTTP %s (attempt %d/%d): %s",
+                    status, attempt, MAX_RETRIES, body,
+                )
+
+                # Retryable server / rate-limit errors
+                if attempt < MAX_RETRIES and status in (429, 500, 502, 503):
+                    await asyncio.sleep(3 * attempt)
+                    continue
+                return []
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                logger.error(
+                    "DeepSeek network error (attempt %d/%d): %s", attempt, MAX_RETRIES, e,
+                )
+                if attempt < MAX_RETRIES:
                     await asyncio.sleep(3 * attempt)
                     continue
                 return []
             except Exception as e:
                 logger.error("DeepSeek request failed (attempt %d/%d): %s", attempt, MAX_RETRIES, e)
                 if attempt < MAX_RETRIES:
-                    import asyncio
                     await asyncio.sleep(3 * attempt)
                     continue
                 return []
@@ -310,6 +344,9 @@ async def filter_news(items: list[RawNewsItem]) -> list[ScoredNewsItem]:
 
     Splits items into Chinese and English batches based on title language,
     applying the appropriate system prompt for each.
+
+    A failure in any single batch is logged and skipped — the pipeline
+    continues processing remaining batches.
     """
     cn_items: list[RawNewsItem] = []
     en_items: list[RawNewsItem] = []
@@ -323,18 +360,29 @@ async def filter_news(items: list[RawNewsItem]) -> list[ScoredNewsItem]:
     logger.info("Language split: %d Chinese, %d English items", len(cn_items), len(en_items))
 
     all_scored: list[ScoredNewsItem] = []
+    skipped_batches = 0
 
     # Process Chinese batches
     for i in range(0, len(cn_items), BATCH_SIZE):
         batch = cn_items[i : i + BATCH_SIZE]
-        scored = await filter_batch(batch, is_english=False)
-        all_scored.extend(scored)
+        try:
+            scored = await filter_batch(batch, is_english=False)
+            all_scored.extend(scored)
+        except Exception as e:
+            skipped_batches += 1
+            logger.error("CN batch %d-%d failed, skipping: %s", i, i + len(batch), e)
 
     # Process English batches
     for i in range(0, len(en_items), BATCH_SIZE):
         batch = en_items[i : i + BATCH_SIZE]
-        scored = await filter_batch(batch, is_english=True)
-        all_scored.extend(scored)
+        try:
+            scored = await filter_batch(batch, is_english=True)
+            all_scored.extend(scored)
+        except Exception as e:
+            skipped_batches += 1
+            logger.error("EN batch %d-%d failed, skipping: %s", i, i + len(batch), e)
 
+    if skipped_batches:
+        logger.warning("⚠️ %d batch(es) skipped due to errors", skipped_batches)
     logger.info("Total items passing DeepSeek filter: %d / %d", len(all_scored), len(items))
     return all_scored
