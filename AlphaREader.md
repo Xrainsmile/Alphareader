@@ -84,3 +84,16 @@
 * 提供 `docker-compose.yml` 文件，包含服务：`web` (FastAPI), `db` (Postgres), `cache` (Redis)。
 * 后端使用 `uvicorn` 启动。
 * DeepSeek API Key 通过环境变量 `DEEPSEEK_API_KEY` 注入。
+
+
+P1 — 近期推进（功能完善） 
+4. 新闻列表 API 增加分页（offset + limit 或 cursor-based） 
+5. Scheduler 启动后立即执行一次 pipeline 
+6. 前端 H5 对接后端 API（目前前端是 uni-app 空壳？需确认前端完成度）
+
+P2 — 后续优化 
+7. CORS 生产环境白名单配置 
+8. SimHash 索引的原子更新（Redis RENAME 替代 delete + rewrite） 
+9. 数据库迁移从 create_all 切换到 Alembic 
+10. 日志接入（腾讯云 CLS 或 ELK） 
+11. 监控告警（pipeline 失败通知）

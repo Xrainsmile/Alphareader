@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.database import async_session
 from app.models.news import News
 from app.redis import get_redis
-from app.services.deepseek_filter import ScoredNewsItem, filter_news
+from app.services.deepseek_filter import FilterResult, ScoredNewsItem, filter_news
 from app.services.rss_fetcher import REDIS_DEDUP_KEY, fetch_all_feeds
 from app.utils.deduplicator import NewsDeduplicator
 
@@ -156,8 +156,10 @@ async def run_pipeline() -> dict:
         return summary
 
     # Step 3: Filter via DeepSeek
+    filter_result: FilterResult | None = None
     try:
-        scored_items = await filter_news(unique_items)
+        filter_result = await filter_news(unique_items)
+        scored_items = filter_result.scored
     except Exception as e:
         logger.error("DeepSeek filter stage failed: %s", e)
         summary["errors"].append(f"filter: {e}")
@@ -184,11 +186,17 @@ async def run_pipeline() -> dict:
 
     # Also mark URLs that passed through the entire pipeline but were filtered
     # by DeepSeek (score < 6). These are legitimately processed and should not
-    # be re-fetched. Collect all URLs from unique_items that reached scoring.
-    # BUT: only do this when the filter stage succeeded — if DeepSeek had errors,
-    # the empty result is due to API failure, not low news quality.
-    filter_had_errors = any("filter" in e for e in summary.get("errors", []))
-    if not filter_had_errors:
+    # be re-fetched.
+    #
+    # SAFETY: Only do this when ALL batches succeeded. If any batch had errors,
+    # we can't tell which URLs failed vs. which were legitimately low-score.
+    # In that case, skip marking — those URLs will be retried next run.
+    filter_fully_succeeded = (
+        filter_result is not None
+        and not filter_result.had_errors
+        and "filter" not in " ".join(summary.get("errors", []))
+    )
+    if filter_fully_succeeded:
         try:
             scored_url_set = {item.raw.url for item in scored_items}
             filtered_out_urls = [
@@ -201,10 +209,15 @@ async def run_pipeline() -> dict:
                 logger.info("Marked %d low-score/filtered URLs as seen", len(filtered_out_urls))
         except Exception as e:
             logger.warning("Failed to mark filtered URLs as seen: %s", e)
-    elif unique_items:
+    elif unique_items and not filter_fully_succeeded:
+        skipped_info = ""
+        if filter_result and filter_result.had_errors:
+            skipped_info = (
+                f" ({filter_result.skipped_batches}/{filter_result.total_batches} batches failed)"
+            )
         logger.warning(
-            "Skipping URL marking for %d items — DeepSeek filter had errors",
-            len(unique_items),
+            "Skipping URL marking for %d items — DeepSeek filter had errors%s",
+            len(unique_items), skipped_info,
         )
 
     # Clean up empty errors list for cleaner output
