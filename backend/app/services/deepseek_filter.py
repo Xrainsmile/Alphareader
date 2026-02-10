@@ -234,6 +234,7 @@ async def filter_batch(
     is_english: bool = False,
     *,
     client: httpx.AsyncClient | None = None,
+    use_mock: bool = False,
 ) -> list[ScoredNewsItem]:
     """Send a single batch (<=20 items) to DeepSeek for scoring with retry.
 
@@ -241,6 +242,9 @@ async def filter_batch(
         client: Optional shared httpx.AsyncClient. If provided, the caller
                 is responsible for its lifecycle. If None, a temporary client
                 is created (backward-compatible but less efficient).
+        use_mock: If True, skip the real API call and return a response from
+                  the local mock data pool instead. Useful for local debugging
+                  and testing without consuming API credits.
 
     Error strategy:
       - 400 + "Content Exists Risk" → skip entire batch (no retry).
@@ -248,6 +252,10 @@ async def filter_batch(
     """
     if not batch:
         return []
+
+    # ── Mock mode: use local data pool instead of real API ──
+    if use_mock:
+        return _filter_batch_mock(batch, is_english)
 
     if not settings.DEEPSEEK_API_KEY or settings.DEEPSEEK_API_KEY.startswith("sk-your"):
         logger.warning("DeepSeek API key not configured, skipping AI scoring")
@@ -351,6 +359,25 @@ async def filter_batch(
             await client.aclose()
 
     return []
+
+
+def _filter_batch_mock(batch: list[RawNewsItem], is_english: bool) -> list[ScoredNewsItem]:
+    """Return scored items from a randomly chosen mock response (no API call).
+
+    Lazy-imports mock_responses to avoid loading test data in production.
+    """
+    import random
+    try:
+        from tests.mock_responses import CN_MOCK_POOL, EN_MOCK_POOL
+    except ImportError:
+        logger.error("Cannot import tests.mock_responses — is the tests package accessible?")
+        return []
+
+    pool = EN_MOCK_POOL if is_english else CN_MOCK_POOL
+    desc, raw_text, _ = random.choice(pool)
+    logger.info("🧪 [MOCK] Using mock response: %s", desc)
+
+    return _parse_response(raw_text, batch, is_english)
 
 
 @dataclass

@@ -8,7 +8,7 @@ WORKDIR /app
 
 # Install system deps for asyncpg
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libpq-dev && \
+    apt-get install -y --no-install-recommends gcc libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python deps
@@ -18,6 +18,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Create non-root user for security
+RUN adduser --disabled-password --gecos '' appuser && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Production: gunicorn with uvicorn workers (no --reload)
+# WEB_CONCURRENCY can be overridden via env (default: 2 workers for 2-core LightHouse)
+CMD ["python", "-m", "gunicorn", "app.main:app", \
+     "-k", "uvicorn.workers.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "2", \
+     "--timeout", "120", \
+     "--graceful-timeout", "30", \
+     "--access-logfile", "-"]

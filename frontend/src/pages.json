@@ -4,20 +4,20 @@
       "path": "pages/index/index",
       "style": {
         "navigationBarTitleText": "AlphaReader",
-        "navigationBarBackgroundColor": "#0f172a",
-        "navigationBarTextStyle": "white",
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationBarTextStyle": "black",
         "enablePullDownRefresh": true,
-        "backgroundTextStyle": "light",
-        "backgroundColor": "#0f172a",
+        "backgroundTextStyle": "dark",
+        "backgroundColor": "#f0f2f5",
         "onReachBottomDistance": 100
       }
     }
   ],
   "globalStyle": {
-    "navigationBarTextStyle": "white",
+    "navigationBarTextStyle": "black",
     "navigationBarTitleText": "AlphaReader",
-    "navigationBarBackgroundColor": "#0f172a",
-    "backgroundColor": "#0f172a",
-    "backgroundTextStyle": "light"
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f0f2f5",
+    "backgroundTextStyle": "dark"
   }
 }

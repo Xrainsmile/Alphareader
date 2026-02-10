@@ -8,6 +8,7 @@ RUN npm run build:h5
 
 # ── Stage 2: Serve ──
 FROM nginx:alpine
+# Copy default Nginx config (may be overridden by volume mount in production)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist/build/h5 /usr/share/nginx/html
-EXPOSE 80
+EXPOSE 80 443

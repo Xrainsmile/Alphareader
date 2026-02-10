@@ -9,8 +9,11 @@ export default {
 <style>
 /* 全局样式 */
 page {
-  background-color: #0f172a;
-  color: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: #f0f2f5;
+  color: #1a1a2e;
+  font-family: 'PingFang SC', 'SF Pro Text', -apple-system, BlinkMacSystemFont,
+    'Helvetica Neue', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 </style>

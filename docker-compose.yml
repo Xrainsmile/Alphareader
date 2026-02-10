@@ -7,8 +7,15 @@ services:
     container_name: alpha-frontend
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      # Mount SSL certs and Nginx prod config (created after certbot setup)
+      - ./deploy/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./deploy/certbot/conf:/etc/letsencrypt:ro
+      - ./deploy/certbot/www:/var/www/certbot:ro
     depends_on:
-      - web
+      web:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── FastAPI Backend ──
@@ -17,42 +24,45 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: alpha-web
-    ports:
-      - "8000:8000"
     env_file:
       - .env
-    volumes:
-      - ./backend:/app
     depends_on:
       db:
         condition: service_healthy
       cache:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
+    # No ports exposed — accessed only via Nginx reverse proxy
 
   # ── PostgreSQL ──
   db:
     image: postgres:16-alpine
     container_name: alpha-db
-    env_file:
-      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    # No ports exposed — accessed only within Docker network
 
   # ── Redis ──
   cache:
     image: redis:7-alpine
     container_name: alpha-cache
-    ports:
-      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redisdata:/data
     healthcheck:
@@ -61,6 +71,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    # No ports exposed — accessed only within Docker network
 
 volumes:
   pgdata:

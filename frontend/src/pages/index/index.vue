@@ -18,7 +18,21 @@
         {{ promptCopied ? '已复制到剪贴板!' : '一键生成今日 Top 10 结构化分析提示词' }}
       </text>
       <view v-if="promptLoading" class="prompt-loading">
-        <text class="loading-text">生成中...</text>
+        <text class="loading-spinner">生成中...</text>
+      </view>
+    </view>
+
+    <!-- 排序模式切换 -->
+    <view class="sort-tabs">
+      <view
+        v-for="tab in sortTabs"
+        :key="tab.value"
+        class="sort-tab"
+        :class="{ 'sort-tab-active': currentSort === tab.value }"
+        @click="onSortChange(tab.value)"
+      >
+        <text class="sort-tab-icon">{{ tab.icon }}</text>
+        <text class="sort-tab-text" :class="{ 'sort-tab-text-active': currentSort === tab.value }">{{ tab.label }}</text>
       </view>
     </view>
 
@@ -39,10 +53,25 @@
           </view>
         </view>
       </view>
+      <!-- 时间窗口筛选（仅 hot 模式） -->
+      <view v-if="currentSort === 'hot'" class="filter-group">
+        <text class="filter-label">时效</text>
+        <view class="filter-chips">
+          <view
+            v-for="opt in ageOptions"
+            :key="opt.value"
+            class="chip"
+            :class="{ 'chip-active': maxAgeHours === opt.value }"
+            @click="onAgeChange(opt.value)"
+          >
+            <text class="chip-text" :class="{ 'chip-text-active': maxAgeHours === opt.value }">{{ opt.label }}</text>
+          </view>
+        </view>
+      </view>
       <!-- 来源筛选 -->
       <view class="filter-group">
         <text class="filter-label">来源</text>
-        <view class="filter-chips">
+        <view class="filter-chips filter-chips-wrap">
           <view
             class="chip"
             :class="{ 'chip-active': !currentSource }"
@@ -51,7 +80,17 @@
             <text class="chip-text" :class="{ 'chip-text-active': !currentSource }">全部</text>
           </view>
           <view
-            v-for="src in sourceOptions"
+            v-for="src in cnSources"
+            :key="src"
+            class="chip"
+            :class="{ 'chip-active': currentSource === src }"
+            @click="onSourceChange(src)"
+          >
+            <text class="chip-text" :class="{ 'chip-text-active': currentSource === src }">{{ src }}</text>
+          </view>
+          <view class="chip-divider"></view>
+          <view
+            v-for="src in enSources"
             :key="src"
             class="chip"
             :class="{ 'chip-active': currentSource === src }"
@@ -66,7 +105,7 @@
     <!-- 统计信息 -->
     <view class="stats-bar">
       <text class="stats-text">共 {{ total }} 条 · 已加载 {{ newsList.length }} 条</text>
-      <text class="stats-text">评分 ≥ {{ minScore }}</text>
+      <text class="stats-text">{{ sortLabel }} · 评分≥{{ minScore }}</text>
     </view>
 
     <!-- 新闻列表 -->
@@ -79,34 +118,43 @@
         <text class="empty-text">暂无符合条件的新闻</text>
       </view>
 
-      <view
-        v-for="item in newsList"
-        :key="item.id"
-        class="news-card"
-        @click="onOpenUrl(item.url)"
-      >
-        <!-- Score Badge -->
-        <view class="score-badge" :class="scoreClass(item.ai_score)">
-          <text class="score-num">{{ item.ai_score }}</text>
-        </view>
+      <view v-else class="card-wrapper">
+        <view
+          v-for="(item, idx) in newsList"
+          :key="item.id"
+          class="news-card"
+          :class="{ 'news-card-last': idx === newsList.length - 1 }"
+          @click="onOpenUrl(item.url)"
+        >
+          <!-- Score Badge -->
+          <view class="score-badge" :class="scoreClass(item.ai_score)">
+            <text class="score-num">{{ formatScore(item.ai_score) }}</text>
+          </view>
 
-        <view class="news-body">
-          <text class="news-title">{{ item.title }}</text>
-          <text class="news-summary">{{ item.ai_summary }}</text>
+          <view class="news-body">
+            <text class="news-title">{{ item.title }}</text>
+            <text class="news-summary">{{ item.ai_summary }}</text>
 
-          <view class="news-meta">
-            <text class="meta-source">{{ item.source }}</text>
-            <view class="tags-row">
-              <text v-for="tag in (item.tags || []).slice(0, 3)" :key="tag" class="tag">{{ tag }}</text>
+            <view class="news-meta">
+              <text class="meta-source">{{ item.source }}</text>
+              <text class="meta-dot">·</text>
+              <text class="meta-time">{{ formatTime(item.published_at) }}</text>
+              <!-- 热度指标 (hot 模式下显示) -->
+              <template v-if="currentSort === 'hot' && item.ranking_score != null">
+                <text class="meta-dot">·</text>
+                <view class="heat-badge" :class="heatClass(item.ranking_score)">
+                  <text class="heat-icon">🔥</text>
+                  <text class="heat-value">{{ formatHeat(item.ranking_score) }}</text>
+                </view>
+              </template>
             </view>
-            <text class="meta-time">{{ formatTime(item.published_at) }}</text>
           </view>
         </view>
       </view>
 
       <!-- 加载更多状态 -->
       <view v-if="newsList.length > 0" class="load-more">
-        <text v-if="loadingMore" class="load-more-text">加载更多...</text>
+        <text v-if="loadingMore" class="load-more-text">正在加载更多... ⏳</text>
         <text v-else-if="noMore" class="load-more-text">— 没有更多了 —</text>
       </view>
     </view>
@@ -132,11 +180,37 @@ export default {
       noMore: false,
       minScore: 6,
       currentSource: '',
+      currentSort: 'hot',
+      maxAgeHours: 72,
       promptLoading: false,
       promptCopied: false,
       scoreOptions: [6, 7, 8, 9],
-      sourceOptions: ['财联社', '格隆汇', '36Kr', '东方财富'],
+      sourceOptions: [
+        '财联社', '华尔街见闻', '第一财经', '新浪财经', '同花顺',
+        '东方财富公告', '东方财富快讯',
+        'MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch',
+      ],
+      cnSources: ['财联社', '华尔街见闻', '第一财经', '新浪财经', '同花顺', '东方财富公告', '东方财富快讯'],
+      enSources: ['MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch'],
+      sortTabs: [
+        { value: 'hot', label: '热度', icon: '🔥' },
+        { value: 'latest', label: '最新', icon: '🕐' },
+        { value: 'score', label: '评分', icon: '⭐' },
+      ],
+      ageOptions: [
+        { value: 24, label: '24h' },
+        { value: 48, label: '48h' },
+        { value: 72, label: '3天' },
+        { value: 168, label: '7天' },
+      ],
     }
+  },
+
+  computed: {
+    sortLabel() {
+      const tab = this.sortTabs.find(t => t.value === this.currentSort)
+      return tab ? `${tab.icon}${tab.label}` : ''
+    },
   },
 
   onShow() {
@@ -166,6 +240,8 @@ export default {
           offset: 0,
           min_score: this.minScore,
           source: this.currentSource || undefined,
+          sort: this.currentSort,
+          max_age_hours: this.maxAgeHours,
         })
         this.newsList = data.items || []
         this.total = data.total || 0
@@ -189,6 +265,8 @@ export default {
           offset: this.offset,
           min_score: this.minScore,
           source: this.currentSource || undefined,
+          sort: this.currentSort,
+          max_age_hours: this.maxAgeHours,
         })
         const items = data.items || []
         this.newsList = this.newsList.concat(items)
@@ -214,6 +292,20 @@ export default {
     onSourceChange(source) {
       if (this.currentSource === source) return
       this.currentSource = source
+      this.resetAndLoad()
+    },
+
+    /** 切换排序模式 */
+    onSortChange(sort) {
+      if (this.currentSort === sort) return
+      this.currentSort = sort
+      this.resetAndLoad()
+    },
+
+    /** 切换时间窗口 */
+    onAgeChange(hours) {
+      if (this.maxAgeHours === hours) return
+      this.maxAgeHours = hours
       this.resetAndLoad()
     },
 
@@ -254,19 +346,49 @@ export default {
     },
 
     scoreClass(score) {
-      if (score >= 9) return 'score-hot'
-      if (score >= 7) return 'score-warm'
-      return 'score-cool'
+      if (score >= 9) return 'score-high'
+      if (score >= 8) return 'score-medium'
+      if (score >= 7) return 'score-normal'
+      return 'score-low'
+    },
+
+    formatScore(score) {
+      if (score == null) return '-'
+      const n = Number(score)
+      return Number.isInteger(n) ? n.toFixed(1) : n.toString()
     },
 
     formatTime(iso) {
       if (!iso) return ''
+      const now = new Date()
       const d = new Date(iso)
+      const diffMs = now - d
+      const diffMin = Math.floor(diffMs / 60000)
+      if (diffMin < 1) return '刚刚'
+      if (diffMin < 60) return `${diffMin}分钟前`
+      const diffHour = Math.floor(diffMin / 60)
+      if (diffHour < 24) return `${diffHour}小时前`
+      const diffDay = Math.floor(diffHour / 24)
+      if (diffDay < 7) return `${diffDay}天前`
       const mm = String(d.getMonth() + 1).padStart(2, '0')
       const dd = String(d.getDate()).padStart(2, '0')
-      const hh = String(d.getHours()).padStart(2, '0')
-      const mi = String(d.getMinutes()).padStart(2, '0')
-      return `${mm}-${dd} ${hh}:${mi}`
+      return `${mm}-${dd}`
+    },
+
+    /** 热度值格式化 */
+    formatHeat(score) {
+      if (score == null) return ''
+      if (score >= 1) return score.toFixed(1)
+      if (score >= 0.01) return score.toFixed(2)
+      return score.toFixed(3)
+    },
+
+    /** 热度等级 class */
+    heatClass(score) {
+      if (score >= 1.0) return 'heat-high'
+      if (score >= 0.3) return 'heat-medium'
+      if (score >= 0.05) return 'heat-normal'
+      return 'heat-low'
     },
   },
 }
@@ -275,13 +397,13 @@ export default {
 <style scoped>
 .container {
   min-height: 100vh;
-  background: #0f172a;
+  background: #f0f2f5;
   padding: 0 24rpx;
 }
 
 /* ── Header ── */
 .header {
-  padding: 24rpx 0 16rpx;
+  padding: 28rpx 0 20rpx;
 }
 .header-top {
   display: flex;
@@ -289,24 +411,63 @@ export default {
   justify-content: space-between;
 }
 .logo {
-  font-size: 44rpx;
-  font-weight: 700;
-  color: #f8fafc;
-  letter-spacing: 2rpx;
+  font-size: 46rpx;
+  font-weight: 800;
+  color: #1a1a2e;
+  letter-spacing: 1rpx;
+  font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
 }
 .subtitle {
   font-size: 24rpx;
-  color: #64748b;
-  margin-top: 4rpx;
+  color: #8c8c9a;
+  margin-top: 6rpx;
+  letter-spacing: 1rpx;
+}
+
+/* ── Sort Tabs ── */
+.sort-tabs {
+  display: flex;
+  gap: 16rpx;
+  margin: 12rpx 0 8rpx;
+}
+.sort-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  padding: 18rpx 0;
+  background: #ffffff;
+  border-radius: 16rpx;
+  border: 2rpx solid transparent;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  transition: all 0.2s;
+}
+.sort-tab-active {
+  background: #e8f0fe;
+  border-color: #4285f4;
+  box-shadow: 0 2rpx 12rpx rgba(66, 133, 244, 0.15);
+}
+.sort-tab-icon {
+  font-size: 28rpx;
+}
+.sort-tab-text {
+  font-size: 26rpx;
+  color: #6b6b7b;
+  font-weight: 500;
+}
+.sort-tab-text-active {
+  color: #4285f4;
+  font-weight: 700;
 }
 
 /* ── Filter Bar ── */
 .filter-bar {
-  margin: 16rpx 0 8rpx;
+  margin: 12rpx 0 8rpx;
   padding: 20rpx 24rpx;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1rpx solid rgba(51, 65, 85, 0.4);
+  background: #ffffff;
   border-radius: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
 }
 .filter-group {
   display: flex;
@@ -318,9 +479,10 @@ export default {
 }
 .filter-label {
   font-size: 24rpx;
-  color: #64748b;
+  color: #8c8c9a;
   width: 72rpx;
   flex-shrink: 0;
+  font-weight: 500;
 }
 .filter-chips {
   display: flex;
@@ -328,54 +490,62 @@ export default {
   gap: 12rpx;
 }
 .chip {
-  padding: 8rpx 24rpx;
+  padding: 8rpx 26rpx;
   border-radius: 28rpx;
-  background: rgba(51, 65, 85, 0.4);
-  border: 1rpx solid rgba(71, 85, 105, 0.4);
+  background: #f5f5f7;
+  border: 1rpx solid #ececee;
   transition: all 0.2s;
 }
 .chip-active {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.5);
+  background: #e8f0fe;
+  border-color: #4285f4;
 }
 .chip-text {
   font-size: 22rpx;
-  color: #94a3b8;
+  color: #6b6b7b;
 }
 .chip-text-active {
-  color: #60a5fa;
+  color: #4285f4;
   font-weight: 600;
+}
+.chip-divider {
+  width: 100%;
+  height: 0;
 }
 
 /* ── Prompt Card ── */
 .prompt-card {
-  margin: 20rpx 0;
-  padding: 32rpx;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15));
-  border: 1rpx solid rgba(139, 92, 246, 0.3);
-  border-radius: 24rpx;
+  margin: 16rpx 0;
+  padding: 28rpx 32rpx;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-radius: 20rpx;
+  box-shadow: 0 8rpx 24rpx rgba(102, 126, 234, 0.25);
 }
 .prompt-header {
   display: flex;
   align-items: center;
-  margin-bottom: 12rpx;
+  margin-bottom: 10rpx;
 }
 .prompt-icon {
-  font-size: 36rpx;
+  font-size: 34rpx;
   margin-right: 12rpx;
 }
 .prompt-title {
-  font-size: 32rpx;
+  font-size: 30rpx;
   font-weight: 600;
-  color: #e2e8f0;
+  color: #ffffff;
 }
 .prompt-desc {
-  font-size: 26rpx;
-  color: #94a3b8;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.8);
   line-height: 1.5;
 }
 .prompt-loading {
-  margin-top: 12rpx;
+  margin-top: 10rpx;
+}
+.loading-spinner {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 /* ── Stats ── */
@@ -386,7 +556,7 @@ export default {
 }
 .stats-text {
   font-size: 22rpx;
-  color: #475569;
+  color: #8c8c9a;
 }
 
 /* ── News List ── */
@@ -401,50 +571,74 @@ export default {
   padding: 120rpx 0;
 }
 .loading-text {
-  color: #64748b;
+  color: #8c8c9a;
   font-size: 28rpx;
 }
 .empty-text {
-  color: #475569;
+  color: #b0b0be;
   font-size: 28rpx;
+}
+
+/* ── Card Wrapper ── */
+.card-wrapper {
+  background: #ffffff;
+  border-radius: 20rpx;
+  box-shadow: 0 2rpx 16rpx rgba(0, 0, 0, 0.05);
+  overflow: hidden;
 }
 
 /* ── News Card ── */
 .news-card {
   display: flex;
-  margin-bottom: 20rpx;
-  padding: 28rpx;
-  background: rgba(30, 41, 59, 0.7);
-  border: 1rpx solid rgba(51, 65, 85, 0.5);
-  border-radius: 20rpx;
+  padding: 32rpx 28rpx;
+  border-bottom: 1rpx solid #f0f0f2;
+  position: relative;
+  transition: background-color 0.15s;
+}
+.news-card:active {
+  background-color: #fafafa;
+}
+.news-card-last {
+  border-bottom: none;
 }
 
+/* ── Score Badge ── */
 .score-badge {
   flex-shrink: 0;
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 16rpx;
+  width: 80rpx;
+  height: 52rpx;
+  border-radius: 12rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-right: 24rpx;
-  margin-top: 4rpx;
+  margin-top: 6rpx;
 }
 .score-num {
-  font-size: 32rpx;
+  font-size: 28rpx;
   font-weight: 700;
-  color: #fff;
-}
-.score-hot {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-}
-.score-warm {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-}
-.score-cool {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
 }
 
+/* 评分 ≥ 9: 绿色 */
+.score-high {
+  background: linear-gradient(135deg, #34c759, #28a745);
+}
+/* 评分 ≥ 8: 橙色 */
+.score-medium {
+  background: linear-gradient(135deg, #ff9500, #e8870e);
+}
+/* 评分 ≥ 7: 黄橙 */
+.score-normal {
+  background: linear-gradient(135deg, #f0b429, #d4981e);
+}
+/* 评分 < 7: 淡绿 */
+.score-low {
+  background: linear-gradient(135deg, #5ac778, #48b066);
+}
+
+/* ── News Body ── */
 .news-body {
   flex: 1;
   min-width: 0;
@@ -452,62 +646,96 @@ export default {
 .news-title {
   font-size: 30rpx;
   font-weight: 600;
-  color: #f1f5f9;
-  line-height: 1.4;
+  color: #1a1a2e;
+  line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  font-family: 'PingFang SC', 'SF Pro Text', -apple-system, sans-serif;
 }
 .news-summary {
-  font-size: 24rpx;
-  color: #94a3b8;
-  line-height: 1.5;
-  margin-top: 8rpx;
+  font-size: 25rpx;
+  color: #5a5a6e;
+  line-height: 1.55;
+  margin-top: 10rpx;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
+/* ── Meta ── */
 .news-meta {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  margin-top: 12rpx;
-  gap: 12rpx;
+  margin-top: 14rpx;
+  gap: 8rpx;
 }
 .meta-source {
   font-size: 22rpx;
-  color: #3b82f6;
+  color: #8c8c9a;
   font-weight: 500;
 }
-.tags-row {
-  display: flex;
-  gap: 8rpx;
-}
-.tag {
-  font-size: 20rpx;
-  color: #a78bfa;
-  background: rgba(139, 92, 246, 0.15);
-  padding: 4rpx 16rpx;
-  border-radius: 20rpx;
+.meta-dot {
+  font-size: 22rpx;
+  color: #c0c0cc;
 }
 .meta-time {
+  font-size: 22rpx;
+  color: #b0b0be;
+}
+
+/* ── Heat Badge ── */
+.heat-badge {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 2rpx 12rpx;
+  border-radius: 16rpx;
+}
+.heat-icon {
   font-size: 20rpx;
-  color: #475569;
-  margin-left: auto;
+}
+.heat-value {
+  font-size: 20rpx;
+  font-weight: 600;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+}
+.heat-high {
+  background: rgba(255, 59, 48, 0.12);
+}
+.heat-high .heat-value {
+  color: #ff3b30;
+}
+.heat-medium {
+  background: rgba(255, 149, 0, 0.12);
+}
+.heat-medium .heat-value {
+  color: #ff9500;
+}
+.heat-normal {
+  background: rgba(52, 199, 89, 0.12);
+}
+.heat-normal .heat-value {
+  color: #34c759;
+}
+.heat-low {
+  background: rgba(142, 142, 147, 0.12);
+}
+.heat-low .heat-value {
+  color: #8e8e93;
 }
 
 /* ── Load More ── */
 .load-more {
   display: flex;
   justify-content: center;
-  padding: 32rpx 0;
+  padding: 36rpx 0;
 }
 .load-more-text {
   font-size: 24rpx;
-  color: #475569;
+  color: #8c8c9a;
 }
 
 /* ── Safe Area ── */

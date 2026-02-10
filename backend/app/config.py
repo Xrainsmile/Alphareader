@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=("../.env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DEBUG: bool = True
     TIMEZONE: str = "Asia/Shanghai"
+
+    # Logging
+    LOG_LEVEL: str = "INFO"          # DEBUG / INFO / WARNING / ERROR / CRITICAL
+    LOG_FORMAT: str = "text"         # "text" for human-readable, "json" for structured
 
     # CORS
     CORS_ORIGINS: str = "*"  # comma-separated, e.g. "https://example.com,http://localhost:3000"
@@ -27,8 +31,9 @@ class Settings(BaseSettings):
     DEEPSEEK_SCORE_THRESHOLD: int = 6
     DEEPSEEK_MAX_RETRIES: int = 2
 
-    # Scheduler
-    PIPELINE_INTERVAL_HOURS: int = 2
+    # Scheduler — Pipeline runs hourly from START to END (Asia/Shanghai)
+    PIPELINE_START_HOUR: int = 7   # 早上7点开始
+    PIPELINE_END_HOUR: int = 23    # 晚上23点最后一次 (即 7,8,...,23 共17次/天)
 
     # PostgreSQL
     POSTGRES_USER: str = "alphareader"

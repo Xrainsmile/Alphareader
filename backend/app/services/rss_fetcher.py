@@ -1,8 +1,8 @@
 """News Fetcher Service — async fetch from Chinese + International financial sources.
 
-Supports 12 data sources:
+Supports 11 data sources:
   Chinese:  财联社 / 新浪财经 / 华尔街见闻 / 同花顺 / 东方财富(公告) / 东方财富(快讯) / 第一财经
-  Global:   Reuters / CNBC / Seeking Alpha / TechCrunch / X(@DeItaone)
+  Global:   MarketWatch / CNBC / Seeking Alpha / TechCrunch
 
 Flow:
   1. Iterate configured sources concurrently via httpx.
@@ -281,8 +281,8 @@ def _parse_rss_time(entry: dict) -> datetime | None:
     return None
 
 
-def _parse_reuters(raw_text: str) -> list[RawNewsItem]:
-    """Parse Reuters Business & Finance RSS feed."""
+def _parse_marketwatch(raw_text: str) -> list[RawNewsItem]:
+    """Parse MarketWatch Top Stories RSS feed."""
     feed = feedparser.parse(raw_text)
     items: list[RawNewsItem] = []
     for entry in feed.entries:
@@ -290,11 +290,10 @@ def _parse_reuters(raw_text: str) -> list[RawNewsItem]:
         url = entry.get("link", "")
         content = _strip_html(entry.get("summary", "") or entry.get("description", ""))
         published = _parse_rss_time(entry)
-        tags = [t.get("term", "") for t in entry.get("tags", []) if t.get("term")]
         if title and url:
             items.append(RawNewsItem(
                 title=title, content=content or title,
-                url=url, source="Reuters", published_at=published, tags=tags[:3],
+                url=url, source="MarketWatch", published_at=published,
             ))
     return items
 
@@ -352,25 +351,6 @@ def _parse_techcrunch(raw_text: str) -> list[RawNewsItem]:
     return items
 
 
-def _parse_x_deltaone(raw_text: str) -> list[RawNewsItem]:
-    """Parse X/@DeItaone (Walter Bloomberg) via RSSHub feed."""
-    feed = feedparser.parse(raw_text)
-    items: list[RawNewsItem] = []
-    for entry in feed.entries:
-        raw_title = entry.get("title", "").strip()
-        content = _strip_html(entry.get("summary", "") or entry.get("description", ""))
-        url = entry.get("link", "")
-        published = _parse_rss_time(entry)
-
-        title = raw_title or (content[:80] + "..." if len(content) > 80 else content)
-        if title and url:
-            items.append(RawNewsItem(
-                title=title, content=content or title,
-                url=url, source="X/Walter Bloomberg", published_at=published,
-                tags=["WalterBloomberg"],
-            ))
-    return items
-
 
 # ════════════════════════════════════════════════════════
 # Feed Source Registry
@@ -423,9 +403,9 @@ FEED_SOURCES: list[FeedSource] = [
     ),
     # ── International Sources (RSS/Atom XML) ──
     FeedSource(
-        name="Reuters",
-        url="https://cdn.feedcontrol.net/8/1114-wioSIX3uu8MEj.xml",
-        parser=_parse_reuters,
+        name="MarketWatch",
+        url="https://feeds.marketwatch.com/marketwatch/topstories/",
+        parser=_parse_marketwatch,
         is_rss=True,
     ),
     FeedSource(
@@ -451,20 +431,6 @@ FEED_SOURCES: list[FeedSource] = [
         url="https://techcrunch.com/feed/",
         parser=_parse_techcrunch,
         is_rss=True,
-    ),
-    FeedSource(
-        name="X/Walter Bloomberg",
-        url="https://rsshub.app/twitter/user/DeItaone",
-        parser=_parse_x_deltaone,
-        is_rss=True,
-        fallback_urls=[
-            # RSSHub mirror instances (Twitter route)
-            "https://rsshub.rssforever.com/twitter/user/DeItaone",
-            "https://rsshub.pseudoyu.com/twitter/user/DeItaone",
-            # Telegram mirror — same content, different platform
-            "https://rsshub.app/telegram/channel/walterbloomberg",
-            "https://rsshub.rssforever.com/telegram/channel/walterbloomberg",
-        ],
     ),
 ]
 

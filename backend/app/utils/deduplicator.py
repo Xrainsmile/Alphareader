@@ -33,14 +33,14 @@ SOURCE_PRIORITY = {
     "华尔街见闻": 2,
     "第一财经": 3,
     "Reuters": 4,
+    "MarketWatch": 4,
     "CNBC": 5,
     "Seeking Alpha": 6,
-    "X/Walter Bloomberg": 7,
-    "TechCrunch": 8,
-    "新浪财经": 9,
-    "同花顺": 10,
-    "东方财富": 11,
-    "东方财富快讯": 12,
+    "TechCrunch": 7,
+    "新浪财经": 8,
+    "同花顺": 9,
+    "东方财富": 10,
+    "东方财富快讯": 11,
 }
 
 # 标题清洗：去掉标点、括号标记

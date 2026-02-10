@@ -30,13 +30,25 @@ function request(url, options = {}) {
 }
 
 /**
- * 获取新闻列表（分页）
- * 返回 { items, total, limit, offset }
+ * 获取新闻列表（分页 + 热度排序）
+ * 返回 { items, total, limit, offset, sort, gravity, max_age_hours }
+ *
+ * @param {Object} opts
+ * @param {number}  opts.limit        - 每页条数 (默认 20)
+ * @param {number}  opts.offset       - 偏移量
+ * @param {number}  opts.min_score    - 最低 AI 评分 (默认 6)
+ * @param {string}  opts.source       - 来源筛选
+ * @param {string}  opts.sector       - 板块筛选
+ * @param {string}  opts.sort         - 排序模式: hot(热度衰减) | latest(最新) | score(评分)
+ * @param {number}  opts.gravity      - 重力因子 (默认 1.8, 仅 hot 模式)
+ * @param {number}  opts.max_age_hours - 最大新闻年龄/小时 (默认 72)
  */
-export function fetchNews({ limit = 20, offset = 0, min_score = 6, source, sector } = {}) {
-  const params = { limit, offset, min_score }
+export function fetchNews({ limit = 20, offset = 0, min_score = 6, source, sector, sort = 'hot', gravity, max_age_hours } = {}) {
+  const params = { limit, offset, min_score, sort }
   if (source) params.source = source
   if (sector) params.sector = sector
+  if (gravity != null) params.gravity = gravity
+  if (max_age_hours != null) params.max_age_hours = max_age_hours
   return request('/news/', { data: params })
 }
 
