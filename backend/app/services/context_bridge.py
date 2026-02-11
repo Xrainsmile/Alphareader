@@ -20,7 +20,7 @@ from app.models.news import News
 
 logger = logging.getLogger("alphareader.bridge")
 
-TOP_N = 10
+TOP_N = 60
 
 # Fixed timezone for China (UTC+8), used for date boundary calculations.
 # This avoids importing pytz/zoneinfo just for a fixed offset.
