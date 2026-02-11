@@ -95,4 +95,8 @@ volumes:
   pgdata:
   redisdata:
   certbot_conf:
+    external: true
+    name: alphareader_certbot_conf
   certbot_www:
+    external: true
+    name: alphareader_certbot_www
