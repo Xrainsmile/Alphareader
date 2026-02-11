@@ -1,64 +1,85 @@
-"""Centralized configuration via pydantic-settings."""
+"""集中式配置管理 — 基于 pydantic-settings 从环境变量/.env 文件加载配置。
+
+配置项分组：
+  - 应用基础：APP_ENV / DEBUG / TIMEZONE
+  - 日志：LOG_LEVEL / LOG_FORMAT
+  - 跨域：CORS_ORIGINS
+  - DeepSeek AI：API 密钥/地址/模型/批次大小/分数阈值/重试次数
+  - 调度器：Pipeline 运行时间范围
+  - 告警：Webhook URL（支持飞书/钉钉/企微/Slack）
+  - PostgreSQL：连接参数 + 连接池配置
+  - Redis：连接参数 + 最大连接数
+
+计算属性：
+  - DATABASE_URL：根据 PG 各字段动态拼接 asyncpg DSN
+  - REDIS_URL：根据 Redis 各字段动态拼接 DSN
+"""
 
 from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """应用全局配置类。
+
+    优先级：环境变量 > .env 文件 > 代码默认值。
+    .env 文件搜索路径：先找上级目录的 ../.env，再找当前目录的 .env。
+    extra="ignore" 表示忽略 .env 中未定义的多余字段。
+    """
     model_config = SettingsConfigDict(
         env_file=("../.env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    # App
-    APP_ENV: str = "development"
-    DEBUG: bool = True
-    TIMEZONE: str = "Asia/Shanghai"
+    # ── 应用基础 ──
+    APP_ENV: str = "development"       # 运行环境：development / production
+    DEBUG: bool = True                  # 调试模式开关
+    TIMEZONE: str = "Asia/Shanghai"     # 调度器和日志使用的时区
 
-    # Logging
-    LOG_LEVEL: str = "INFO"          # DEBUG / INFO / WARNING / ERROR / CRITICAL
-    LOG_FORMAT: str = "text"         # "text" for human-readable, "json" for structured
+    # ── 日志 ──
+    LOG_LEVEL: str = "INFO"          # 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL
+    LOG_FORMAT: str = "text"         # 日志格式："text" 人类可读 / "json" 结构化
 
-    # CORS
-    CORS_ORIGINS: str = "*"  # comma-separated, e.g. "https://example.com,http://localhost:3000"
+    # ── 跨域（CORS）──
+    CORS_ORIGINS: str = "*"  # 逗号分隔的允许源，如 "https://example.com,http://localhost:3000"
 
-    # DeepSeek
-    DEEPSEEK_API_KEY: str = ""
-    DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"
-    DEEPSEEK_MODEL: str = "deepseek-chat"
-    DEEPSEEK_BATCH_SIZE: int = 20
-    DEEPSEEK_SCORE_THRESHOLD: int = 6
-    DEEPSEEK_MAX_RETRIES: int = 2
+    # ── DeepSeek AI 评分配置 ──
+    DEEPSEEK_API_KEY: str = ""                                      # API 密钥
+    DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # API 地址
+    DEEPSEEK_MODEL: str = "deepseek-chat"                           # 模型名称
+    DEEPSEEK_BATCH_SIZE: int = 20                                   # 每批评分条数
+    DEEPSEEK_SCORE_THRESHOLD: int = 6                               # 入库分数阈值（≥6 才存储）
+    DEEPSEEK_MAX_RETRIES: int = 2                                   # API 失败最大重试次数
 
-    # Scheduler — Pipeline runs hourly from START to END (Asia/Shanghai)
-    PIPELINE_START_HOUR: int = 0   # 全天运行（英文信源覆盖不同时区）
-    PIPELINE_END_HOUR: int = 23    # 0-23 共24次/天
+    # ── 调度器 — Pipeline 每小时执行一次 ──
+    PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）
+    PIPELINE_END_HOUR: int = 23    # 结束小时（0-23 共24次/天）
 
-    # Alert — Webhook URL for pipeline failure notifications
-    # Supports: 飞书/钉钉/企业微信/Slack/Generic (auto-detected from URL)
-    # Leave empty to disable alerting
+    # ── 告警 — Pipeline 失败时的 Webhook 通知 ──
+    # 支持：飞书/钉钉/企业微信/Slack/通用（根据 URL 自动识别平台）
+    # 留空则禁用告警
     ALERT_WEBHOOK_URL: str = ""
 
-    # PostgreSQL
-    POSTGRES_USER: str = "alphareader"
-    POSTGRES_PASSWORD: str = "changeme"
-    POSTGRES_DB: str = "alphareader"
-    POSTGRES_HOST: str = "db"
-    POSTGRES_PORT: int = 5432
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 10
+    # ── PostgreSQL 数据库 ──
+    POSTGRES_USER: str = "alphareader"     # 数据库用户名
+    POSTGRES_PASSWORD: str = "changeme"    # 数据库密码
+    POSTGRES_DB: str = "alphareader"       # 数据库名
+    POSTGRES_HOST: str = "db"              # 主机（Docker 容器名）
+    POSTGRES_PORT: int = 5432              # 端口
+    DB_POOL_SIZE: int = 5                  # SQLAlchemy 连接池大小
+    DB_MAX_OVERFLOW: int = 10              # 连接池最大溢出数
 
-    # Redis
-    REDIS_HOST: str = "cache"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-    REDIS_MAX_CONNECTIONS: int = 20
+    # ── Redis 缓存 ──
+    REDIS_HOST: str = "cache"              # 主机（Docker 容器名）
+    REDIS_PORT: int = 6379                 # 端口
+    REDIS_DB: int = 0                      # 数据库编号
+    REDIS_MAX_CONNECTIONS: int = 20        # 最大连接数
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def DATABASE_URL(self) -> str:
-        """Dynamically build the async PostgreSQL DSN from individual fields."""
+        """根据各 PG 字段动态拼接异步 PostgreSQL 连接字符串（asyncpg 驱动）。"""
         return (
             f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
@@ -67,13 +88,14 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def REDIS_URL(self) -> str:
-        """Dynamically build the Redis DSN from individual fields."""
+        """根据各 Redis 字段动态拼接 Redis 连接字符串。"""
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
     @property
     def cors_origin_list(self) -> list[str]:
-        """Parse CORS_ORIGINS into a list."""
+        """将逗号分隔的 CORS_ORIGINS 字符串解析为列表。"""
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
 
+# 全局单例，其他模块通过 `from app.config import settings` 引用
 settings = Settings()

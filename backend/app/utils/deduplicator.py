@@ -1,10 +1,19 @@
-"""NewsDeduplicator — Three-layer dedup before LLM scoring.
+"""新闻去重引擎 — 在 LLM 评分之前执行三层去重，零 API 成本、毫秒级延迟。
 
-Layer 1: SimHash fingerprint + Hamming distance (≤5 = duplicate)
-Layer 2: SequenceMatcher title similarity (>0.5 = duplicate)
-Layer 3: TF-IDF cosine similarity on title+content (>0.65 = duplicate)
+三层去重策略：
+  第一层：SimHash 指纹 + 汉明距离（≤5 视为重复）
+         —— 利用 64-bit 局部敏感哈希，对标题×3+正文前200字做指纹，
+            位运算比较，O(n) 扫描现有索引。
+  第二层：SequenceMatcher 标题相似度（>0.5 视为重复）
+         —— 对汉明距离 6~12 的"可疑近似"条目，进一步做字符级对比，
+            同时包含子串包含检测。
+  第三层：TF-IDF 余弦相似度（>0.65 视为重复）
+         —— 对通过前两层的幸存条目做批量 TF-IDF 向量化（jieba 分词），
+            计算余弦相似度矩阵，贪心去重保留高优先级源。
 
-Uses Redis for persistent 24h SimHash index. Zero API cost, millisecond latency.
+存储方案：
+  - Redis Hash 持久化 24 小时 SimHash 索引
+  - 写入采用"先写临时 key → 原子 RENAME"策略，避免并发读取时索引为空
 """
 
 from __future__ import annotations
@@ -24,12 +33,12 @@ from app.redis import get_redis
 
 logger = logging.getLogger("alphareader.dedup")
 
-# ── Config ──
-SIMHASH_HAMMING_THRESHOLD = 5       # Hamming distance ≤ 5 → duplicate (relaxed from 3)
-SEQMATCH_RATIO_THRESHOLD = 0.5      # SequenceMatcher ratio > 0.5 → duplicate (relaxed from 0.6)
-TFIDF_COSINE_THRESHOLD = 0.65       # TF-IDF cosine similarity > 0.65 → duplicate
-INDEX_TTL_SECONDS = 24 * 3600       # 24-hour sliding window
-REDIS_SIMHASH_KEY = "alphareader:simhash_index"
+# ── 去重阈值配置 ──
+SIMHASH_HAMMING_THRESHOLD = 5       # 第一层：汉明距离 ≤ 5 判定为重复（从3放宽到5）
+SEQMATCH_RATIO_THRESHOLD = 0.5      # 第二层：SequenceMatcher 比值 > 0.5 判定为重复（从0.6放宽到0.5）
+TFIDF_COSINE_THRESHOLD = 0.65       # 第三层：TF-IDF 余弦相似度 > 0.65 判定为重复
+INDEX_TTL_SECONDS = 24 * 3600       # 索引滑动窗口：24 小时
+REDIS_SIMHASH_KEY = "alphareader:simhash_index"  # Redis Hash 键名
 
 # 源优先级：数值越小越优先保留
 SOURCE_PRIORITY = {
@@ -47,7 +56,7 @@ SOURCE_PRIORITY = {
     "东方财富快讯": 11,
 }
 
-# 标题清洗：去掉标点、括号标记
+# 标题清洗正则：去掉【】[]括号标记及其内容、去掉中英文标点和空白
 _BRACKET_RE = re.compile(r"[【\[][^\]】]*[】\]]")
 _PUNCT_RE = re.compile(
     r"[，。！？、；：\u201c\u201d\u2018\u2019（）\s.,!?;:\"'()\-\u3000]"
@@ -56,25 +65,29 @@ _PUNCT_RE = re.compile(
 
 @dataclass
 class _IndexEntry:
-    """One entry in the SimHash index."""
-    simhash_value: int
-    title: str
-    source: str
-    timestamp: float
+    """SimHash 索引中的单条记录。
+
+    存储在 Redis Hash 中，key=title, value="simhash_int|source|timestamp"。
+    """
+    simhash_value: int   # 64-bit SimHash 指纹值
+    title: str           # 新闻标题（同时作为 Redis Hash 的 field）
+    source: str          # 来源名称（如"财联社"、"Reuters"）
+    timestamp: float     # 入库时间戳（用于 24 小时过期淘汰）
 
 
 class NewsDeduplicator:
-    """Three-layer news deduplicator with Redis-backed 24h SimHash index.
+    """三层新闻去重器，使用 Redis 持久化 24 小时 SimHash 索引。
 
-    Layer 1: SimHash Hamming distance (fast, bitwise)
-    Layer 2: SequenceMatcher title ratio (medium, char-level)
-    Layer 3: TF-IDF cosine similarity (semantic, term-level)
+    三层检测（由快到慢）：
+      第一层：SimHash 汉明距离（位运算，最快）
+      第二层：SequenceMatcher 标题相似度（字符级）
+      第三层：TF-IDF 余弦相似度（词项级语义）
 
-    Usage:
+    使用方式：
         dedup = NewsDeduplicator()
-        await dedup.load_index()          # Load existing index from Redis
-        unique = await dedup.deduplicate(items)  # Filter duplicates
-        await dedup.save_index()          # Persist updated index to Redis
+        await dedup.load_index()                # 从 Redis 加载现有索引
+        unique = await dedup.deduplicate(items)  # 过滤重复，返回唯一条目
+        await dedup.save_index()                # 将更新后的索引持久化回 Redis
     """
 
     def __init__(self) -> None:
@@ -85,7 +98,7 @@ class NewsDeduplicator:
     # ────────────────────────────────────────────
 
     async def load_index(self) -> None:
-        """Load SimHash index from Redis. Prune entries older than 24h."""
+        """从 Redis 加载 SimHash 索引，并淘汰超过 24 小时的过期条目。"""
         r = get_redis()
         raw_entries = await r.hgetall(REDIS_SIMHASH_KEY)
         cutoff = time.time() - INDEX_TTL_SECONDS
@@ -112,11 +125,10 @@ class NewsDeduplicator:
         logger.info("Loaded SimHash index: %d entries (24h window)", len(self._index))
 
     async def save_index(self) -> None:
-        """Persist the current index back to Redis using atomic RENAME.
+        """将当前索引持久化回 Redis，使用原子 RENAME 策略。
 
-        Writes to a temporary key first, then atomically swaps it into
-        the real key via RENAME, eliminating the window where the key
-        is empty (which would cause dedup misses on concurrent reads).
+        先写入临时 key（:tmp），写完后通过 RENAME 原子性地替换正式 key。
+        这样可以避免"先 DEL 再 HSET"导致的空窗期（并发读取会漏判重复）。
         """
         r = get_redis()
         cutoff = time.time() - INDEX_TTL_SECONDS
@@ -158,12 +170,12 @@ class NewsDeduplicator:
         logger.info("Saved SimHash index: %d entries (atomic RENAME)", count)
 
     async def deduplicate(self, items: list) -> list:
-        """Run three-layer dedup on a list of RawNewsItem.
+        """对 RawNewsItem 列表执行三层去重。
 
-        Layer 1+2: SimHash + SequenceMatcher against the 24h index (per-item).
-        Layer 3:   TF-IDF cosine similarity among survivors (batch).
+        第一层+第二层：逐条与 24 小时索引比对（SimHash + SequenceMatcher）。
+        第三层：对幸存条目做批量 TF-IDF 余弦相似度检测。
 
-        Returns only unique items. Adds unique items to the index.
+        返回去重后的唯一条目列表，同时将新的唯一条目加入索引。
         """
         if not items:
             return []
@@ -224,10 +236,11 @@ class NewsDeduplicator:
     # ────────────────────────────────────────────
 
     def _find_duplicate(self, sh: Simhash, clean_title: str) -> _IndexEntry | None:
-        """Check if a news item is duplicate against the index.
+        """在索引中查找是否存在重复条目。
 
-        Layer 1: SimHash Hamming distance ≤ 5
-        Layer 2: SequenceMatcher ratio > 0.5 (fallback for title-only similarity)
+        第一层：汉明距离 ≤ 5 → 直接判定重复
+        第二层：汉明距离 6~12 时，用 SequenceMatcher 做标题相似度兜底（> 0.5 判定重复）
+               同时包含子串包含检测（如"A股大涨"包含于"A股大涨创新高"）
         """
         for entry in self._index:
             # Layer 1: SimHash
@@ -250,16 +263,13 @@ class NewsDeduplicator:
         return None
 
     def _tfidf_dedup(self, items: list) -> tuple[list, int]:
-        """Layer 3: TF-IDF cosine similarity among batch survivors.
+        """第三层：对当前批次幸存条目做 TF-IDF 余弦相似度去重。
 
-        Builds TF-IDF vectors from title(×3) + content snippet,
-        uses jieba tokenization for Chinese, then marks items as
-        duplicate if cosine similarity > TFIDF_COSINE_THRESHOLD.
+        构建方式：标题×3 + 正文前200字 → jieba 分词 → TF-IDF 向量化 → 余弦相似度矩阵。
+        条目已按来源优先级排序（靠前 = 优先级高），贪心策略保留先出现的条目，
+        当两条目余弦相似度 > 0.65 时，淘汰后出现（低优先级）的那条。
 
-        Items are already sorted by source priority, so earlier items
-        (higher priority) are kept while later duplicates are dropped.
-
-        Returns (unique_items, drop_count).
+        返回 (去重后列表, 被淘汰数量)。
         """
         # Build texts for TF-IDF
         texts = []
@@ -304,7 +314,7 @@ class NewsDeduplicator:
 
     @staticmethod
     def _build_text(title: str, content: str) -> str:
-        """Combine title + content for SimHash computation. Title is weighted 3x."""
+        """拼接标题+正文用于 SimHash / TF-IDF 计算。标题重复3次以加权。"""
         # Title is more important, repeat it to boost weight
         parts = [title] * 3
         if content and content != title:
@@ -314,7 +324,7 @@ class NewsDeduplicator:
 
     @staticmethod
     def _compute_simhash(text: str) -> Simhash:
-        """Compute 64-bit SimHash using jieba word segmentation."""
+        """使用 jieba 分词计算 64-bit SimHash 指纹。"""
         words = list(jieba.cut(text))
         # Filter out single-char words and punctuation
         words = [w for w in words if len(w.strip()) > 1]
@@ -322,7 +332,7 @@ class NewsDeduplicator:
 
     @staticmethod
     def _hamming(a: int, b: int) -> int:
-        """Compute Hamming distance between two 64-bit integers."""
+        """计算两个 64-bit 整数之间的汉明距离（异或后数 1 的个数）。"""
         x = a ^ b
         count = 0
         while x:
@@ -332,7 +342,7 @@ class NewsDeduplicator:
 
     @staticmethod
     def _clean(title: str) -> str:
-        """Strip brackets, punctuation, whitespace for title comparison."""
+        """清洗标题：去除方括号标记、标点符号、空白字符，用于标题相似度比较。"""
         t = _BRACKET_RE.sub("", title)
         t = _PUNCT_RE.sub("", t)
         return t

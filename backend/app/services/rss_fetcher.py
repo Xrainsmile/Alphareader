@@ -1,19 +1,21 @@
-"""News Fetcher Service — async fetch from Chinese + International financial sources.
+"""新闻抓取服务 (rss_fetcher.py)
+=================================
+职责：从多个中英文金融信源并发抓取新闻，返回去重后的原始新闻列表。
 
-Supports 11 data sources:
-  Chinese:  财联社 / 新浪财经 / 华尔街见闻 / 同花顺 / 东方财富(公告) / 东方财富(快讯) / 第一财经
-  Global:   MarketWatch / CNBC / Seeking Alpha / TechCrunch
+当前活跃信源（8 个）：
+  中文：财联社 / 新浪财经 / 华尔街见闻（通过 JSON API）
+  英文：MarketWatch / CNBC World / CNBC US Markets / Seeking Alpha / TechCrunch（通过 RSS/Atom XML）
 
-Flow:
-  1. Iterate configured sources concurrently via httpx.
-  2. Parse each source's unique JSON/XML structure via adapters.
-  3. Dedup against Redis set (url hash).
-  4. Apply regex pre-filter (drop spam).
-  5. Return list of RawNewsItem for downstream DeepSeek scoring.
+处理流程：
+  1. 使用 httpx 并发请求所有信源
+  2. 每个信源有独立的解析器（adapter），解析各自的 JSON/XML 结构
+  3. 对每条新闻 URL 做 SHA-256 哈希，查 Redis Set 判断是否已处理过
+  4. 正则预过滤：丢弃含「推广/广告/赞助」等关键词的标题
+  5. 返回 RawNewsItem 列表，交给下游去重和 DeepSeek 评分
 
-Robustness:
-  - RSSHub: exponential backoff on 503, multi-instance fallback.
-  - Per-source try/except: one source failure never crashes the pipeline.
+容错机制：
+  - 每个信源独立 try/except，单源失败不影响整个 pipeline
+  - 支持 fallback URL + 指数退避重试（429/503 时触发）
 """
 
 from __future__ import annotations
@@ -35,13 +37,15 @@ from app.redis import get_redis
 
 logger = logging.getLogger("alphareader.fetcher")
 
-# ── Regex Pre-filters ──
+# ── 正则预过滤器：匹配到这些关键词的标题会被直接丢弃 ──
 DROP_PATTERNS = re.compile(
     r"(推广|广告|赞助|课程|直播预告|星座|彩票|红包|优惠券|抽奖|免费领)", re.IGNORECASE
 )
 
+# Redis Set 的 key，存储所有已处理过的 URL 哈希值
 REDIS_DEDUP_KEY = "alphareader:seen_urls"
 
+# HTTP 请求头：模拟 Chrome 浏览器，避免被信源服务器拦截
 HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -52,13 +56,13 @@ HTTP_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
 }
 
-# HTTP status codes that trigger fallback to the next URL
+# 触发切换到备用 URL 的 HTTP 状态码（429=限流，503=服务不可用）
 _FALLBACK_STATUS_CODES = {429, 503}
 
 
 @dataclass
 class RawNewsItem:
-    """Unprocessed news item from any source."""
+    """原始新闻条目——从信源抓取后、去重和评分之前的数据结构"""
     title: str
     content: str
     url: str
@@ -68,11 +72,12 @@ class RawNewsItem:
 
 
 def _hash_url(url: str) -> str:
+    """将 URL 转为 SHA-256 哈希，用于 Redis 去重"""
     return hashlib.sha256(url.encode()).hexdigest()
 
 
 def _should_keep(title: str, source: str = "") -> bool:
-    """Return True if the title passes the regex pre-filter."""
+    """标题预过滤：返回 True 表示保留，False 表示丢弃"""
     if not title or len(title.strip()) < 4:
         return False
     if DROP_PATTERNS.search(title):
@@ -84,11 +89,15 @@ def _should_keep(title: str, source: str = "") -> bool:
 
 
 # ════════════════════════════════════════════════════════════════
-# Source Adapters — each parses a specific API's JSON into items
+# 信源解析器（Source Adapters）
+# 每个解析器负责将特定信源 API 返回的 JSON/XML 转换为 RawNewsItem 列表
 # ════════════════════════════════════════════════════════════════
 
 def _parse_cls(data: dict) -> list[RawNewsItem]:
-    """Parse 财联社 (cls.cn) telegraph API."""
+    """解析财联社电报 API（cls.cn）
+    数据路径: data.roll_data[] → 取 title/brief/content/ctime
+    URL 格式: https://www.cls.cn/detail/{id}
+    """
     items: list[RawNewsItem] = []
     for entry in data.get("data", {}).get("roll_data", []):
         title = entry.get("title", "") or entry.get("brief", "") or ""
@@ -107,7 +116,9 @@ def _parse_cls(data: dict) -> list[RawNewsItem]:
 
 
 def _parse_sina(data: dict) -> list[RawNewsItem]:
-    """Parse 新浪财经 roll API."""
+    """解析新浪财经滚动新闻 API
+    数据路径: result.data[] → 取 title/url/intro/ctime/media_name
+    """
     items: list[RawNewsItem] = []
     for entry in data.get("result", {}).get("data", []):
         title = entry.get("title", "")
@@ -133,7 +144,10 @@ def _parse_sina(data: dict) -> list[RawNewsItem]:
 
 
 def _parse_wallstreetcn(data: dict) -> list[RawNewsItem]:
-    """Parse 华尔街见闻 lives API."""
+    """解析华尔街见闻实时快讯 API
+    数据路径: data.items[] → 取 title/content_text/uri/display_time
+    URL 格式: https://wallstreetcn.com/live/{uri}
+    """
     items: list[RawNewsItem] = []
     for entry in data.get("data", {}).get("items", []):
         title = entry.get("title", "") or ""
@@ -258,11 +272,11 @@ def _parse_yicai(data: list | dict) -> list[RawNewsItem]:
 
 
 # ════════════════════════════════════════════════════════════════
-# International Source Adapters — parse RSS/Atom XML via feedparser
+# 国际信源解析器 — 通过 feedparser 解析 RSS/Atom XML
 # ════════════════════════════════════════════════════════════════
 
 def _strip_html(text: str) -> str:
-    """Strip HTML tags from text, returning plain text."""
+    """用 BeautifulSoup 去除 HTML 标签，返回纯文本"""
     if not text:
         return ""
     soup = BeautifulSoup(text, "html.parser")
@@ -270,7 +284,7 @@ def _strip_html(text: str) -> str:
 
 
 def _parse_rss_time(entry: dict) -> datetime | None:
-    """Extract published time from a feedparser entry."""
+    """从 feedparser 条目中提取发布时间，转换为 UTC datetime"""
     ts = entry.get("published_parsed") or entry.get("updated_parsed")
     if ts:
         try:
@@ -353,18 +367,20 @@ def _parse_techcrunch(raw_text: str) -> list[RawNewsItem]:
 
 
 # ════════════════════════════════════════════════════════
-# Feed Source Registry
+# 信源注册表 — 所有活跃信源的配置中心
 # ════════════════════════════════════════════════════════
 
 @dataclass
 class FeedSource:
+    """信源配置：name=信源名称，url=API地址，parser=对应解析函数，is_rss=是否RSS格式"""
     name: str
-    url: str                                    # Primary URL
+    url: str                                    # 主 URL
     parser: Callable
-    is_rss: bool = False                        # True = fetch raw text and parse with feedparser
-    fallback_urls: list[str] = field(default_factory=list)  # Tried in order if primary fails with 429/503
+    is_rss: bool = False                        # True = RSS/Atom 格式，用 feedparser 解析
+    fallback_urls: list[str] = field(default_factory=list)  # 主 URL 失败时按顺序尝试的备用 URL
 
 
+# 活跃信源列表：pipeline 每次运行时并发抓取以下所有信源
 FEED_SOURCES: list[FeedSource] = [
     FeedSource(
         name="财联社",
@@ -416,6 +432,7 @@ FEED_SOURCES: list[FeedSource] = [
 ]
 
 # RSSHub 备用实例列表（可通过环境变量 RSSHUB_INSTANCES 覆盖，逗号分隔）
+# RSSHub 是开源的 RSS 生成器，提供多个公共实例作为备用
 import os as _os
 _RSSHUB_INSTANCES = [
     u.strip() for u in
@@ -427,13 +444,13 @@ _RSSHUB_INSTANCES = [
     "https://rsshub.pseudoyu.com",
 ]
 
-# Exponential backoff config for 503 retries per URL
+# 指数退避重试配置：每个 URL 最多重试 2 次，等待时间 = 2 × 2^attempt 秒
 _BACKOFF_MAX_RETRIES = 2
-_BACKOFF_BASE_SECONDS = 2  # actual wait = base * 2^attempt
+_BACKOFF_BASE_SECONDS = 2
 
 
 # ════════════════════════════════════════════════════════
-# Core Fetch Logic
+# 核心抓取逻辑
 # ════════════════════════════════════════════════════════
 
 async def _fetch_single_source(
@@ -441,10 +458,10 @@ async def _fetch_single_source(
     source: FeedSource,
     r: aioredis.Redis,
 ) -> list[RawNewsItem]:
-    """Fetch and parse one source, dedup against Redis.
+    """抓取并解析单个信源，同时通过 Redis 过滤已处理过的 URL。
 
-    Error isolation: any exception is caught so one source never kills the pipeline.
-    RSSHub sources use exponential backoff on 503 + multi-instance fallback.
+    错误隔离：所有异常被捕获，确保单个信源的失败不会影响整个 pipeline。
+    注意：这里只检查 URL 是否已见过，不标记——标记在 pipeline 存储成功后才执行。
     """
     items: list[RawNewsItem] = []
 
@@ -490,10 +507,9 @@ async def _fetch_raw_items(
     client: httpx.AsyncClient,
     source: FeedSource,
 ) -> list[RawNewsItem] | None:
-    """Fetch + parse a single source. Returns None on total failure.
+    """抓取单个信源的原始数据并解析。失败返回 None。
 
-    If the source has fallback_urls, uses Primary → Fallback strategy:
-    each URL gets exponential-backoff retries on 429/503 before moving on.
+    如果信源配置了 fallback_urls，会使用 Primary → Fallback 策略逐个尝试。
     """
     if source.fallback_urls:
         return await _fetch_with_fallback(client, source)
@@ -519,14 +535,13 @@ async def _fetch_with_fallback(
     client: httpx.AsyncClient,
     source: FeedSource,
 ) -> list[RawNewsItem] | None:
-    """Generic Primary → Fallback fetch with exponential backoff.
+    """带备用 URL 的抓取：Primary → Fallback，每个 URL 支持指数退避重试。
 
-    Strategy per URL:
-      - On 429/503: exponential-backoff retry up to _BACKOFF_MAX_RETRIES.
-      - On success: parse and return.
-      - On other errors: skip to next URL immediately.
-
-    URL order: [source.url] + source.fallback_urls
+    策略：
+    - 429/503 → 指数退避重试（最多 _BACKOFF_MAX_RETRIES 次）
+    - 成功 → 解析并返回
+    - 其他错误 → 跳到下一个 URL
+    - 所有 URL 都失败 → 返回 None
     """
     all_urls = [source.url] + source.fallback_urls
 
@@ -585,7 +600,7 @@ async def _fetch_with_fallback(
 
 
 async def fetch_all_feeds() -> list[RawNewsItem]:
-    """Fetch all configured sources concurrently. Returns deduplicated items."""
+    """并发抓取所有信源，返回去重后的新闻列表。这是抓取阶段的唯一入口。"""
     r = get_redis()
 
     async with httpx.AsyncClient(

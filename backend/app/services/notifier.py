@@ -1,17 +1,18 @@
-"""Webhook notifier — send alerts on pipeline failure / misfire.
+"""Webhook 告警通知器 — Pipeline 失败/跳过时发送告警消息。
 
-Supports generic webhook (JSON POST), with built-in formatting for:
-  - 飞书 (Feishu / Lark)
-  - 钉钉 (DingTalk)
-  - 企业微信 (WeCom)
-  - Slack
-  - Generic (custom JSON payload)
+支持的平台（根据 URL 自动识别）：
+  - 飞书（Feishu / Lark）：feishu.cn / larksuite.com
+  - 钉钉（DingTalk）：dingtalk.com / oapi.dingtalk
+  - 企业微信（WeCom）：qyapi.weixin.qq.com
+  - Slack：hooks.slack.com
+  - 通用 Webhook（Generic JSON POST）
 
-Configure via environment variable:
-  ALERT_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxx
+配置方式：
+  环境变量 ALERT_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxx
+  留空则禁用告警（默认禁用）。
 
-The notifier auto-detects the platform from the URL and formats the
-payload accordingly. Set ALERT_WEBHOOK_URL="" to disable (default).
+设计原则：
+  send_alert() 永远不抛异常 — 告警失败只记录日志，不影响主 Pipeline 流程。
 """
 
 from __future__ import annotations
@@ -25,12 +26,12 @@ from app.config import settings
 
 logger = logging.getLogger("alphareader.notifier")
 
-# ── Timeout for webhook calls (seconds) ──
-_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+# ── Webhook 请求超时配置（秒）──
+_TIMEOUT = httpx.Timeout(10.0, connect=5.0)  # 总超时10秒，连接超时5秒
 
 
 def _detect_platform(url: str) -> str:
-    """Auto-detect webhook platform from URL."""
+    """根据 Webhook URL 自动识别平台类型。"""
     if "feishu.cn" in url or "larksuite.com" in url:
         return "feishu"
     if "dingtalk.com" in url or "oapi.dingtalk" in url:
@@ -43,7 +44,15 @@ def _detect_platform(url: str) -> str:
 
 
 def _build_payload(platform: str, title: str, message: str) -> dict:
-    """Build platform-specific JSON payload."""
+    """根据平台类型构建对应格式的 JSON 请求体。
+
+    各平台消息格式不同：
+      - 飞书：{"msg_type": "text", "content": {"text": ...}}
+      - 钉钉：{"msgtype": "text", "text": {"content": ...}}
+      - 企微：{"msgtype": "text", "text": {"content": ...}}
+      - Slack：{"text": ...}
+      - 通用：{"title": ..., "message": ..., "timestamp": ..., "app": ...}
+    """
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     full_msg = f"[{ts}] {title}\n{message}"
 
@@ -78,10 +87,10 @@ def _build_payload(platform: str, title: str, message: str) -> dict:
 
 
 async def send_alert(title: str, message: str) -> None:
-    """Send an alert via the configured webhook. No-op if URL is empty.
+    """通过配置的 Webhook 发送告警消息。URL 为空时静默跳过。
 
-    This function never raises — failures are logged and swallowed
-    so that alerting issues don't break the main pipeline.
+    此函数永远不抛异常 — 发送失败仅记录 warning 日志，
+    确保告警模块的故障不会影响主 Pipeline 的正常运行。
     """
     url = settings.ALERT_WEBHOOK_URL
     if not url:

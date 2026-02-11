@@ -1,6 +1,17 @@
-"""News Pipeline — orchestrates Fetch → Dedup → Filter → Store.
+"""管道编排模块 (pipeline.py)
+============================
+职责：编排整个新闻处理流水线，按顺序执行五个阶段：
 
-This is the main entry point called by the scheduler.
+  Step 1: 抓取 (Fetch)      — 并发抓取所有信源
+  Step 2: 去重 (Dedup)       — SimHash + SequenceMatcher + TF-IDF 三层去重
+  Step 3: AI 评分 (Filter)   — 发送 DeepSeek API 批量评分，过滤 score < 6 的
+  Step 4: 存储 (Store)       — Upsert 到 PostgreSQL（ON CONFLICT DO NOTHING）
+  Step 5: 标记已处理 (Mark)  — 将成功存储的 URL 标记到 Redis，避免重复抓取
+
+核心设计：
+  - 每个阶段独立 try/except，部分失败不崩溃整个 pipeline
+  - URL 只在存储成功后才标记为"已见"，防止数据丢失
+  - 低分 URL 仅在 filter 全部成功时才标记，有错误时跳过标记以便下次重试
 """
 
 from __future__ import annotations
@@ -21,14 +32,15 @@ logger = logging.getLogger("alphareader.pipeline")
 
 
 def _hash_url(url: str) -> str:
-    """SHA-256 hash of URL for Redis dedup set."""
+    """将 URL 转为 SHA-256 哈希值，用于 Redis 去重"""
     return hashlib.sha256(url.encode()).hexdigest()
 
 
 async def _mark_urls_as_seen(urls: list[str]) -> None:
-    """Mark successfully stored URLs in Redis seen_urls set.
+    """将 URL 批量标记到 Redis Set 中，表示"已处理"。
 
-    Only called AFTER items are confirmed stored in PostgreSQL.
+    关键设计：只在 PostgreSQL 存储成功后才调用此函数，
+    防止出现"URL 被锁定为已见但数据实际丢失"的 bug。
     """
     if not urls:
         return
@@ -43,10 +55,16 @@ async def _mark_urls_as_seen(urls: list[str]) -> None:
 
 
 async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[str]]:
-    """Upsert scored news items into PostgreSQL.
+    """将评分通过的新闻条目存入 PostgreSQL。
 
-    Returns (count_of_new_rows, list_of_successfully_stored_urls).
-    Per-item error isolation: a single bad item won't prevent others from being stored.
+    返回 (新增行数, 成功存储的 URL 列表)。
+
+    关键机制：
+    - 使用 INSERT ... ON CONFLICT (url) DO NOTHING 防止重复插入
+    - 每条记录使用独立的 Savepoint（session.begin_nested()），
+      单条失败不会回滚整个事务
+    - 英文新闻使用翻译后的中文标题/摘要存入 title 和 ai_summary 字段
+    - relevant_tickers 合并为 $TICKER 格式加入 tags 数组
     """
     if not items:
         return 0, []
@@ -109,16 +127,17 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
 
 
 async def run_pipeline() -> dict:
-    """Execute the full news pipeline:
-    1. Fetch all RSS feeds (with Redis URL dedup)
-    2. SimHash + SequenceMatcher + TF-IDF cosine dedup (cross-source, 24h window)
-    3. Score via DeepSeek (batch of 20)
-    4. Store high-scoring items to PostgreSQL
+    """执行完整的新闻处理 Pipeline（由定时调度器调用的主入口）。
 
-    Each step is wrapped in error handling so partial failures
-    are logged but don't crash the entire pipeline run.
+    五个阶段：
+    1. Fetch  — 并发抓取所有信源（含 Redis URL 去重）
+    2. Dedup  — SimHash + SequenceMatcher + TF-IDF 三层跨源去重（24h 窗口）
+    3. Filter — DeepSeek 批量评分（每批 20 条），丢弃 score < 6 的
+    4. Store  — 高分条目 Upsert 到 PostgreSQL
+    5. Mark   — 成功存储的 URL 标记到 Redis 防止下次重复抓取
 
-    Returns a summary dict for logging / API response.
+    每个阶段都有独立的错误处理，部分失败会记录日志但不中断整个流程。
+    返回摘要 dict 用于日志和 API 响应。
     """
     logger.info("═══ Pipeline run starting ═══")
     summary: dict = {"fetched": 0, "deduped": 0, "scored": 0, "stored": 0, "errors": []}
