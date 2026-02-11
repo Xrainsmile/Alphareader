@@ -22,90 +22,110 @@
       </view>
     </view>
 
-    <!-- 排序模式切换 -->
-    <view class="sort-tabs">
-      <view
-        v-for="tab in sortTabs"
-        :key="tab.value"
-        class="sort-tab"
-        :class="{ 'sort-tab-active': currentSort === tab.value }"
-        @click="onSortChange(tab.value)"
-      >
-        <text class="sort-tab-icon">{{ tab.icon }}</text>
-        <text class="sort-tab-text" :class="{ 'sort-tab-text-active': currentSort === tab.value }">{{ tab.label }}</text>
+    <!-- 筛选按钮 + 已选标签 -->
+    <view class="filter-trigger-bar">
+      <view class="filter-trigger-left">
+        <view class="filter-trigger-btn" :class="{ 'filter-trigger-active': hasActiveFilter }" @click="openFilter">
+          <text class="filter-trigger-icon">☰</text>
+          <text class="filter-trigger-text">筛选</text>
+          <text class="filter-arrow" :class="{ 'filter-arrow-up': filterOpen }">›</text>
+        </view>
+        <view v-if="filterTags.length" class="filter-tags">
+          <view v-for="tag in filterTags" :key="tag" class="filter-tag">
+            <text class="filter-tag-text">{{ tag }}</text>
+          </view>
+        </view>
       </view>
+      <text class="stats-text-inline">{{ total }} 条</text>
     </view>
 
-    <!-- 筛选器 -->
-    <view class="filter-bar">
-      <!-- 评分筛选 -->
-      <view class="filter-group">
-        <text class="filter-label">评分</text>
-        <view class="filter-chips">
-          <view
-            v-for="s in scoreOptions"
-            :key="s"
-            class="chip"
-            :class="{ 'chip-active': minScore === s }"
-            @click="onScoreChange(s)"
-          >
-            <text class="chip-text" :class="{ 'chip-text-active': minScore === s }">≥{{ s }}</text>
+    <!-- 筛选面板（展开/收起） -->
+    <view v-if="filterOpen" class="filter-panel">
+      <view class="filter-mask" @click="cancelFilter"></view>
+      <view class="filter-panel-body">
+        <!-- 排序 -->
+        <view class="filter-row">
+          <text class="filter-row-label">排序</text>
+          <view class="filter-row-chips">
+            <view
+              v-for="tab in sortTabs"
+              :key="tab.value"
+              class="fc"
+              :class="{ 'fc-active': tmpSort === tab.value }"
+              @click="tmpSort = tab.value"
+            >
+              <text class="fc-text" :class="{ 'fc-text-active': tmpSort === tab.value }">{{ tab.label }}</text>
+            </view>
+          </view>
+        </view>
+        <!-- 时效 -->
+        <view class="filter-row">
+          <text class="filter-row-label">时效</text>
+          <view class="filter-row-chips">
+            <view
+              v-for="opt in ageOptions"
+              :key="opt.value"
+              class="fc"
+              :class="{ 'fc-active': tmpAge === opt.value }"
+              @click="tmpAge = opt.value"
+            >
+              <text class="fc-text" :class="{ 'fc-text-active': tmpAge === opt.value }">{{ opt.label }}</text>
+            </view>
+          </view>
+        </view>
+        <!-- 来源 -->
+        <view class="filter-row">
+          <text class="filter-row-label">来源</text>
+          <view class="filter-row-chips filter-row-chips-wrap">
+            <view class="fc" :class="{ 'fc-active': !tmpSource }" @click="tmpSource = ''">
+              <text class="fc-text" :class="{ 'fc-text-active': !tmpSource }">全部</text>
+            </view>
+            <view
+              v-for="src in cnSources"
+              :key="src"
+              class="fc"
+              :class="{ 'fc-active': tmpSource === src }"
+              @click="tmpSource = src"
+            >
+              <text class="fc-text" :class="{ 'fc-text-active': tmpSource === src }">{{ src }}</text>
+            </view>
+            <view class="fc-divider"></view>
+            <view
+              v-for="src in enSources"
+              :key="src"
+              class="fc"
+              :class="{ 'fc-active': tmpSource === src }"
+              @click="tmpSource = src"
+            >
+              <text class="fc-text" :class="{ 'fc-text-active': tmpSource === src }">{{ src }}</text>
+            </view>
+          </view>
+        </view>
+        <!-- 评分 -->
+        <view class="filter-row filter-row-last">
+          <text class="filter-row-label">评分</text>
+          <view class="filter-row-chips">
+            <view
+              v-for="s in scoreOptions"
+              :key="s"
+              class="fc"
+              :class="{ 'fc-active': tmpScore === s }"
+              @click="tmpScore = s"
+            >
+              <text class="fc-text" :class="{ 'fc-text-active': tmpScore === s }">≥{{ s }}</text>
+            </view>
+          </view>
+        </view>
+        <!-- 底部操作栏 -->
+        <view class="filter-footer">
+          <view class="filter-reset-btn" @click="resetTmp">
+            <text class="filter-reset-text">重置</text>
+          </view>
+          <view class="filter-confirm-btn" @click="confirmFilter">
+            <text class="filter-confirm-text">确认</text>
           </view>
         </view>
       </view>
-      <!-- 时间窗口筛选（仅 hot 模式） -->
-      <view v-if="currentSort === 'hot'" class="filter-group">
-        <text class="filter-label">时效</text>
-        <view class="filter-chips">
-          <view
-            v-for="opt in ageOptions"
-            :key="opt.value"
-            class="chip"
-            :class="{ 'chip-active': maxAgeHours === opt.value }"
-            @click="onAgeChange(opt.value)"
-          >
-            <text class="chip-text" :class="{ 'chip-text-active': maxAgeHours === opt.value }">{{ opt.label }}</text>
-          </view>
-        </view>
-      </view>
-      <!-- 来源筛选 -->
-      <view class="filter-group">
-        <text class="filter-label">来源</text>
-        <view class="filter-chips filter-chips-wrap">
-          <view
-            class="chip"
-            :class="{ 'chip-active': !currentSource }"
-            @click="onSourceChange('')"
-          >
-            <text class="chip-text" :class="{ 'chip-text-active': !currentSource }">全部</text>
-          </view>
-          <view
-            v-for="src in cnSources"
-            :key="src"
-            class="chip"
-            :class="{ 'chip-active': currentSource === src }"
-            @click="onSourceChange(src)"
-          >
-            <text class="chip-text" :class="{ 'chip-text-active': currentSource === src }">{{ src }}</text>
-          </view>
-          <view class="chip-divider"></view>
-          <view
-            v-for="src in enSources"
-            :key="src"
-            class="chip"
-            :class="{ 'chip-active': currentSource === src }"
-            @click="onSourceChange(src)"
-          >
-            <text class="chip-text" :class="{ 'chip-text-active': currentSource === src }">{{ src }}</text>
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <!-- 统计信息 -->
-    <view class="stats-bar">
-      <text class="stats-text">共 {{ total }} 条 · 已加载 {{ newsList.length }} 条</text>
-      <text class="stats-text">{{ sortLabel }} · 评分≥{{ minScore }}</text>
     </view>
 
     <!-- 新闻列表 -->
@@ -178,29 +198,33 @@ export default {
       loading: true,
       loadingMore: false,
       noMore: false,
+      filterOpen: false,
+      // 实际生效的筛选值
       minScore: 6,
       currentSource: '',
       currentSort: 'hot',
       maxAgeHours: 72,
+      // 面板内暂存值（点确认后才写入实际值）
+      tmpSort: 'hot',
+      tmpAge: 72,
+      tmpSource: '',
+      tmpScore: 6,
       promptLoading: false,
       promptCopied: false,
       scoreOptions: [6, 7, 8, 9],
-      sourceOptions: [
-        '财联社', '新浪财经', '华尔街见闻',
-        'MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch', 'Finnhub',
-      ],
       cnSources: ['财联社', '新浪财经', '华尔街见闻'],
       enSources: ['MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch', 'Finnhub'],
       sortTabs: [
-        { value: 'hot', label: 'Gravity', icon: '🔥' },
-        { value: 'latest', label: '最新', icon: '🕐' },
-        { value: 'score', label: '评分', icon: '⭐' },
+        { value: 'hot', label: 'Gravity' },
+        { value: 'latest', label: '最新' },
+        { value: 'score', label: '评分' },
       ],
       ageOptions: [
         { value: 24, label: '24h' },
         { value: 48, label: '48h' },
         { value: 72, label: '3天' },
         { value: 168, label: '7天' },
+        { value: 0, label: '不限' },
       ],
     }
   },
@@ -208,7 +232,22 @@ export default {
   computed: {
     sortLabel() {
       const tab = this.sortTabs.find(t => t.value === this.currentSort)
-      return tab ? `${tab.icon}${tab.label}` : ''
+      return tab ? tab.label : ''
+    },
+    hasActiveFilter() {
+      return this.currentSort !== 'hot' || this.minScore !== 6 || this.currentSource !== '' || this.maxAgeHours !== 72
+    },
+    /** 外层筛选按钮右侧展示的标签列表 */
+    filterTags() {
+      const tags = []
+      const tab = this.sortTabs.find(t => t.value === this.currentSort)
+      if (tab && this.currentSort !== 'hot') tags.push(tab.label)
+      if (this.currentSort === 'hot') tags.push('Gravity')
+      const age = this.ageOptions.find(a => a.value === this.maxAgeHours)
+      if (age && this.maxAgeHours !== 72) tags.push(age.label)
+      if (this.currentSource) tags.push(this.currentSource)
+      if (this.minScore !== 6) tags.push(`≥${this.minScore}`)
+      return tags
     },
   },
 
@@ -240,7 +279,7 @@ export default {
           min_score: this.minScore,
           source: this.currentSource || undefined,
           sort: this.currentSort,
-          max_age_hours: this.maxAgeHours,
+          max_age_hours: this.maxAgeHours || undefined,
         })
         this.newsList = data.items || []
         this.total = data.total || 0
@@ -265,7 +304,7 @@ export default {
           min_score: this.minScore,
           source: this.currentSource || undefined,
           sort: this.currentSort,
-          max_age_hours: this.maxAgeHours,
+          max_age_hours: this.maxAgeHours || undefined,
         })
         const items = data.items || []
         this.newsList = this.newsList.concat(items)
@@ -280,32 +319,36 @@ export default {
       }
     },
 
-    /** 切换评分筛选 */
-    onScoreChange(score) {
-      if (this.minScore === score) return
-      this.minScore = score
+    /** 打开筛选面板 — 同步当前值到暂存 */
+    openFilter() {
+      this.tmpSort = this.currentSort
+      this.tmpAge = this.maxAgeHours
+      this.tmpSource = this.currentSource
+      this.tmpScore = this.minScore
+      this.filterOpen = true
+    },
+
+    /** 确认筛选 — 暂存值写入实际值并加载 */
+    confirmFilter() {
+      this.currentSort = this.tmpSort
+      this.maxAgeHours = this.tmpAge
+      this.currentSource = this.tmpSource
+      this.minScore = this.tmpScore
+      this.filterOpen = false
       this.resetAndLoad()
     },
 
-    /** 切换来源筛选 */
-    onSourceChange(source) {
-      if (this.currentSource === source) return
-      this.currentSource = source
-      this.resetAndLoad()
+    /** 取消 — 关闭面板不应用 */
+    cancelFilter() {
+      this.filterOpen = false
     },
 
-    /** 切换排序模式 */
-    onSortChange(sort) {
-      if (this.currentSort === sort) return
-      this.currentSort = sort
-      this.resetAndLoad()
-    },
-
-    /** 切换时间窗口 */
-    onAgeChange(hours) {
-      if (this.maxAgeHours === hours) return
-      this.maxAgeHours = hours
-      this.resetAndLoad()
+    /** 重置暂存值为默认 */
+    resetTmp() {
+      this.tmpSort = 'hot'
+      this.tmpAge = 72
+      this.tmpSource = ''
+      this.tmpScore = 6
     },
 
     async onCopyPrompt() {
@@ -420,93 +463,201 @@ export default {
   letter-spacing: 1rpx;
 }
 
-/* ── Sort Tabs ── */
-.sort-tabs {
+/* ── Filter Trigger Bar ── */
+.filter-trigger-bar {
   display: flex;
-  gap: 16rpx;
+  align-items: center;
+  justify-content: space-between;
   margin: 12rpx 0 8rpx;
 }
-.sort-tab {
+.filter-trigger-left {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.filter-trigger-btn {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 14rpx 24rpx;
+  background: #ffffff;
+  border-radius: 32rpx;
+  border: 2rpx solid #e0e0e6;
+  flex-shrink: 0;
+}
+.filter-trigger-active {
+  border-color: #4285f4;
+  background: #f0f6ff;
+}
+.filter-trigger-icon {
+  font-size: 26rpx;
+  color: #6b6b7b;
+}
+.filter-trigger-text {
+  font-size: 26rpx;
+  color: #3a3a4a;
+  font-weight: 500;
+}
+.filter-arrow {
+  font-size: 28rpx;
+  color: #8c8c9a;
+  transform: rotate(90deg);
+  transition: transform 0.25s;
+}
+.filter-arrow-up {
+  transform: rotate(-90deg);
+}
+.filter-tags {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  overflow: hidden;
+}
+.filter-tag {
+  padding: 6rpx 16rpx;
+  background: #e8f0fe;
+  border-radius: 20rpx;
+  flex-shrink: 0;
+}
+.filter-tag-text {
+  font-size: 22rpx;
+  color: #4285f4;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.stats-text-inline {
+  font-size: 22rpx;
+  color: #8c8c9a;
+  flex-shrink: 0;
+  margin-left: 12rpx;
+}
+
+/* ── Filter Panel ── */
+.filter-panel {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+}
+.filter-mask {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.35);
+}
+.filter-panel-body {
+  position: relative;
+  z-index: 1;
+  background: #ffffff;
+  border-radius: 0 0 28rpx 28rpx;
+  padding: 32rpx 32rpx 0;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.1);
+}
+.filter-row {
+  display: flex;
+  align-items: flex-start;
+  padding-bottom: 28rpx;
+  border-bottom: 1rpx solid #f2f2f5;
+  margin-bottom: 24rpx;
+}
+.filter-row-last {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 16rpx;
+}
+.filter-row-label {
+  font-size: 26rpx;
+  color: #8c8c9a;
+  width: 80rpx;
+  flex-shrink: 0;
+  font-weight: 500;
+  padding-top: 10rpx;
+}
+.filter-row-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 16rpx;
+  flex: 1;
+}
+.filter-row-chips-wrap {
+  flex-wrap: wrap;
+}
+
+/* ── Filter Chip (fc) ── */
+.fc {
+  flex: 1;
+  min-width: 0;
+  padding: 16rpx 0;
+  border-radius: 12rpx;
+  background: #f5f5f7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.filter-row-chips-wrap .fc {
+  flex: none;
+  padding: 12rpx 24rpx;
+}
+.fc-active {
+  background: #f0f6ff;
+}
+.fc-text {
+  font-size: 26rpx;
+  color: #3a3a4a;
+  white-space: nowrap;
+}
+.fc-text-active {
+  color: #1a1a2e;
+  font-weight: 700;
+}
+.fc-divider {
+  width: 100%;
+  height: 0;
+}
+
+/* ── Filter Footer ── */
+.filter-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  border-top: 1rpx solid #f2f2f5;
+  gap: 24rpx;
+}
+.filter-reset-btn {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8rpx;
-  padding: 18rpx 0;
-  background: #ffffff;
+  padding: 20rpx 0;
   border-radius: 16rpx;
-  border: 2rpx solid transparent;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
-  transition: all 0.2s;
+  border: 2rpx solid #e0e0e6;
 }
-.sort-tab-active {
-  background: #e8f0fe;
-  border-color: #4285f4;
-  box-shadow: 0 2rpx 12rpx rgba(66, 133, 244, 0.15);
-}
-.sort-tab-icon {
+.filter-reset-text {
   font-size: 28rpx;
-}
-.sort-tab-text {
-  font-size: 26rpx;
   color: #6b6b7b;
   font-weight: 500;
 }
-.sort-tab-text-active {
-  color: #4285f4;
-  font-weight: 700;
-}
-
-/* ── Filter Bar ── */
-.filter-bar {
-  margin: 12rpx 0 8rpx;
-  padding: 20rpx 24rpx;
-  background: #ffffff;
-  border-radius: 20rpx;
-  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
-}
-.filter-group {
+.filter-confirm-btn {
+  flex: 2;
   display: flex;
   align-items: center;
-  margin-bottom: 16rpx;
+  justify-content: center;
+  padding: 20rpx 0;
+  border-radius: 16rpx;
+  background: #4285f4;
 }
-.filter-group:last-child {
-  margin-bottom: 0;
-}
-.filter-label {
-  font-size: 24rpx;
-  color: #8c8c9a;
-  width: 72rpx;
-  flex-shrink: 0;
-  font-weight: 500;
-}
-.filter-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-}
-.chip {
-  padding: 8rpx 26rpx;
-  border-radius: 28rpx;
-  background: #f5f5f7;
-  border: 1rpx solid #ececee;
-  transition: all 0.2s;
-}
-.chip-active {
-  background: #e8f0fe;
-  border-color: #4285f4;
-}
-.chip-text {
-  font-size: 22rpx;
-  color: #6b6b7b;
-}
-.chip-text-active {
-  color: #4285f4;
+.filter-confirm-text {
+  font-size: 28rpx;
+  color: #ffffff;
   font-weight: 600;
-}
-.chip-divider {
-  width: 100%;
-  height: 0;
 }
 
 /* ── Prompt Card ── */
@@ -542,17 +693,6 @@ export default {
 .loading-spinner {
   font-size: 24rpx;
   color: rgba(255, 255, 255, 0.7);
-}
-
-/* ── Stats ── */
-.stats-bar {
-  display: flex;
-  justify-content: space-between;
-  padding: 16rpx 8rpx;
-}
-.stats-text {
-  font-size: 22rpx;
-  color: #8c8c9a;
 }
 
 /* ── News List ── */
@@ -616,20 +756,15 @@ export default {
   color: #ffffff;
   font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
 }
-
-/* 评分 ≥ 9: 绿色 */
 .score-high {
   background: linear-gradient(135deg, #34c759, #28a745);
 }
-/* 评分 ≥ 8: 橙色 */
 .score-medium {
   background: linear-gradient(135deg, #ff9500, #e8870e);
 }
-/* 评分 ≥ 7: 黄橙 */
 .score-normal {
   background: linear-gradient(135deg, #f0b429, #d4981e);
 }
-/* 评分 < 7: 淡绿 */
 .score-low {
   background: linear-gradient(135deg, #5ac778, #48b066);
 }

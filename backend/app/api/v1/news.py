@@ -80,7 +80,7 @@ async def list_news(
     sector: str | None = Query(None),
     sort: SortMode = Query(SortMode.HOT, description="Sort mode: hot (gravity decay), latest, score"),
     gravity: float = Query(1.8, ge=0.5, le=5.0, description="Gravity factor for hot sort"),
-    max_age_hours: int = Query(72, ge=1, le=720, description="Max news age in hours"),
+    max_age_hours: int | None = Query(72, ge=1, le=720, description="Max news age in hours; omit for unlimited"),
     db: AsyncSession = Depends(get_db),
 ):
     """获取评分新闻列表（分页）。
