@@ -9,10 +9,10 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      # Mount SSL certs and Nginx prod config (created after certbot setup)
+      # Mount SSL certs and Nginx prod config
       - ./deploy/nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./deploy/certbot/conf:/etc/letsencrypt:ro
-      - ./deploy/certbot/www:/var/www/certbot:ro
+      - certbot_conf:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
     depends_on:
       web:
         condition: service_healthy
@@ -94,3 +94,5 @@ services:
 volumes:
   pgdata:
   redisdata:
+  certbot_conf:
+  certbot_www:
