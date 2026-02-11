@@ -186,11 +186,10 @@ export default {
       promptCopied: false,
       scoreOptions: [6, 7, 8, 9],
       sourceOptions: [
-        '财联社', '华尔街见闻', '第一财经', '新浪财经', '同花顺',
-        '东方财富公告', '东方财富快讯',
+        '财联社', '新浪财经', '华尔街见闻',
         'MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch',
       ],
-      cnSources: ['财联社', '华尔街见闻', '第一财经', '新浪财经', '同花顺', '东方财富公告', '东方财富快讯'],
+      cnSources: ['财联社', '新浪财经', '华尔街见闻'],
       enSources: ['MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch'],
       sortTabs: [
         { value: 'hot', label: '热度', icon: '🔥' },

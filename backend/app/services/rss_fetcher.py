@@ -381,26 +381,7 @@ FEED_SOURCES: list[FeedSource] = [
         url="https://api-one.wallstcn.com/apiv1/content/lives?channel=global-channel&limit=30",
         parser=_parse_wallstreetcn,
     ),
-    FeedSource(
-        name="同花顺",
-        url="https://news.10jqka.com.cn/tapp/news/push/stock/?page=1&tag=&track=website&pagesize=30",
-        parser=_parse_10jqka,
-    ),
-    FeedSource(
-        name="东方财富公告",
-        url="https://np-anotice-stock.eastmoney.com/api/security/ann?page_size=20&page_index=1&ann_type=A&client_source=web&f_node=0",
-        parser=_parse_eastmoney_ann,
-    ),
-    FeedSource(
-        name="东方财富快讯",
-        url="https://np-listapi.eastmoney.com/comm/web/getNewsByColumns?client=web&biz=web_news_col&column=350&order=1&needInteractData=0&page_index=1&page_size=20&req_trace=a",
-        parser=_parse_eastmoney_kuaixun,
-    ),
-    FeedSource(
-        name="第一财经",
-        url="https://www.yicai.com/api/ajax/getlatest?page=1&pagesize=20",
-        parser=_parse_yicai,
-    ),
+    # 同花顺、东方财富公告、东方财富快讯、第一财经 已移除（2026-02-11）
     # ── International Sources (RSS/Atom XML) ──
     FeedSource(
         name="MarketWatch",
