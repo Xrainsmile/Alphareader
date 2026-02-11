@@ -57,7 +57,7 @@ export function fetchNews({ limit = 20, offset = 0, min_score = 6, source, secto
 }
 
 /** 生成 Gemini Prompt */
-export function generatePrompt({ sector, date, top_n = 10 } = {}) {
+export function generatePrompt({ sector, date, top_n = 66 } = {}) {
   const params = { top_n }
   if (sector) params.sector = sector
   if (date) params.date = date

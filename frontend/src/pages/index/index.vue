@@ -15,7 +15,7 @@
         <text class="prompt-title">复制为大模型对话提示词</text>
       </view>
       <text class="prompt-desc">
-        {{ promptCopied ? '已复制到剪贴板!' : '一键生成今日 Top 10 结构化分析提示词' }}
+        {{ promptCopied ? '已复制到剪贴板!' : '一键生成今日 Top 66 结构化分析提示词' }}
       </text>
       <view v-if="promptLoading" class="prompt-loading">
         <text class="loading-spinner">生成中...</text>
@@ -314,7 +314,7 @@ export default {
       this.promptCopied = false
 
       try {
-        const res = await generatePrompt({ top_n: 10 })
+        const res = await generatePrompt({ top_n: 66 })
         if (res.prompt) {
           uni.setClipboardData({
             data: res.prompt,
