@@ -27,6 +27,7 @@ apscheduler==3.10.4
 # NLP Deduplication
 jieba==0.42.1
 simhash==2.1.2
+scikit-learn==1.6.1
 
 # Language Detection
 langdetect==1.0.9

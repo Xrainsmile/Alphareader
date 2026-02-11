@@ -1,7 +1,8 @@
-"""NewsDeduplicator — Two-layer dedup before LLM scoring.
+"""NewsDeduplicator — Three-layer dedup before LLM scoring.
 
-Layer 1: SimHash fingerprint + Hamming distance (≤3 = duplicate)
-Layer 2: SequenceMatcher title similarity (>0.6 = duplicate)
+Layer 1: SimHash fingerprint + Hamming distance (≤5 = duplicate)
+Layer 2: SequenceMatcher title similarity (>0.5 = duplicate)
+Layer 3: TF-IDF cosine similarity on title+content (>0.65 = duplicate)
 
 Uses Redis for persistent 24h SimHash index. Zero API cost, millisecond latency.
 """
@@ -16,14 +17,17 @@ from difflib import SequenceMatcher
 
 import jieba
 from simhash import Simhash
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 from app.redis import get_redis
 
 logger = logging.getLogger("alphareader.dedup")
 
 # ── Config ──
-SIMHASH_HAMMING_THRESHOLD = 3       # Hamming distance ≤ 3 → duplicate
-SEQMATCH_RATIO_THRESHOLD = 0.6      # SequenceMatcher ratio > 0.6 → duplicate
+SIMHASH_HAMMING_THRESHOLD = 5       # Hamming distance ≤ 5 → duplicate (relaxed from 3)
+SEQMATCH_RATIO_THRESHOLD = 0.5      # SequenceMatcher ratio > 0.5 → duplicate (relaxed from 0.6)
+TFIDF_COSINE_THRESHOLD = 0.65       # TF-IDF cosine similarity > 0.65 → duplicate
 INDEX_TTL_SECONDS = 24 * 3600       # 24-hour sliding window
 REDIS_SIMHASH_KEY = "alphareader:simhash_index"
 
@@ -60,7 +64,11 @@ class _IndexEntry:
 
 
 class NewsDeduplicator:
-    """Two-layer news deduplicator with Redis-backed 24h SimHash index.
+    """Three-layer news deduplicator with Redis-backed 24h SimHash index.
+
+    Layer 1: SimHash Hamming distance (fast, bitwise)
+    Layer 2: SequenceMatcher title ratio (medium, char-level)
+    Layer 3: TF-IDF cosine similarity (semantic, term-level)
 
     Usage:
         dedup = NewsDeduplicator()
@@ -150,7 +158,10 @@ class NewsDeduplicator:
         logger.info("Saved SimHash index: %d entries (atomic RENAME)", count)
 
     async def deduplicate(self, items: list) -> list:
-        """Run two-layer dedup on a list of RawNewsItem.
+        """Run three-layer dedup on a list of RawNewsItem.
+
+        Layer 1+2: SimHash + SequenceMatcher against the 24h index (per-item).
+        Layer 3:   TF-IDF cosine similarity among survivors (batch).
 
         Returns only unique items. Adds unique items to the index.
         """
@@ -163,41 +174,48 @@ class NewsDeduplicator:
             key=lambda x: SOURCE_PRIORITY.get(x.source, 99),
         )
 
-        unique: list = []
-        total_dropped = 0
+        # ── Layer 1 + 2: SimHash + SequenceMatcher (against index) ──
+        survivors: list = []
+        l12_dropped = 0
 
         for item in items_sorted:
             text = self._build_text(item.title, getattr(item, "content", ""))
             sh = self._compute_simhash(text)
             clean_title = self._clean(item.title)
 
-            # Check against existing index
             dup_entry = self._find_duplicate(sh, clean_title)
 
             if dup_entry is not None:
-                total_dropped += 1
+                l12_dropped += 1
                 logger.info(
-                    'Duplicate found: [%s]"%s" is similar to [%s]"%s", distance=%d',
+                    'L1/L2 dup: [%s]"%s" ≈ [%s]"%s"',
                     item.source,
                     item.title[:40],
                     dup_entry.source,
                     dup_entry.title[:40],
-                    self._hamming(sh.value, dup_entry.simhash_value),
                 )
                 continue
 
-            # Not a duplicate — add to index and keep
+            # Passed L1+L2, add to index
             self._index.append(_IndexEntry(
                 simhash_value=sh.value,
                 title=item.title,
                 source=item.source,
                 timestamp=time.time(),
             ))
-            unique.append(item)
+            survivors.append(item)
 
+        # ── Layer 3: TF-IDF cosine similarity (among current batch survivors) ──
+        l3_dropped = 0
+        if len(survivors) >= 2:
+            unique, l3_dropped = self._tfidf_dedup(survivors)
+        else:
+            unique = survivors
+
+        total_dropped = l12_dropped + l3_dropped
         logger.info(
-            "Dedup result: %d in → %d unique, %d duplicates dropped",
-            len(items), len(unique), total_dropped,
+            "Dedup result: %d in → %d unique (%d dropped: L1/L2=%d, L3_tfidf=%d)",
+            len(items), len(unique), total_dropped, l12_dropped, l3_dropped,
         )
         return unique
 
@@ -208,8 +226,8 @@ class NewsDeduplicator:
     def _find_duplicate(self, sh: Simhash, clean_title: str) -> _IndexEntry | None:
         """Check if a news item is duplicate against the index.
 
-        Layer 1: SimHash Hamming distance ≤ 3
-        Layer 2: SequenceMatcher ratio > 0.6 (fallback for title-only similarity)
+        Layer 1: SimHash Hamming distance ≤ 5
+        Layer 2: SequenceMatcher ratio > 0.5 (fallback for title-only similarity)
         """
         for entry in self._index:
             # Layer 1: SimHash
@@ -217,9 +235,9 @@ class NewsDeduplicator:
             if dist <= SIMHASH_HAMMING_THRESHOLD:
                 return entry
 
-            # Layer 2: Title similarity (only if SimHash is close-ish, ≤10)
+            # Layer 2: Title similarity (only if SimHash is close-ish, ≤12)
             # Skip full SequenceMatcher for clearly different texts
-            if dist <= 10:
+            if dist <= 12:
                 existing_clean = self._clean(entry.title)
                 if clean_title and existing_clean:
                     # Fast check: substring containment
@@ -230,6 +248,59 @@ class NewsDeduplicator:
                         return entry
 
         return None
+
+    def _tfidf_dedup(self, items: list) -> tuple[list, int]:
+        """Layer 3: TF-IDF cosine similarity among batch survivors.
+
+        Builds TF-IDF vectors from title(×3) + content snippet,
+        uses jieba tokenization for Chinese, then marks items as
+        duplicate if cosine similarity > TFIDF_COSINE_THRESHOLD.
+
+        Items are already sorted by source priority, so earlier items
+        (higher priority) are kept while later duplicates are dropped.
+
+        Returns (unique_items, drop_count).
+        """
+        # Build texts for TF-IDF
+        texts = []
+        for item in items:
+            text = self._build_text(item.title, getattr(item, "content", ""))
+            # Tokenize with jieba for better Chinese handling
+            tokens = " ".join(w for w in jieba.cut(text) if len(w.strip()) > 1)
+            texts.append(tokens)
+
+        try:
+            vectorizer = TfidfVectorizer(max_features=5000)
+            tfidf_matrix = vectorizer.fit_transform(texts)
+            sim_matrix = cosine_similarity(tfidf_matrix)
+        except Exception as e:
+            logger.warning("TF-IDF dedup failed, skipping Layer 3: %s", e)
+            return items, 0
+
+        # Greedy dedup: keep earlier (higher priority) items
+        n = len(items)
+        is_dup = [False] * n
+
+        for i in range(n):
+            if is_dup[i]:
+                continue
+            for j in range(i + 1, n):
+                if is_dup[j]:
+                    continue
+                if sim_matrix[i][j] > TFIDF_COSINE_THRESHOLD:
+                    is_dup[j] = True
+                    logger.info(
+                        'L3 TF-IDF dup: [%s]"%s" ≈ [%s]"%s" (cos=%.3f)',
+                        items[j].source,
+                        items[j].title[:40],
+                        items[i].source,
+                        items[i].title[:40],
+                        sim_matrix[i][j],
+                    )
+
+        unique = [item for item, dup in zip(items, is_dup) if not dup]
+        dropped = sum(is_dup)
+        return unique, dropped
 
     @staticmethod
     def _build_text(title: str, content: str) -> str:

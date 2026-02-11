@@ -111,7 +111,7 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
 async def run_pipeline() -> dict:
     """Execute the full news pipeline:
     1. Fetch all RSS feeds (with Redis URL dedup)
-    2. SimHash + SequenceMatcher dedup (cross-source, 24h window)
+    2. SimHash + SequenceMatcher + TF-IDF cosine dedup (cross-source, 24h window)
     3. Score via DeepSeek (batch of 20)
     4. Store high-scoring items to PostgreSQL
 
@@ -136,7 +136,7 @@ async def run_pipeline() -> dict:
         logger.info("No new items fetched, pipeline done.")
         return summary
 
-    # Step 2: SimHash + title similarity dedup
+    # Step 2: SimHash + title similarity + TF-IDF semantic dedup
     try:
         dedup = NewsDeduplicator()
         await dedup.load_index()
