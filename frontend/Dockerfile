@@ -5,6 +5,8 @@ COPY package.json ./
 RUN npm install --registry=https://registry.npmmirror.com
 COPY . .
 RUN npm run build:h5
+# uni-app build does not copy public/ automatically; copy static assets manually
+RUN cp -r public/* dist/build/h5/ 2>/dev/null || true
 
 # ── Stage 2: Serve ──
 FROM nginx:alpine

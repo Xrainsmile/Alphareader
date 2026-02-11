@@ -1,7 +1,7 @@
 """APScheduler integration — periodic pipeline execution.
 
 Schedule: Every hour from PIPELINE_START_HOUR to PIPELINE_END_HOUR (Asia/Shanghai).
-Default:  07:00 ~ 23:00 (=00:00), i.e. 7, 8, 9, ..., 22, 23 → 17 runs/day.
+Default:  00:00 ~ 23:00, i.e. 0, 1, 2, ..., 23 → 24 runs/day (全天覆盖英文信源时区).
 
 misfire_grace_time is set to 600s (10 min) so that jobs delayed by slow
 container startup, DB health-checks, or transient load spikes are still

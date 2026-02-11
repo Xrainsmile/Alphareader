@@ -32,8 +32,8 @@ class Settings(BaseSettings):
     DEEPSEEK_MAX_RETRIES: int = 2
 
     # Scheduler — Pipeline runs hourly from START to END (Asia/Shanghai)
-    PIPELINE_START_HOUR: int = 7   # 早上7点开始
-    PIPELINE_END_HOUR: int = 23    # 晚上23点最后一次 (即 7,8,...,23 共17次/天)
+    PIPELINE_START_HOUR: int = 0   # 全天运行（英文信源覆盖不同时区）
+    PIPELINE_END_HOUR: int = 23    # 0-23 共24次/天
 
     # Alert — Webhook URL for pipeline failure notifications
     # Supports: 飞书/钉钉/企业微信/Slack/Generic (auto-detected from URL)
