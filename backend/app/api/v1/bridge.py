@@ -15,7 +15,7 @@ router = APIRouter(prefix="/bridge", tags=["bridge"])
 async def generate_prompt(
     sector: str | None = Query(None, description="板块/行业筛选，如 '新能源'"),
     target_date: date | None = Query(None, alias="date", description="目标日期，默认今天"),
-    top_n: int = Query(10, ge=1, le=30, description="返回 Top N 条新闻"),
+    top_n: int = Query(66, ge=1, le=100, description="返回 Top N 条新闻"),
     db: AsyncSession = Depends(get_db),
 ):
     """Generate a structured prompt context for Gemini consumption.
