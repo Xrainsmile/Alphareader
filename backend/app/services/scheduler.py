@@ -1,8 +1,8 @@
 """定时调度器 — 基于 APScheduler 的周期性 Pipeline 执行。
 
 调度策略：
-  - 每小时整点执行一次 Pipeline（PIPELINE_START_HOUR ~ PIPELINE_END_HOUR）
-  - 默认 0:00 ~ 23:00（全天24次），覆盖英文信源的不同时区
+  - 每 PIPELINE_INTERVAL_MINUTES 分钟执行一次（默认 15 分钟，即每小时 4 次）
+  - 运行时间范围：PIPELINE_START_HOUR ~ PIPELINE_END_HOUR（默认全天 0~23）
   - 时区：Asia/Shanghai
 
 关键配置：
@@ -10,7 +10,7 @@
     APScheduler 默认只容忍 1 秒延迟就跳过任务，600 秒可以容忍容器启动慢、
     数据库健康检查、瞬时负载高峰等情况，避免静默跳过任务
   - max_instances = 1，防止上一轮未完成时重复触发
-  - 启动时立即执行一次（next_run_time=now），不等到下一个整点
+  - 启动时立即执行一次（next_run_time=now），不等到下一个调度点
 
 告警集成：
   - 任务失败/异常/跳过时，通过 notifier 发送 Webhook 告警
@@ -113,17 +113,22 @@ async def _pipeline_job():
 def start_scheduler():
     """注册 Cron 定时任务并启动调度器。
 
-    - 每小时整点执行 Pipeline（PIPELINE_START_HOUR ~ PIPELINE_END_HOUR）
-    - 启动时立即执行一次（next_run_time=now），不等待下一个整点
+    - 每 PIPELINE_INTERVAL_MINUTES 分钟执行一次（默认 15 分钟）
+    - 运行时间范围：PIPELINE_START_HOUR ~ PIPELINE_END_HOUR
+    - 启动时立即执行一次（next_run_time=now），不等待下一个调度点
     - max_instances=1 防止任务堆叠
     """
     start_h = settings.PIPELINE_START_HOUR
     end_h = settings.PIPELINE_END_HOUR
+    interval = settings.PIPELINE_INTERVAL_MINUTES
 
     # Build hour range: e.g. "7-23" means 7,8,...,23
     # If end_h == 24 (midnight), use 23 as the last hour (cron 0-23 range)
     cron_end = min(end_h, 23)
     hour_expr = f"{start_h}-{cron_end}"
+
+    # Build minute expression: e.g. interval=15 → "0,15,30,45"
+    minute_expr = ",".join(str(m) for m in range(0, 60, interval))
 
     # Register event listener for missed/error/executed events
     scheduler.add_listener(_scheduler_listener, EVENT_JOB_MISSED | EVENT_JOB_ERROR | EVENT_JOB_EXECUTED)
@@ -132,11 +137,11 @@ def start_scheduler():
         _pipeline_job,
         trigger=CronTrigger(
             hour=hour_expr,
-            minute=0,
+            minute=minute_expr,
             timezone=settings.TIMEZONE,
         ),
         id="news_pipeline",
-        name=f"News Pipeline (hourly {start_h}:00–{end_h}:00 {settings.TIMEZONE})",
+        name=f"News Pipeline (every {interval}min, {start_h}:00–{end_h}:00 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,
@@ -149,9 +154,9 @@ def start_scheduler():
     job = scheduler.get_job("news_pipeline")
     next_fire = job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if job and job.next_run_time else "N/A"
     logger.info(
-        "Scheduler started — pipeline runs hourly %d:00–%d:00 (%s), "
+        "Scheduler started — pipeline runs every %dmin, %d:00–%d:00 (%s), "
         "misfire_grace_time=%ds, alerts=%s, next run: %s",
-        start_h, end_h, settings.TIMEZONE, MISFIRE_GRACE_TIME, alert_status, next_fire,
+        interval, start_h, end_h, settings.TIMEZONE, MISFIRE_GRACE_TIME, alert_status, next_fire,
     )
 
 

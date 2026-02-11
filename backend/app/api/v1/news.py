@@ -18,10 +18,10 @@ logger = logging.getLogger("alphareader.api.news")
 
 
 class SortMode(str, Enum):
-    """News list sort modes."""
-    HOT = "hot"           # Gravity algorithm: score decays with time
-    LATEST = "latest"     # Pure chronological (newest first)
-    SCORE = "score"       # Pure AI score (highest first, legacy default)
+    """新闻列表排序模式。"""
+    HOT = "hot"           # Hacker Gravity: HN 原版重力公式，ai_score 作为 points
+    LATEST = "latest"     # 时间倒序（最新优先）
+    SCORE = "score"       # AI 评分倒序（最高优先）
 
 router = APIRouter(prefix="/news", tags=["news"])
 
@@ -83,13 +83,13 @@ async def list_news(
     max_age_hours: int = Query(72, ge=1, le=720, description="Max news age in hours"),
     db: AsyncSession = Depends(get_db),
 ):
-    """List scored news with pagination.
+    """获取评分新闻列表（分页）。
 
-    Sort modes:
-    - **hot** (default): Gravity algorithm — high-score recent news rank first,
-      older news decays exponentially. Tuned for financial news (gravity=1.8).
-    - **latest**: Pure chronological, newest first.
-    - **score**: Pure AI score, highest first (legacy behavior).
+    排序模式:
+    - **hot** (默认): Hacker Gravity — 直接复用 Hacker News 重力公式
+      rank = (points-1)/(hours+2)^gravity，ai_score 作为 points，gravity 默认 1.8。
+    - **latest**: 时间倒序，最新优先。
+    - **score**: AI 评分倒序，最高优先。
     """
     conditions = [News.ai_score >= min_score]
     if source:

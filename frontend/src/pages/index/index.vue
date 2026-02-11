@@ -138,13 +138,13 @@
             <view class="news-meta">
               <text class="meta-source">{{ item.source }}</text>
               <text class="meta-dot">·</text>
-              <text class="meta-time">{{ formatTime(item.published_at) }}</text>
-              <!-- 热度指标 (hot 模式下显示) -->
+              <text class="meta-time">{{ formatTime(item.created_at) }}</text>
+              <!-- Hacker Gravity 指标 (hot 模式下显示) -->
               <template v-if="currentSort === 'hot' && item.ranking_score != null">
                 <text class="meta-dot">·</text>
-                <view class="heat-badge" :class="heatClass(item.ranking_score)">
-                  <text class="heat-icon">🔥</text>
-                  <text class="heat-value">{{ formatHeat(item.ranking_score) }}</text>
+                <view class="gravity-badge" :class="gravityClass(item.ranking_score)">
+                  <text class="gravity-icon">⚡</text>
+                  <text class="gravity-value">{{ formatGravity(item.ranking_score) }}</text>
                 </view>
               </template>
             </view>
@@ -192,7 +192,7 @@ export default {
       cnSources: ['财联社', '新浪财经', '华尔街见闻'],
       enSources: ['MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch'],
       sortTabs: [
-        { value: 'hot', label: '热度', icon: '🔥' },
+        { value: 'hot', label: 'Gravity', icon: '🔥' },
         { value: 'latest', label: '最新', icon: '🕐' },
         { value: 'score', label: '评分', icon: '⭐' },
       ],
@@ -353,8 +353,7 @@ export default {
 
     formatScore(score) {
       if (score == null) return '-'
-      const n = Number(score)
-      return Number.isInteger(n) ? n.toFixed(1) : n.toString()
+      return Number(score).toFixed(1)
     },
 
     formatTime(iso) {
@@ -374,20 +373,18 @@ export default {
       return `${mm}-${dd}`
     },
 
-    /** 热度值格式化 */
-    formatHeat(score) {
+    /** Hacker Gravity 值格式化 — 统一保留1位小数 */
+    formatGravity(score) {
       if (score == null) return ''
-      if (score >= 1) return score.toFixed(1)
-      if (score >= 0.01) return score.toFixed(2)
-      return score.toFixed(3)
+      return Number(score).toFixed(1)
     },
 
-    /** 热度等级 class */
-    heatClass(score) {
-      if (score >= 1.0) return 'heat-high'
-      if (score >= 0.3) return 'heat-medium'
-      if (score >= 0.05) return 'heat-normal'
-      return 'heat-low'
+    /** Hacker Gravity 等级 class */
+    gravityClass(score) {
+      if (score >= 1.0) return 'gravity-high'
+      if (score >= 0.3) return 'gravity-medium'
+      if (score >= 0.05) return 'gravity-normal'
+      return 'gravity-low'
     },
   },
 }
@@ -685,44 +682,44 @@ export default {
   color: #b0b0be;
 }
 
-/* ── Heat Badge ── */
-.heat-badge {
+/* ── Gravity Badge ── */
+.gravity-badge {
   display: flex;
   align-items: center;
   gap: 4rpx;
   padding: 2rpx 12rpx;
   border-radius: 16rpx;
 }
-.heat-icon {
+.gravity-icon {
   font-size: 20rpx;
 }
-.heat-value {
+.gravity-value {
   font-size: 20rpx;
   font-weight: 600;
   font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
 }
-.heat-high {
+.gravity-high {
   background: rgba(255, 59, 48, 0.12);
 }
-.heat-high .heat-value {
+.gravity-high .gravity-value {
   color: #ff3b30;
 }
-.heat-medium {
+.gravity-medium {
   background: rgba(255, 149, 0, 0.12);
 }
-.heat-medium .heat-value {
+.gravity-medium .gravity-value {
   color: #ff9500;
 }
-.heat-normal {
+.gravity-normal {
   background: rgba(52, 199, 89, 0.12);
 }
-.heat-normal .heat-value {
+.gravity-normal .gravity-value {
   color: #34c759;
 }
-.heat-low {
+.gravity-low {
   background: rgba(142, 142, 147, 0.12);
 }
-.heat-low .heat-value {
+.gravity-low .gravity-value {
   color: #8e8e93;
 }
 

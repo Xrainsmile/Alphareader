@@ -1,13 +1,15 @@
-"""Gravity-based ranking score — Hacker News algorithm adapted for financial news.
+"""Hacker Gravity — 直接复用 Hacker News 重力排名公式。
 
-Formula:  rank = (ai_score - 1) / (hours_elapsed + 2) ^ gravity
+原版公式:  rank = (points - 1) / (hours_elapsed + 2) ^ gravity
+本项目:    rank = (ai_score - 1) / (hours_elapsed + 2) ^ gravity
 
-- ai_score:  DeepSeek importance score (0-100 scale, normalized to 0-10 for calculation)
-- hours_elapsed: hours since publish time
-- gravity: decay factor (default 1.8 — financial news decays fast)
+- points:  在 HN 中为用户 upvote 数；本项目用 DeepSeek AI 评分 (0-10) 作为 points。
+- hours_elapsed: 从 published_at 到当前的小时数。
+- gravity: 时间衰减因子，固定 1.8（与 HN 默认值一致）。
+- "-1":  使 score=1 的新闻 rank=0（噪声地板），与 HN 中 1 票帖子 rank=0 逻辑相同。
+- "+2":  防除零 & 抑制发布初期极端值，同 HN 原版。
 
-Higher gravity → faster decay.  A score-9 article published 6 hours ago
-will rank below a score-7 article published 1 hour ago.
+参考: https://news.ycombinator.com/item?id=1781013 (Paul Graham's gravity explanation)
 """
 
 from __future__ import annotations
@@ -21,21 +23,20 @@ def calculate_ranking_score(
     gravity: float = 1.8,
     now: datetime | None = None,
 ) -> float:
-    """Calculate time-decayed ranking score using the gravity algorithm.
+    """计算 Hacker Gravity 排名分数（Hacker News 原版重力公式）。
+
+    公式: rank = (points - 1) / (hours_elapsed + 2) ^ gravity
+    其中 points = ai_score（AI 评分替代用户投票数）。
 
     Args:
-        ai_score: AI importance score. Accepts 0-100 (auto-normalized to 0-10)
-                  or 0-10 directly.
-        publish_time: When the article was published (timezone-aware or naive UTC).
-        gravity: Decay exponent. Default 1.8 (tuned for financial news).
-                 - 1.2 = slow decay (general news)
-                 - 1.8 = standard decay (financial news)
-                 - 2.5 = aggressive decay (breaking / flash news)
-        now: Override "current time" for testing. Defaults to UTC now.
+        ai_score: AI 评分，作为 HN 公式中的 points。
+                  接受 0-100（自动归一化为 0-10）或 0-10。
+        publish_time: 文章发布时间（时区感知或 naive UTC）。
+        gravity: 时间衰减指数，默认 1.8（与 HN 默认值一致）。
+        now: 覆盖"当前时间"，用于测试。默认 UTC now。
 
     Returns:
-        Ranking score as float, rounded to 4 decimal places.
-        Higher = more prominent.
+        Hacker Gravity 分数（float，保留 4 位小数），越高越靠前。
     """
     if publish_time is None:
         return 0.0
@@ -61,9 +62,9 @@ def calculate_ranking_score(
     # Clamp: future timestamps treated as "just now" (0 hours)
     hours_elapsed = max(elapsed_seconds / 3600.0, 0.0)
 
-    # Gravity formula: rank = (score - 1) / (hours + 2) ^ gravity
-    # The "-1" ensures score=1 items get rank=0 (noise floor)
-    # The "+2" prevents division by zero and dampens the first 2 hours
+    # Hacker News 原版重力公式: rank = (points - 1) / (hours + 2) ^ gravity
+    # points = ai_score; "-1" 使 1 分新闻 rank=0（与 HN 1 票帖子逻辑一致）
+    # "+2" 防除零 & 抑制前 2 小时极端值（同 HN）
     numerator = max(score - 1.0, 0.0)
     denominator = (hours_elapsed + 2.0) ** gravity
 
@@ -77,17 +78,17 @@ def gravity_sql_expression(
     time_column: str = "published_at",
     gravity: float = 1.8,
 ) -> str:
-    """Generate a raw SQL expression for ranking score.
+    """生成 Hacker Gravity 排名的 PostgreSQL SQL 表达式。
 
-    Can be used in ORDER BY or as a computed column.
+    可用于 ORDER BY 或计算列。
 
     Args:
-        score_column: Name of the AI score column.
-        time_column: Name of the publish timestamp column (must be TIMESTAMPTZ).
-        gravity: Decay exponent.
+        score_column: AI 评分列名（作为 HN 公式中的 points）。
+        time_column: 发布时间列名（TIMESTAMPTZ）。
+        gravity: 时间衰减指数，默认 1.8（同 HN）。
 
     Returns:
-        PostgreSQL SQL expression string.
+        PostgreSQL SQL 表达式字符串。
     """
     return (
         f"(GREATEST({score_column} / 10.0 - 1, 0)) "

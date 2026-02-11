@@ -30,8 +30,12 @@ function request(url, options = {}) {
 }
 
 /**
- * 获取新闻列表（分页 + 热度排序）
+ * 获取新闻列表（分页 + Hacker Gravity 排序）
  * 返回 { items, total, limit, offset, sort, gravity, max_age_hours }
+ *
+ * 排序模式 hot 使用 Hacker News 原版重力公式:
+ *   rank = (points - 1) / (hours_elapsed + 2) ^ gravity
+ * 其中 points = ai_score (AI 评分替代用户投票数)
  *
  * @param {Object} opts
  * @param {number}  opts.limit        - 每页条数 (默认 20)
@@ -39,8 +43,8 @@ function request(url, options = {}) {
  * @param {number}  opts.min_score    - 最低 AI 评分 (默认 6)
  * @param {string}  opts.source       - 来源筛选
  * @param {string}  opts.sector       - 板块筛选
- * @param {string}  opts.sort         - 排序模式: hot(热度衰减) | latest(最新) | score(评分)
- * @param {number}  opts.gravity      - 重力因子 (默认 1.8, 仅 hot 模式)
+ * @param {string}  opts.sort         - 排序模式: hot(Hacker Gravity) | latest(最新) | score(评分)
+ * @param {number}  opts.gravity      - 重力因子 (默认 1.8, 与 HN 一致, 仅 hot 模式)
  * @param {number}  opts.max_age_hours - 最大新闻年龄/小时 (默认 72)
  */
 export function fetchNews({ limit = 20, offset = 0, min_score = 6, source, sector, sort = 'hot', gravity, max_age_hours } = {}) {

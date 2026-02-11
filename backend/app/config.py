@@ -52,9 +52,10 @@ class Settings(BaseSettings):
     DEEPSEEK_SCORE_THRESHOLD: int = 6                               # 入库分数阈值（≥6 才存储）
     DEEPSEEK_MAX_RETRIES: int = 2                                   # API 失败最大重试次数
 
-    # ── 调度器 — Pipeline 每小时执行一次 ──
+    # ── 调度器 — Pipeline 定时执行 ──
     PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）
-    PIPELINE_END_HOUR: int = 23    # 结束小时（0-23 共24次/天）
+    PIPELINE_END_HOUR: int = 23    # 结束小时（0-23）
+    PIPELINE_INTERVAL_MINUTES: int = 15  # 执行间隔（分钟），每小时 0/15/30/45 触发
 
     # ── 告警 — Pipeline 失败时的 Webhook 通知 ──
     # 支持：飞书/钉钉/企业微信/Slack/通用（根据 URL 自动识别平台）
