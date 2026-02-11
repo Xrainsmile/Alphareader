@@ -187,10 +187,10 @@ export default {
       scoreOptions: [6, 7, 8, 9],
       sourceOptions: [
         '财联社', '新浪财经', '华尔街见闻',
-        'MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch',
+        'MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch', 'Finnhub',
       ],
       cnSources: ['财联社', '新浪财经', '华尔街见闻'],
-      enSources: ['MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch'],
+      enSources: ['MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch', 'Finnhub'],
       sortTabs: [
         { value: 'hot', label: 'Gravity', icon: '🔥' },
         { value: 'latest', label: '最新', icon: '🕐' },

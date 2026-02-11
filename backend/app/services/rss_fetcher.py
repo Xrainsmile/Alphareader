@@ -2,9 +2,10 @@
 =================================
 职责：从多个中英文金融信源并发抓取新闻，返回去重后的原始新闻列表。
 
-当前活跃信源（8 个）：
+当前活跃信源（9 个）：
   中文：财联社 / 新浪财经 / 华尔街见闻（通过 JSON API）
   英文：MarketWatch / CNBC World / CNBC US Markets / Seeking Alpha / TechCrunch（通过 RSS/Atom XML）
+        Finnhub（通过 JSON API，需 API Key）
 
 处理流程：
   1. 使用 httpx 并发请求所有信源
@@ -365,6 +366,32 @@ def _parse_techcrunch(raw_text: str) -> list[RawNewsItem]:
     return items
 
 
+def _parse_finnhub(data: list | dict) -> list[RawNewsItem]:
+    """解析 Finnhub Market News API（https://finnhub.io/api/v1/news）
+
+    返回 JSON 数组，每条包含:
+      headline, summary, url, source, datetime(unix), related, category, id
+    """
+    items: list[RawNewsItem] = []
+    entries = data if isinstance(data, list) else []
+    for entry in entries:
+        title = (entry.get("headline") or "").strip()
+        url = entry.get("url", "")
+        summary = (entry.get("summary") or "").strip()
+        content = summary or title
+        ts = entry.get("datetime")
+        published = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
+        # related 字段包含相关股票代码，如 "AAPL,MSFT"
+        related = entry.get("related", "")
+        tags = [t.strip() for t in related.split(",") if t.strip()] if related else []
+        if title and url:
+            items.append(RawNewsItem(
+                title=title, content=content,
+                url=url, source="Finnhub", published_at=published, tags=tags[:5],
+            ))
+    return items
+
+
 
 # ════════════════════════════════════════════════════════
 # 信源注册表 — 所有活跃信源的配置中心
@@ -428,6 +455,11 @@ FEED_SOURCES: list[FeedSource] = [
         url="https://techcrunch.com/feed/",
         parser=_parse_techcrunch,
         is_rss=True,
+    ),
+    FeedSource(
+        name="Finnhub",
+        url="",  # 动态构建，见 fetch_all_feeds()
+        parser=_parse_finnhub,
     ),
 ]
 
@@ -601,7 +633,20 @@ async def _fetch_with_fallback(
 
 async def fetch_all_feeds() -> list[RawNewsItem]:
     """并发抓取所有信源，返回去重后的新闻列表。这是抓取阶段的唯一入口。"""
+    from app.config import settings
+
     r = get_redis()
+
+    # 动态注入需要 API Key 的信源 URL
+    for src in FEED_SOURCES:
+        if src.name == "Finnhub" and not src.url:
+            key = settings.FINNHUB_API_KEY
+            if key:
+                src.url = f"https://finnhub.io/api/v1/news?category=general&token={key}"
+            else:
+                logger.warning("FINNHUB_API_KEY not set, skipping Finnhub source")
+
+    active_sources = [s for s in FEED_SOURCES if s.url]
 
     async with httpx.AsyncClient(
         headers=HTTP_HEADERS,
@@ -609,7 +654,7 @@ async def fetch_all_feeds() -> list[RawNewsItem]:
     ) as client:
         tasks = [
             _fetch_single_source(client, source, r)
-            for source in FEED_SOURCES
+            for source in active_sources
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 

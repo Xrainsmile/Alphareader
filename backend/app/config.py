@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # ── 跨域（CORS）──
     CORS_ORIGINS: str = "*"  # 逗号分隔的允许源，如 "https://example.com,http://localhost:3000"
 
+    # ── Finnhub 市场新闻 ──
+    FINNHUB_API_KEY: str = ""                                       # Finnhub API Token (https://finnhub.io)
+
     # ── DeepSeek AI 评分配置 ──
     DEEPSEEK_API_KEY: str = ""                                      # API 密钥
     DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # API 地址
