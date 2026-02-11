@@ -24,12 +24,14 @@ USER appuser
 
 EXPOSE 8000
 
-# Production: gunicorn with uvicorn workers (no --reload)
-# WEB_CONCURRENCY can be overridden via env (default: 2 workers for 2-core LightHouse)
+# Production: gunicorn with uvicorn worker
+# Single worker to avoid duplicate APScheduler instances across processes.
+# Async I/O handles concurrency within the single worker — sufficient for
+# our pipeline-heavy workload on a 2-core Lighthouse instance.
 CMD ["python", "-m", "gunicorn", "app.main:app", \
      "-k", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8000", \
-     "--workers", "2", \
+     "--workers", "1", \
      "--timeout", "120", \
      "--graceful-timeout", "30", \
      "--access-logfile", "-"]
