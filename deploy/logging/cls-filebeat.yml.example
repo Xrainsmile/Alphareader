@@ -1,0 +1,46 @@
+# ── 腾讯云 CLS (Cloud Log Service) 接入配置示例 ──
+#
+# AlphaReader 已支持 JSON 结构化日志 (LOG_FORMAT=json)。
+# 接入 CLS 有两种方式：
+#
+# ── 方式一：LogListener Agent（推荐，无需改 Docker）──
+# 在宿主机安装腾讯云 LogListener：
+#   1. 登录 CLS 控制台 → 创建日志主题
+#   2. 安装 LogListener: https://cloud.tencent.com/document/product/614/17414
+#   3. 配置采集规则，采集 Docker JSON 日志目录：
+#      /var/lib/docker/containers/*/*.log
+#   4. 解析模式选择 JSON，自动解析 ts/level/logger/msg 字段
+#
+# ── 方式二：Docker Fluentd 日志驱动 ──
+# 修改 docker-compose.yml 中的 logging 配置：
+#
+# logging:
+#   driver: fluentd
+#   options:
+#     fluentd-address: "localhost:24224"
+#     tag: "alphareader.{{.Name}}"
+#
+# 然后部署 Fluentd + CLS 插件容器：
+#   参考: https://cloud.tencent.com/document/product/614/43580
+#
+# ── 方式三：Filebeat（如下配置）──
+# 将此文件重命名为 filebeat.yml 并挂载到 filebeat 容器
+
+filebeat.inputs:
+  - type: container
+    paths:
+      - "/var/lib/docker/containers/*/*.log"
+    processors:
+      - add_docker_metadata:
+          host: "unix:///var/run/docker.sock"
+    json.keys_under_root: true
+    json.add_error_key: true
+
+output.kafka:
+  # 腾讯云 CLS Kafka 协议接入
+  # 替换为你的 CLS Topic 配置
+  hosts: ["${CLS_KAFKA_HOST:cls-kafka.tencentcloudapi.com:9096}"]
+  topic: "${CLS_TOPIC_ID:your-topic-id}"
+  username: "${CLS_SECRET_ID}"
+  password: "${CLS_SECRET_KEY}#${CLS_TOPIC_ID}"
+  ssl.enabled: true

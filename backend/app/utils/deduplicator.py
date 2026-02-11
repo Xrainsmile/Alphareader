@@ -104,28 +104,50 @@ class NewsDeduplicator:
         logger.info("Loaded SimHash index: %d entries (24h window)", len(self._index))
 
     async def save_index(self) -> None:
-        """Persist the current index back to Redis. Prune expired entries."""
+        """Persist the current index back to Redis using atomic RENAME.
+
+        Writes to a temporary key first, then atomically swaps it into
+        the real key via RENAME, eliminating the window where the key
+        is empty (which would cause dedup misses on concurrent reads).
+        """
         r = get_redis()
         cutoff = time.time() - INDEX_TTL_SECONDS
+        tmp_key = f"{REDIS_SIMHASH_KEY}:tmp"
 
-        # Delete old key, rewrite
-        await r.delete(REDIS_SIMHASH_KEY)
+        # Clean up any stale temp key from a previous crash
+        await r.delete(tmp_key)
 
         if not self._index:
+            # No entries — just delete the real key
+            await r.delete(REDIS_SIMHASH_KEY)
+            logger.info("Saved SimHash index: 0 entries (cleared)")
             return
 
+        # Write all valid entries to the temp key via pipeline
         pipe = r.pipeline()
         count = 0
         for entry in self._index:
             if entry.timestamp < cutoff:
                 continue
             value = f"{entry.simhash_value}|{entry.source}|{entry.timestamp}"
-            pipe.hset(REDIS_SIMHASH_KEY, entry.title, value)
+            pipe.hset(tmp_key, entry.title, value)
             count += 1
-        pipe.expire(REDIS_SIMHASH_KEY, INDEX_TTL_SECONDS + 3600)  # Extra 1h buffer
+
+        if count == 0:
+            # All entries expired — delete both keys
+            pipe.delete(tmp_key)
+            pipe.delete(REDIS_SIMHASH_KEY)
+            await pipe.execute()
+            logger.info("Saved SimHash index: 0 entries (all expired)")
+            return
+
+        pipe.expire(tmp_key, INDEX_TTL_SECONDS + 3600)  # Extra 1h buffer
         await pipe.execute()
 
-        logger.info("Saved SimHash index: %d entries", count)
+        # Atomic swap: readers either see the old full key or the new full key
+        await r.rename(tmp_key, REDIS_SIMHASH_KEY)
+
+        logger.info("Saved SimHash index: %d entries (atomic RENAME)", count)
 
     async def deduplicate(self, items: list) -> list:
         """Run two-layer dedup on a list of RawNewsItem.

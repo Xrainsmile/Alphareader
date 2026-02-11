@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     PIPELINE_START_HOUR: int = 7   # 早上7点开始
     PIPELINE_END_HOUR: int = 23    # 晚上23点最后一次 (即 7,8,...,23 共17次/天)
 
+    # Alert — Webhook URL for pipeline failure notifications
+    # Supports: 飞书/钉钉/企业微信/Slack/Generic (auto-detected from URL)
+    # Leave empty to disable alerting
+    ALERT_WEBHOOK_URL: str = ""
+
     # PostgreSQL
     POSTGRES_USER: str = "alphareader"
     POSTGRES_PASSWORD: str = "changeme"
