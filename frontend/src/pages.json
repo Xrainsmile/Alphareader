@@ -11,8 +11,46 @@
         "backgroundColor": "#f0f2f5",
         "onReachBottomDistance": 100
       }
+    },
+    {
+      "path": "pages/reports/index",
+      "style": {
+        "navigationBarTitleText": "每日复盘",
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationBarTextStyle": "black",
+        "backgroundColor": "#f0f2f5"
+      }
+    },
+    {
+      "path": "pages/reports/detail",
+      "style": {
+        "navigationBarTitleText": "",
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationBarTextStyle": "black",
+        "backgroundColor": "#f0f2f5"
+      }
     }
   ],
+  "tabBar": {
+    "color": "#8c8c9a",
+    "selectedColor": "#4285f4",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "News",
+        "iconPath": "static/tabbar/news.svg",
+        "selectedIconPath": "static/tabbar/news-active.svg"
+      },
+      {
+        "pagePath": "pages/reports/index",
+        "text": "Reports",
+        "iconPath": "static/tabbar/reports.svg",
+        "selectedIconPath": "static/tabbar/reports-active.svg"
+      }
+    ]
+  },
   "globalStyle": {
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "AlphaReader",
