@@ -3,7 +3,9 @@
  */
 
 // 后端 API 基础地址 — 根据环境自动切换
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+// 生产环境用空字符串（相对路径，由 Nginx 反代到后端）
+// 开发环境用 localhost:8000
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.MODE === 'production' ? '' : 'http://localhost:8000')
 
 /**
  * 通用请求封装
