@@ -180,8 +180,11 @@
       </view>
     </view>
 
-    <!-- 底部安全区 -->
-    <view class="safe-bottom"></view>
+    <!-- 底部备案信息 -->
+    <view class="site-footer">
+      <text class="footer-icp" @click="onOpenUrl('https://beian.miit.gov.cn/')">蜀ICP备2026006985号</text>
+      <text class="footer-copy">© 2026 Rick</text>
+    </view>
   </view>
 </template>
 
@@ -921,9 +924,22 @@ export default {
   color: #8c8c9a;
 }
 
-/* ── Safe Area ── */
-.safe-bottom {
-  height: 60rpx;
+/* ── Site Footer ── */
+.site-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40rpx 0 60rpx;
+  gap: 8rpx;
+}
+.footer-icp {
+  font-size: 22rpx;
+  color: #b0b0be;
+  text-decoration: underline;
+}
+.footer-copy {
+  font-size: 22rpx;
+  color: #b0b0be;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1176,9 +1192,20 @@ export default {
     font-size: 13px;
   }
 
-  /* ── Safe Area ── */
-  .safe-bottom {
-    height: 32px;
+  /* ── Site Footer ── */
+  .site-footer {
+    padding: 32px 0 48px;
+    gap: 6px;
+  }
+  .footer-icp {
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .footer-icp:hover {
+    color: #8c8c9a;
+  }
+  .footer-copy {
+    font-size: 12px;
   }
 }
 
