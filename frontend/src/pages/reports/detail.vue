@@ -47,20 +47,41 @@ const styledHtml = computed(() => {
   if (!htmlContent.value) return ''
   const css = `
     <style>
+      h1 {
+        font-size: 22px;
+        font-weight: 800;
+        color: #1a1a2e;
+        margin: 36px 0 16px;
+        line-height: 1.5;
+      }
       h2 {
         font-size: 18px;
         font-weight: 700;
         color: #1a1a2e;
-        margin: 28px 0 12px;
+        margin: 32px 0 14px;
         padding-left: 12px;
         border-left: 3px solid #4285f4;
-        line-height: 1.4;
+        line-height: 1.5;
+      }
+      h3 {
+        font-size: 16px;
+        font-weight: 600;
+        color: #2a2a3e;
+        margin: 28px 0 12px;
+        line-height: 1.5;
+      }
+      h4 {
+        font-size: 15px;
+        font-weight: 600;
+        color: #3a3a4a;
+        margin: 24px 0 10px;
+        line-height: 1.5;
       }
       p {
         font-size: 15px;
         color: #3a3a4a;
-        line-height: 1.85;
-        margin: 10px 0;
+        line-height: 1.9;
+        margin: 14px 0;
       }
       strong {
         color: #1a1a2e;
@@ -68,33 +89,41 @@ const styledHtml = computed(() => {
       }
       ul, ol {
         padding-left: 20px;
-        margin: 10px 0;
+        margin: 16px 0;
       }
       li {
         font-size: 15px;
         color: #3a3a4a;
-        line-height: 1.85;
-        margin: 6px 0;
+        line-height: 1.9;
+        margin: 8px 0;
+      }
+      li p {
+        margin: 4px 0;
       }
       img {
         max-width: 100%;
         border-radius: 8px;
-        margin: 12px 0;
+        margin: 16px 0;
       }
       blockquote {
-        margin: 16px 0;
-        padding: 12px 16px;
+        margin: 20px 0;
+        padding: 14px 18px;
         background: #f7f8fa;
         border-left: 3px solid #4285f4;
         border-radius: 0 8px 8px 0;
         color: #5a5a6e;
         font-size: 14px;
-        line-height: 1.75;
+        line-height: 1.8;
       }
       blockquote p {
-        margin: 0;
+        margin: 6px 0;
         color: #5a5a6e;
         font-size: 14px;
+      }
+      hr {
+        border: none;
+        border-top: 1px solid #eee;
+        margin: 28px 0;
       }
     </style>
   `
