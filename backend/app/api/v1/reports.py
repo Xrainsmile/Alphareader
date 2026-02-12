@@ -1,9 +1,10 @@
 """Reports API — sync endpoint for upload script + list/detail for frontend.
 
 Endpoints:
-  POST /api/v1/reports/sync   — Upsert a report (from Node.js sync script)
-  GET  /api/v1/reports/        — List all reports (sorted by date desc)
-  GET  /api/v1/reports/{id}    — Get single report by id
+  POST   /api/v1/reports/sync   — Upsert a report (from Node.js sync script)
+  DELETE /api/v1/reports/{id}   — Delete a report (requires token)
+  GET    /api/v1/reports/       — List all reports (sorted by date desc)
+  GET    /api/v1/reports/{id}   — Get single report by id
 """
 
 import logging
@@ -114,6 +115,25 @@ async def sync_report(
         await db.refresh(report)
         logger.info("Report created: %s", payload.title)
         return ReportSyncResponse(action="created", msg=f"已创建: {payload.title}", id=report.id)
+
+
+@router.delete("/{report_id}")
+async def delete_report(
+    report_id: int,
+    _token: str = Depends(verify_sync_token),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a report by id (requires Bearer token)."""
+    stmt = select(Report).where(Report.id == report_id)
+    result = await db.execute(stmt)
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    title = report.title
+    await db.delete(report)
+    await db.commit()
+    logger.info("Report deleted: %s (id=%d)", title, report_id)
+    return {"code": 0, "msg": f"已删除: {title}"}
 
 
 @router.get("/", response_model=list[ReportListItem])
