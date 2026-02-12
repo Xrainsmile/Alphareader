@@ -14,17 +14,7 @@
         class="report-card"
         @click="goDetail(item.id)"
       >
-        <!-- Cover Image -->
-        <view class="card-cover" v-if="item.cover">
-          <image
-            class="cover-img"
-            :src="item.cover"
-            mode="aspectFill"
-            lazy-load
-          />
-        </view>
-
-        <!-- Text Area -->
+        <!-- Text Area (left) -->
         <view class="card-text">
           <text class="card-title">{{ item.title }}</text>
           <text class="card-summary">{{ item.summary }}</text>
@@ -36,6 +26,16 @@
               </view>
             </view>
           </view>
+        </view>
+
+        <!-- Cover Image (right, small) -->
+        <view class="card-cover" v-if="item.cover">
+          <image
+            class="cover-img"
+            :src="item.cover"
+            mode="aspectFill"
+            lazy-load
+          />
         </view>
       </view>
     </view>
@@ -178,32 +178,36 @@ const onOpenIcp = () => {
   flex-direction: column;
 }
 
-/* ── Report Card ── */
+/* ── Report Card (横向布局：左文字 右封面) ── */
 .report-card {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   padding: 28rpx 0;
   border-bottom: 1rpx solid #f0f0f2;
   cursor: pointer;
+  gap: 24rpx;
 }
 
-/* ── Cover Image ── */
+/* ── Text Area (占满剩余空间) ── */
+.card-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Cover Image (右侧小图) ── */
 .card-cover {
-  width: 100%;
-  height: 360rpx;
-  border-radius: 16rpx;
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 12rpx;
   overflow: hidden;
-  margin-bottom: 24rpx;
+  flex-shrink: 0;
 }
 .cover-img {
   width: 100%;
   height: 100%;
-}
-
-/* ── Text Area ── */
-.card-text {
-  display: flex;
-  flex-direction: column;
 }
 .card-title {
   font-size: 34rpx;
@@ -310,29 +314,25 @@ const onOpenIcp = () => {
     margin-top: 4px;
   }
 
-  /* Card - PC 端改为双列网格 */
+  /* Card - PC 端保持横向布局 */
   .reports-list {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 24px;
+    display: flex;
+    flex-direction: column;
     margin-top: 8px;
   }
   .report-card {
-    padding: 0;
-    border-bottom: none;
-    border-radius: 12px;
-    overflow: hidden;
-    background: #fafafa;
-    transition: transform 0.2s, box-shadow 0.2s;
+    padding: 20px 0;
+    border-bottom: 1px solid #f0f0f2;
+    gap: 20px;
+    transition: background-color 0.15s;
   }
   .report-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+    background-color: #fafafa;
   }
   .card-cover {
-    height: 180px;
-    border-radius: 0;
-    margin-bottom: 0;
+    width: 70px;
+    height: 70px;
+    border-radius: 8px;
   }
   .card-text {
     padding: 16px;
