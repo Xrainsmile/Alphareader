@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     # 留空则禁用告警
     ALERT_WEBHOOK_URL: str = ""
 
+    # ── Reports 同步鉴权 ──
+    REPORT_SYNC_TOKEN: str = "your-secret-token"  # Node.js 上传脚本使用的 Bearer Token
+
     # ── PostgreSQL 数据库 ──
     POSTGRES_USER: str = "alphareader"     # 数据库用户名
     POSTGRES_PASSWORD: str = "changeme"    # 数据库密码
