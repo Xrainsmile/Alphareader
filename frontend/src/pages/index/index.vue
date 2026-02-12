@@ -487,6 +487,8 @@ export default {
   border-radius: 32rpx;
   border: 2rpx solid #e0e0e6;
   flex-shrink: 0;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
 }
 .filter-trigger-active {
   border-color: #4285f4;
@@ -543,6 +545,8 @@ export default {
   right: 0;
   bottom: 0;
   z-index: 999;
+  display: flex;
+  justify-content: center;
 }
 .filter-mask {
   position: absolute;
@@ -559,6 +563,7 @@ export default {
   border-radius: 0 0 28rpx 28rpx;
   padding: 32rpx 32rpx 0;
   box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.1);
+  width: 100%;
 }
 .filter-row {
   display: flex;
@@ -600,6 +605,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
 }
 .filter-row-chips-wrap .fc {
   flex: none;
@@ -639,6 +646,8 @@ export default {
   padding: 20rpx 0;
   border-radius: 16rpx;
   border: 2rpx solid #e0e0e6;
+  cursor: pointer;
+  transition: background-color 0.2s;
 }
 .filter-reset-text {
   font-size: 28rpx;
@@ -653,6 +662,8 @@ export default {
   padding: 20rpx 0;
   border-radius: 16rpx;
   background: #4285f4;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
 }
 .filter-confirm-text {
   font-size: 28rpx;
@@ -667,6 +678,8 @@ export default {
   background: linear-gradient(135deg, #667eea, #764ba2);
   border-radius: 20rpx;
   box-shadow: 0 8rpx 24rpx rgba(102, 126, 234, 0.25);
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.15s;
 }
 .prompt-header {
   display: flex;
@@ -730,6 +743,7 @@ export default {
   border-bottom: 1rpx solid #f0f0f2;
   position: relative;
   transition: background-color 0.15s;
+  cursor: pointer;
 }
 .news-card:active {
   background-color: #fafafa;
@@ -872,5 +886,274 @@ export default {
 /* ── Safe Area ── */
 .safe-bottom {
   height: 60rpx;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PC / Tablet 适配 (屏幕宽度 > 768px)
+   uni-app H5 下 750rpx = 屏幕宽度，PC 宽屏时 rpx 值会被放大。
+   使用 @media 覆盖关键布局，限制内容宽度、优化交互体验。
+   ═══════════════════════════════════════════════════════════ */
+@media screen and (min-width: 768px) {
+  /* 整体容器：限宽居中 */
+  .container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ── Header ── */
+  .header {
+    padding: 24px 0 16px;
+  }
+  .logo {
+    font-size: 28px;
+    letter-spacing: 0.5px;
+  }
+  .subtitle {
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  /* ── Filter Trigger Bar ── */
+  .filter-trigger-bar {
+    margin: 10px 0 8px;
+  }
+  .filter-trigger-left {
+    gap: 8px;
+  }
+  .filter-trigger-btn {
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    border-width: 1px;
+  }
+  .filter-trigger-btn:hover {
+    border-color: #4285f4;
+    background: #f0f6ff;
+    box-shadow: 0 2px 8px rgba(66, 133, 244, 0.15);
+  }
+  .filter-trigger-icon {
+    font-size: 14px;
+  }
+  .filter-trigger-text {
+    font-size: 14px;
+  }
+  .filter-arrow {
+    font-size: 15px;
+  }
+  .filter-tags {
+    gap: 6px;
+  }
+  .filter-tag {
+    padding: 3px 10px;
+    border-radius: 12px;
+  }
+  .filter-tag-text {
+    font-size: 12px;
+  }
+  .stats-text-inline {
+    font-size: 12px;
+    margin-left: 8px;
+  }
+
+  /* ── Filter Panel (PC: 居中限宽 + 圆角) ── */
+  .filter-panel-body {
+    max-width: 800px;
+    margin: 0 auto;
+    border-radius: 0 0 16px 16px;
+    padding: 24px 28px 0;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12);
+  }
+  .filter-row {
+    padding-bottom: 18px;
+    margin-bottom: 16px;
+    border-bottom-width: 1px;
+  }
+  .filter-row-last {
+    padding-bottom: 12px;
+  }
+  .filter-row-label {
+    font-size: 14px;
+    width: 50px;
+    padding-top: 7px;
+  }
+  .filter-row-chips {
+    gap: 10px;
+  }
+  .fc {
+    padding: 9px 0;
+    border-radius: 8px;
+    transition: background-color 0.15s, transform 0.1s;
+  }
+  .fc:hover {
+    background: #eef1f5;
+    transform: translateY(-1px);
+  }
+  .fc-active:hover {
+    background: #e4edfc;
+  }
+  .filter-row-chips-wrap .fc {
+    padding: 7px 16px;
+  }
+  .fc-text {
+    font-size: 14px;
+  }
+  .filter-footer {
+    padding: 16px 0;
+    gap: 16px;
+    border-top-width: 1px;
+  }
+  .filter-reset-btn {
+    padding: 10px 0;
+    border-radius: 10px;
+    border-width: 1px;
+  }
+  .filter-reset-btn:hover {
+    background: #f5f5f7;
+  }
+  .filter-reset-text {
+    font-size: 14px;
+  }
+  .filter-confirm-btn {
+    padding: 10px 0;
+    border-radius: 10px;
+  }
+  .filter-confirm-btn:hover {
+    background: #3b78e7;
+    box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);
+  }
+  .filter-confirm-text {
+    font-size: 14px;
+  }
+
+  /* ── Prompt Card ── */
+  .prompt-card {
+    margin: 12px 0;
+    padding: 20px 24px;
+    border-radius: 14px;
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.2);
+  }
+  .prompt-card:hover {
+    box-shadow: 0 8px 28px rgba(102, 126, 234, 0.35);
+    transform: translateY(-1px);
+  }
+  .prompt-icon {
+    font-size: 20px;
+    margin-right: 8px;
+  }
+  .prompt-title {
+    font-size: 16px;
+  }
+  .prompt-desc {
+    font-size: 13px;
+  }
+  .loading-spinner {
+    font-size: 13px;
+  }
+
+  /* ── News List ── */
+  .news-list {
+    padding-bottom: 16px;
+  }
+  .loading-container,
+  .empty-container {
+    padding: 80px 0;
+  }
+  .loading-text,
+  .empty-text {
+    font-size: 15px;
+  }
+
+  /* ── Card Wrapper ── */
+  .card-wrapper {
+    border-radius: 14px;
+    box-shadow: 0 1px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  /* ── News Card ── */
+  .news-card {
+    padding: 20px 24px;
+    transition: background-color 0.2s;
+  }
+  .news-card:hover {
+    background-color: #fafbfc;
+  }
+  .news-card:active {
+    background-color: #f5f6f8;
+  }
+
+  /* ── Score Badge ── */
+  .score-badge {
+    width: 48px;
+    height: 32px;
+    border-radius: 8px;
+    margin-right: 16px;
+    margin-top: 4px;
+  }
+  .score-num {
+    font-size: 15px;
+  }
+
+  /* ── News Body ── */
+  .news-title {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  .news-summary {
+    font-size: 13.5px;
+    margin-top: 6px;
+    line-height: 1.6;
+    -webkit-line-clamp: 3;
+  }
+
+  /* ── Meta ── */
+  .news-meta {
+    margin-top: 10px;
+    gap: 6px;
+  }
+  .meta-source,
+  .meta-dot,
+  .meta-time {
+    font-size: 12px;
+  }
+
+  /* ── Gravity Badge ── */
+  .gravity-badge {
+    gap: 3px;
+    padding: 1px 8px;
+    border-radius: 10px;
+  }
+  .gravity-icon {
+    font-size: 11px;
+  }
+  .gravity-value {
+    font-size: 11px;
+  }
+
+  /* ── Load More ── */
+  .load-more {
+    padding: 24px 0;
+  }
+  .load-more-text {
+    font-size: 13px;
+  }
+
+  /* ── Safe Area ── */
+  .safe-bottom {
+    height: 32px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   大屏 (≥1200px) — 进一步优化阅读体验
+   ═══════════════════════════════════════════════════════════ */
+@media screen and (min-width: 1200px) {
+  .container {
+    max-width: 860px;
+  }
+  .news-summary {
+    -webkit-line-clamp: 4;
+    line-height: 1.65;
+  }
 }
 </style>
