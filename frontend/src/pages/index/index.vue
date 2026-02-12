@@ -51,10 +51,11 @@
               v-for="tab in sortTabs"
               :key="tab.value"
               class="fc"
-              :class="{ 'fc-active': tmpSort === tab.value }"
+              :class="{ 'fc-active': tmpSort === tab.value, 'fc-gravity': tab.value === 'hot' }"
               @click="tmpSort = tab.value"
             >
               <text class="fc-text" :class="{ 'fc-text-active': tmpSort === tab.value }">{{ tab.label }}</text>
+              <view v-if="tab.value === 'hot'" class="gravity-tooltip">基于 Hacker News 经典重力算法：高评分的新鲜资讯排在前面，随时间自然下沉</view>
             </view>
           </view>
         </view>
@@ -627,6 +628,43 @@ export default {
 .fc-divider {
   width: 100%;
   height: 0;
+}
+
+/* ── Gravity Tooltip (CSS-only) ── */
+.fc-gravity {
+  position: relative;
+}
+.gravity-tooltip {
+  display: none;
+}
+@media (hover: hover) {
+  .fc-gravity:hover .gravity-tooltip {
+    display: block;
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 240px;
+    padding: 10px 14px;
+    background: #1a1a2e;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 12px;
+    line-height: 1.6;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    z-index: 10;
+    pointer-events: none;
+    white-space: normal;
+  }
+  .fc-gravity:hover .gravity-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-bottom-color: #1a1a2e;
+  }
 }
 
 /* ── Filter Footer ── */
