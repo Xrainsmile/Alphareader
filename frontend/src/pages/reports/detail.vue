@@ -58,7 +58,7 @@ const styledHtml = computed(() => {
         font-size: 18px;
         font-weight: 700;
         color: #1a1a2e;
-        margin: 32px 0 14px;
+        margin: 24px 0 14px;
         padding-left: 12px;
         border-left: 3px solid #4285f4;
         line-height: 1.5;
@@ -80,8 +80,8 @@ const styledHtml = computed(() => {
       p {
         font-size: 15px;
         color: #3a3a4a;
-        line-height: 1.9;
-        margin: 14px 0;
+        line-height: 2.5;
+        margin: 12px 0;
       }
       strong {
         color: #1a1a2e;
@@ -94,7 +94,7 @@ const styledHtml = computed(() => {
       li {
         font-size: 15px;
         color: #3a3a4a;
-        line-height: 1.9;
+        line-height: 2;
         margin: 8px 0;
       }
       li p {
