@@ -48,11 +48,11 @@ const tagStyle = {
   h2: 'font-size:18px;font-weight:700;color:#1a1a2e;margin:24px 0 14px;padding-left:12px;border-left:3px solid #4285f4;line-height:1.5;',
   h3: 'font-size:16px;font-weight:600;color:#2a2a3e;margin:28px 0 12px;line-height:1.5;',
   h4: 'font-size:15px;font-weight:600;color:#3a3a4a;margin:24px 0 10px;line-height:1.5;',
-  p: 'font-size:15px;color:#3a3a4a;line-height:2.5;margin:12px 0;',
+  p: 'font-size:15px;color:#3a3a4a;line-height:1.5;margin:12px 0;',
   strong: 'color:#1a1a2e;font-weight:600;',
   ul: 'padding-left:20px;margin:16px 0;',
   ol: 'padding-left:20px;margin:16px 0;',
-  li: 'font-size:15px;color:#3a3a4a;line-height:2;margin:8px 0;',
+  li: 'font-size:15px;color:#3a3a4a;line-height:1.5;margin:8px 0;',
   img: 'max-width:100%;border-radius:8px;margin:16px 0;',
   blockquote: 'margin:20px 0;padding:14px 18px;background:#f7f8fa;border-left:3px solid #4285f4;border-radius:0 8px 8px 0;color:#5a5a6e;font-size:14px;line-height:1.8;',
   hr: 'border:none;border-top:1px solid #eee;margin:28px 0;'
