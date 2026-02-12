@@ -13,8 +13,8 @@
     <view class="article-divider" v-if="meta.title"></view>
 
     <!-- Article Content (mp-html) -->
-    <view class="article-body" v-if="styledHtml">
-      <mp-html :content="styledHtml" :lazy-load="true" @imgtap="onImageTap" />
+    <view class="article-body" v-if="htmlContent">
+      <mp-html :content="htmlContent" :tag-style="tagStyle" :lazy-load="true" @imgtap="onImageTap" />
     </view>
 
     <!-- Loading -->
@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
 import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
 import { rawReports } from '@/data/reports'
@@ -42,93 +42,21 @@ import { fetchReportDetail } from '@/utils/api'
 const meta = ref({})
 const htmlContent = ref('')
 
-// 注入排版样式到 HTML 内容
-const styledHtml = computed(() => {
-  if (!htmlContent.value) return ''
-  const css = `
-    <style>
-      h1 {
-        font-size: 22px;
-        font-weight: 800;
-        color: #1a1a2e;
-        margin: 36px 0 16px;
-        line-height: 1.5;
-      }
-      h2 {
-        font-size: 18px;
-        font-weight: 700;
-        color: #1a1a2e;
-        margin: 24px 0 14px;
-        padding-left: 12px;
-        border-left: 3px solid #4285f4;
-        line-height: 1.5;
-      }
-      h3 {
-        font-size: 16px;
-        font-weight: 600;
-        color: #2a2a3e;
-        margin: 28px 0 12px;
-        line-height: 1.5;
-      }
-      h4 {
-        font-size: 15px;
-        font-weight: 600;
-        color: #3a3a4a;
-        margin: 24px 0 10px;
-        line-height: 1.5;
-      }
-      p {
-        font-size: 15px;
-        color: #3a3a4a;
-        line-height: 2.5;
-        margin: 12px 0;
-      }
-      strong {
-        color: #1a1a2e;
-        font-weight: 600;
-      }
-      ul, ol {
-        padding-left: 20px;
-        margin: 16px 0;
-      }
-      li {
-        font-size: 15px;
-        color: #3a3a4a;
-        line-height: 2;
-        margin: 8px 0;
-      }
-      li p {
-        margin: 4px 0;
-      }
-      img {
-        max-width: 100%;
-        border-radius: 8px;
-        margin: 16px 0;
-      }
-      blockquote {
-        margin: 20px 0;
-        padding: 14px 18px;
-        background: #f7f8fa;
-        border-left: 3px solid #4285f4;
-        border-radius: 0 8px 8px 0;
-        color: #5a5a6e;
-        font-size: 14px;
-        line-height: 1.8;
-      }
-      blockquote p {
-        margin: 6px 0;
-        color: #5a5a6e;
-        font-size: 14px;
-      }
-      hr {
-        border: none;
-        border-top: 1px solid #eee;
-        margin: 28px 0;
-      }
-    </style>
-  `
-  return css + htmlContent.value
-})
+// 通过 tag-style 属性注入内联样式（能穿透 rich-text 组件）
+const tagStyle = {
+  h1: 'font-size:22px;font-weight:800;color:#1a1a2e;margin:36px 0 16px;line-height:1.5;',
+  h2: 'font-size:18px;font-weight:700;color:#1a1a2e;margin:24px 0 14px;padding-left:12px;border-left:3px solid #4285f4;line-height:1.5;',
+  h3: 'font-size:16px;font-weight:600;color:#2a2a3e;margin:28px 0 12px;line-height:1.5;',
+  h4: 'font-size:15px;font-weight:600;color:#3a3a4a;margin:24px 0 10px;line-height:1.5;',
+  p: 'font-size:15px;color:#3a3a4a;line-height:2.5;margin:12px 0;',
+  strong: 'color:#1a1a2e;font-weight:600;',
+  ul: 'padding-left:20px;margin:16px 0;',
+  ol: 'padding-left:20px;margin:16px 0;',
+  li: 'font-size:15px;color:#3a3a4a;line-height:2;margin:8px 0;',
+  img: 'max-width:100%;border-radius:8px;margin:16px 0;',
+  blockquote: 'margin:20px 0;padding:14px 18px;background:#f7f8fa;border-left:3px solid #4285f4;border-radius:0 8px 8px 0;color:#5a5a6e;font-size:14px;line-height:1.8;',
+  hr: 'border:none;border-top:1px solid #eee;margin:28px 0;'
+}
 
 const formatDate = (dateStr) => {
   if (!dateStr) return ''
