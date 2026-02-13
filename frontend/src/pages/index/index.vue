@@ -156,6 +156,11 @@
             <text class="news-title">{{ item.title }}</text>
             <text class="news-summary">{{ item.ai_summary }}</text>
 
+            <!-- Tags -->
+            <view v-if="item.tags && item.tags.length" class="news-tags">
+              <text v-for="tag in item.tags" :key="tag" class="news-tag">{{ tag }}</text>
+            </view>
+
             <view class="news-meta">
               <text class="meta-source">{{ item.source }}</text>
               <text class="meta-dot">·</text>
@@ -851,6 +856,23 @@ export default {
   overflow: hidden;
 }
 
+/* ── Tags ── */
+.news-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 12rpx;
+}
+.news-tag {
+  display: inline-block;
+  font-size: 22rpx;
+  color: #4285f4;
+  background: rgba(66, 133, 244, 0.08);
+  border-radius: 6rpx;
+  padding: 4rpx 12rpx;
+  line-height: 1.6;
+}
+
 /* ── Meta ── */
 .news-meta {
   display: flex;
@@ -1158,6 +1180,17 @@ export default {
     margin-top: 6px;
     line-height: 1.6;
     -webkit-line-clamp: 3;
+  }
+
+  /* ── Tags ── */
+  .news-tags {
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .news-tag {
+    font-size: 12px;
+    border-radius: 4px;
+    padding: 2px 8px;
   }
 
   /* ── Meta ── */
