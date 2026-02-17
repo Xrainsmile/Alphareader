@@ -6,9 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system deps for asyncpg
+# Install system deps for asyncpg, lxml (akshare), etc.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libpq-dev curl && \
+    apt-get install -y --no-install-recommends \
+        gcc g++ libpq-dev curl \
+        libxml2-dev libxslt1-dev zlib1g-dev libffi-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python deps

@@ -33,9 +33,9 @@ scikit-learn==1.6.1
 langdetect==1.0.9
 
 # A-Stock Data (akshare + pandas + numpy)
-akshare==1.14.98
-pandas==2.2.3
-numpy==2.2.1
+akshare>=1.14,<2.0
+pandas>=2.2,<3.0
+numpy>=2.1,<3.0
 
 # ── Dev / Test ──
 pytest==8.3.4
