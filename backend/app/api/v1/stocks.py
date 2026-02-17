@@ -2,16 +2,58 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import date
+import traceback
+from datetime import date, datetime
+from enum import Enum
 
 from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.services.indicators import compute_and_save_rs_rating, load_rs_rating
 
 logger = logging.getLogger("alphareader.api.stocks")
 router = APIRouter(prefix="/stocks", tags=["stocks"])
+
+
+# ── Task State (in-memory, single worker) ──
+
+class TaskStatus(str, Enum):
+    IDLE = "idle"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class _TaskState:
+    status: TaskStatus = TaskStatus.IDLE
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    count: int = 0
+    error: str | None = None
+
+    def reset(self):
+        self.status = TaskStatus.RUNNING
+        self.started_at = datetime.now()
+        self.finished_at = None
+        self.count = 0
+        self.error = None
+
+    def complete(self, count: int):
+        self.status = TaskStatus.COMPLETED
+        self.finished_at = datetime.now()
+        self.count = count
+        self.error = None
+
+    def fail(self, error: str):
+        self.status = TaskStatus.FAILED
+        self.finished_at = datetime.now()
+        self.error = error
+
+
+_task = _TaskState()
 
 
 # ── Response Schemas ──
@@ -60,17 +102,61 @@ async def get_rs_rating(
     )
 
 
+@router.get("/rs_rating/status")
+async def get_compute_status():
+    """查询后台计算任务的状态。"""
+    result: dict = {
+        "status": _task.status.value,
+        "started_at": _task.started_at.isoformat() if _task.started_at else None,
+        "finished_at": _task.finished_at.isoformat() if _task.finished_at else None,
+    }
+    if _task.status == TaskStatus.COMPLETED:
+        result["count"] = _task.count
+        result["message"] = f"RS Rating 计算完成，共 {_task.count} 只股票"
+    elif _task.status == TaskStatus.FAILED:
+        result["error"] = _task.error
+    elif _task.status == TaskStatus.RUNNING:
+        elapsed = (datetime.now() - _task.started_at).total_seconds() if _task.started_at else 0
+        result["elapsed_seconds"] = round(elapsed, 1)
+        result["message"] = "计算进行中，请稍后查询"
+    return result
+
+
+async def _run_compute(force: bool):
+    """后台执行 RS Rating 计算。"""
+    try:
+        _task.reset()
+        logger.info("后台任务开始: RS Rating 计算 (force=%s)", force)
+        df = await compute_and_save_rs_rating(force_refresh=force)
+        _task.complete(len(df))
+        logger.info("后台任务完成: RS Rating 计算，共 %d 只股票", len(df))
+    except Exception as e:
+        _task.fail(str(e))
+        logger.error("后台任务失败: RS Rating 计算\n%s", traceback.format_exc())
+
+
 @router.post("/rs_rating/compute")
 async def trigger_rs_rating_compute(
     force: bool = Query(False, description="强制重新计算"),
 ):
-    """手动触发 RS Rating 计算。"""
-    logger.info("手动触发 RS Rating 计算 (force=%s)", force)
-    df = await compute_and_save_rs_rating(force_refresh=force)
+    """手动触发 RS Rating 计算（后台任务，立即返回 202）。"""
+    if _task.status == TaskStatus.RUNNING:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "conflict",
+                "message": "已有计算任务在运行中，请通过 GET /rs_rating/status 查看进度",
+                "started_at": _task.started_at.isoformat() if _task.started_at else None,
+            },
+        )
 
-    return {
-        "status": "ok",
-        "count": len(df),
-        "date": date.today().isoformat(),
-        "message": f"RS Rating 计算完成，共 {len(df)} 只股票",
-    }
+    logger.info("手动触发 RS Rating 计算 (force=%s)", force)
+    asyncio.create_task(_run_compute(force))
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "message": "RS Rating 计算已在后台启动，请通过 GET /api/v1/stocks/rs_rating/status 查看进度",
+        },
+    )
