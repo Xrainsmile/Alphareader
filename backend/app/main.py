@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import v1_router
 from app.config import settings
 from app.database import Base, engine
+import app.models  # noqa: F401 — ensure all ORM models register with Base.metadata
 from app.logging_config import setup_logging
 from app.middleware.request_id import RequestIDMiddleware, get_request_id
 from app.redis import close_redis, init_redis
