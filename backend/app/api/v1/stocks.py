@@ -68,6 +68,9 @@ class RSRatingItem(BaseModel):
     p12: float | None = None
     score: float
     rs_rating: int
+    close: float | None = None
+    pct_change: float | None = None
+    change: float | None = None
 
 
 class RSRatingResponse(BaseModel):

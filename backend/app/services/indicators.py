@@ -31,7 +31,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
-from app.models.stock import StockRSRating
+from app.models.stock import StockDailyQuote, StockRSRating
 from app.services.data_fetcher import fetch_stock_list, get_all_stock_data, load_from_db
 
 logger = logging.getLogger("alphareader.indicators")
@@ -280,7 +280,17 @@ async def load_rs_rating(
                 target_date = row
 
         query = (
-            select(StockRSRating)
+            select(
+                StockRSRating,
+                StockDailyQuote.close.label("close"),
+                StockDailyQuote.pct_change.label("pct_change"),
+                StockDailyQuote.change.label("change"),
+            )
+            .outerjoin(
+                StockDailyQuote,
+                (StockRSRating.ts_code == StockDailyQuote.ts_code)
+                & (StockRSRating.trade_date == StockDailyQuote.trade_date),
+            )
             .where(StockRSRating.trade_date == target_date)
             .order_by(StockRSRating.rs_rating.desc())
         )
@@ -290,7 +300,7 @@ async def load_rs_rating(
             query = query.limit(top_n)
 
         result = await session.execute(query)
-        rows = result.scalars().all()
+        rows = result.all()
 
     if not rows:
         return pd.DataFrame(columns=["ts_code", "name", "trade_date", "rs_rating"])
@@ -309,15 +319,18 @@ async def load_rs_rating(
 
     data = [
         {
-            "ts_code": r.ts_code,
-            "name": r.name,
-            "trade_date": r.trade_date,
-            "p3": _safe(r.p3),
-            "p6": _safe(r.p6),
-            "p9": _safe(r.p9),
-            "p12": _safe(r.p12),
-            "score": _safe(r.score),
-            "rs_rating": r.rs_rating,
+            "ts_code": r.StockRSRating.ts_code,
+            "name": r.StockRSRating.name,
+            "trade_date": r.StockRSRating.trade_date,
+            "p3": _safe(r.StockRSRating.p3),
+            "p6": _safe(r.StockRSRating.p6),
+            "p9": _safe(r.StockRSRating.p9),
+            "p12": _safe(r.StockRSRating.p12),
+            "score": _safe(r.StockRSRating.score),
+            "rs_rating": r.StockRSRating.rs_rating,
+            "close": _safe(r.close),
+            "pct_change": _safe(r.pct_change),
+            "change": _safe(r.change),
         }
         for r in rows
     ]

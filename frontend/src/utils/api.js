@@ -74,3 +74,16 @@ export function fetchReportsList(limit = 20, offset = 0) {
 export function fetchReportDetail(id) {
   return request(`/api/v1/reports/${id}`)
 }
+
+// ── Stocks API（RS Rating 排行榜使用）──
+
+/**
+ * 获取 RS Rating 排行榜
+ */
+export function fetchRSRating(params = {}) {
+  const query = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return request(`/api/v1/stocks/rs_rating${query ? '?' + query : ''}`)
+}

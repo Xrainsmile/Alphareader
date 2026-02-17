@@ -13,6 +13,16 @@
       }
     },
     {
+      "path": "pages/stocks/index",
+      "style": {
+        "navigationBarTitleText": "RS Rating",
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationBarTextStyle": "black",
+        "enablePullDownRefresh": true,
+        "backgroundColor": "#f0f2f5"
+      }
+    },
+    {
       "path": "pages/reports/index",
       "style": {
         "navigationBarTitleText": "每日复盘",
@@ -42,6 +52,12 @@
         "text": "News",
         "iconPath": "static/tabbar/news.svg",
         "selectedIconPath": "static/tabbar/news-active.svg"
+      },
+      {
+        "pagePath": "pages/stocks/index",
+        "text": "Stocks",
+        "iconPath": "static/tabbar/stocks.svg",
+        "selectedIconPath": "static/tabbar/stocks-active.svg"
       },
       {
         "pagePath": "pages/reports/index",

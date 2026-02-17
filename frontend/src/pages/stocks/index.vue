@@ -1,0 +1,495 @@
+<template>
+  <view class="stocks-container">
+    <!-- Header -->
+    <view class="stocks-header">
+      <text class="stocks-title">RS Rating</text>
+      <text class="stocks-subtitle">相对强度排行 · Top 100</text>
+    </view>
+
+    <!-- 数据日期 & 状态 -->
+    <view class="info-bar">
+      <text class="info-date">数据日期: {{ dataDate || '--' }}</text>
+      <view v-if="isTrading" class="trading-badge">
+        <text class="trading-dot">●</text>
+        <text class="trading-text">盘中</text>
+      </view>
+    </view>
+
+    <!-- 表头 -->
+    <view class="table-header">
+      <text class="th th-rank">#</text>
+      <text class="th th-name">名称/代码</text>
+      <text class="th th-close">收盘价</text>
+      <text class="th th-pct">涨跌幅</text>
+      <text class="th th-rs">RS</text>
+    </view>
+
+    <!-- Loading -->
+    <view v-if="loading" class="empty-state">
+      <text class="empty-text">加载中...</text>
+    </view>
+
+    <!-- Empty -->
+    <view v-else-if="stockList.length === 0" class="empty-state">
+      <text class="empty-text">暂无数据</text>
+    </view>
+
+    <!-- Stock List -->
+    <view v-else class="stock-list">
+      <view
+        v-for="(item, idx) in stockList"
+        :key="item.ts_code"
+        class="stock-row"
+        :class="{ 'stock-row-alt': idx % 2 === 1 }"
+      >
+        <!-- Rank -->
+        <view class="col col-rank">
+          <text class="rank-num" :class="rankClass(idx)">{{ idx + 1 }}</text>
+        </view>
+
+        <!-- Name & Code -->
+        <view class="col col-name">
+          <text class="stock-name">{{ item.name }}</text>
+          <text class="stock-code">{{ item.ts_code }}</text>
+        </view>
+
+        <!-- Close Price -->
+        <view class="col col-close">
+          <text class="close-price">{{ formatPrice(item.close) }}</text>
+        </view>
+
+        <!-- Change -->
+        <view class="col col-pct">
+          <view class="change-badge" :class="changeClass(item.pct_change)">
+            <text class="change-text">{{ formatPct(item.pct_change) }}</text>
+          </view>
+          <text class="change-abs">{{ formatChange(item.change) }}</text>
+        </view>
+
+        <!-- RS Rating -->
+        <view class="col col-rs">
+          <view class="rs-badge" :class="rsClass(item.rs_rating)">
+            <text class="rs-value">{{ item.rs_rating }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Footer -->
+    <view class="site-footer">
+      <text class="footer-icp" @click="onOpenIcp">蜀ICP备2026006985号</text>
+      <text class="footer-copy">© 2026 Rick</text>
+    </view>
+  </view>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { fetchRSRating } from '@/utils/api'
+
+const stockList = ref([])
+const dataDate = ref('')
+const loading = ref(true)
+
+// 判断当前是否在 A 股交易时段（周一至周五 9:30-15:00）
+const isTrading = computed(() => {
+  const now = new Date()
+  const day = now.getDay()
+  if (day === 0 || day === 6) return false
+  const h = now.getHours()
+  const m = now.getMinutes()
+  const t = h * 60 + m
+  return t >= 570 && t <= 900 // 9:30~15:00
+})
+
+onMounted(async () => {
+  try {
+    const data = await fetchRSRating({ top_n: 100 })
+    stockList.value = data.items || []
+    dataDate.value = data.date || ''
+  } catch (e) {
+    console.error('加载 RS Rating 失败:', e)
+    uni.showToast({ title: '加载失败', icon: 'none' })
+  } finally {
+    loading.value = false
+  }
+})
+
+const formatPrice = (v) => {
+  if (v == null) return '--'
+  return Number(v).toFixed(2)
+}
+
+const formatPct = (v) => {
+  if (v == null) return '--'
+  const n = Number(v)
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
+}
+
+const formatChange = (v) => {
+  if (v == null) return ''
+  const n = Number(v)
+  return (n >= 0 ? '+' : '') + n.toFixed(2)
+}
+
+const changeClass = (v) => {
+  if (v == null) return 'change-flat'
+  return v > 0 ? 'change-up' : v < 0 ? 'change-down' : 'change-flat'
+}
+
+const rankClass = (idx) => {
+  if (idx < 3) return 'rank-top'
+  if (idx < 10) return 'rank-high'
+  return ''
+}
+
+const rsClass = (rating) => {
+  if (rating >= 90) return 'rs-hot'
+  if (rating >= 70) return 'rs-warm'
+  if (rating >= 50) return 'rs-normal'
+  return 'rs-cool'
+}
+
+const onOpenIcp = () => {
+  // #ifdef H5
+  window.open('https://beian.miit.gov.cn/', '_blank')
+  // #endif
+}
+</script>
+
+<style scoped>
+.stocks-container {
+  min-height: 100vh;
+  background: #f0f2f5;
+  padding: 0 24rpx;
+}
+
+/* ── Header ── */
+.stocks-header {
+  padding: 28rpx 0 16rpx;
+}
+.stocks-title {
+  font-size: 44rpx;
+  font-weight: 800;
+  color: #1a1a2e;
+  letter-spacing: 1rpx;
+  display: block;
+  font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
+}
+.stocks-subtitle {
+  font-size: 24rpx;
+  color: #8c8c9a;
+  margin-top: 6rpx;
+  letter-spacing: 1rpx;
+  display: block;
+}
+
+/* ── Info Bar ── */
+.info-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 0 16rpx;
+}
+.info-date {
+  font-size: 24rpx;
+  color: #8c8c9a;
+}
+.trading-badge {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 4rpx 16rpx;
+  background: rgba(255, 59, 48, 0.08);
+  border-radius: 20rpx;
+}
+.trading-dot {
+  font-size: 16rpx;
+  color: #ff3b30;
+  animation: pulse 1.5s infinite;
+}
+.trading-text {
+  font-size: 22rpx;
+  color: #ff3b30;
+  font-weight: 500;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ── Table Header ── */
+.table-header {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 20rpx;
+  background: #ffffff;
+  border-radius: 16rpx 16rpx 0 0;
+  border-bottom: 2rpx solid #f0f0f2;
+}
+.th {
+  font-size: 22rpx;
+  color: #8c8c9a;
+  font-weight: 600;
+}
+.th-rank { width: 60rpx; text-align: center; }
+.th-name { flex: 1; padding-left: 12rpx; }
+.th-close { width: 140rpx; text-align: right; }
+.th-pct { width: 160rpx; text-align: right; }
+.th-rs { width: 80rpx; text-align: center; }
+
+/* ── Stock List ── */
+.stock-list {
+  background: #ffffff;
+  border-radius: 0 0 16rpx 16rpx;
+  overflow: hidden;
+  box-shadow: 0 2rpx 16rpx rgba(0, 0, 0, 0.04);
+}
+
+/* ── Stock Row ── */
+.stock-row {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 20rpx;
+  border-bottom: 1rpx solid #f8f8fa;
+}
+.stock-row-alt {
+  background: #fafbfc;
+}
+.stock-row:last-child {
+  border-bottom: none;
+}
+
+/* ── Columns ── */
+.col { display: flex; flex-direction: column; justify-content: center; }
+.col-rank { width: 60rpx; align-items: center; }
+.col-name { flex: 1; padding-left: 12rpx; }
+.col-close { width: 140rpx; align-items: flex-end; }
+.col-pct { width: 160rpx; align-items: flex-end; }
+.col-rs { width: 80rpx; align-items: center; }
+
+/* ── Rank ── */
+.rank-num {
+  font-size: 24rpx;
+  color: #8c8c9a;
+  font-weight: 600;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+}
+.rank-top {
+  color: #ff3b30;
+  font-weight: 800;
+}
+.rank-high {
+  color: #ff9500;
+  font-weight: 700;
+}
+
+/* ── Name & Code ── */
+.stock-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1a1a2e;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stock-code {
+  font-size: 22rpx;
+  color: #b0b0be;
+  margin-top: 4rpx;
+  font-family: 'SF Mono', 'Menlo', monospace;
+}
+
+/* ── Close Price ── */
+.close-price {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1a1a2e;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+}
+
+/* ── Change Badge ── */
+.change-badge {
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.change-text {
+  font-size: 24rpx;
+  font-weight: 600;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+}
+.change-up {
+  background: rgba(255, 59, 48, 0.1);
+}
+.change-up .change-text {
+  color: #ff3b30;
+}
+.change-down {
+  background: rgba(52, 199, 89, 0.1);
+}
+.change-down .change-text {
+  color: #34c759;
+}
+.change-flat {
+  background: rgba(142, 142, 147, 0.1);
+}
+.change-flat .change-text {
+  color: #8e8e93;
+}
+.change-abs {
+  font-size: 20rpx;
+  color: #b0b0be;
+  margin-top: 2rpx;
+  text-align: right;
+}
+
+/* ── RS Badge ── */
+.rs-badge {
+  width: 60rpx;
+  height: 44rpx;
+  border-radius: 10rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rs-value {
+  font-size: 24rpx;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+}
+.rs-hot {
+  background: linear-gradient(135deg, #ff3b30, #ff6b5a);
+}
+.rs-warm {
+  background: linear-gradient(135deg, #ff9500, #ffb340);
+}
+.rs-normal {
+  background: linear-gradient(135deg, #f0b429, #d4981e);
+}
+.rs-cool {
+  background: linear-gradient(135deg, #8e8e93, #a8a8ae);
+}
+
+/* ── Empty State ── */
+.empty-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 120rpx 0;
+  background: #ffffff;
+  border-radius: 0 0 16rpx 16rpx;
+}
+.empty-text {
+  font-size: 28rpx;
+  color: #b0b0be;
+}
+
+/* ── Footer ── */
+.site-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48rpx 0 72rpx;
+  gap: 8rpx;
+}
+.footer-icp {
+  font-size: 22rpx;
+  color: #b0b0be;
+  text-decoration: underline;
+}
+.footer-copy {
+  font-size: 22rpx;
+  color: #b0b0be;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PC / Tablet 适配 (≥768px)
+   ═══════════════════════════════════════════════════════════ */
+@media screen and (min-width: 768px) {
+  .stocks-container {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  .stocks-header {
+    padding: 24px 0 12px;
+  }
+  .stocks-title {
+    font-size: 26px;
+    letter-spacing: 0.5px;
+  }
+  .stocks-subtitle {
+    font-size: 13px;
+    margin-top: 4px;
+  }
+  .info-bar {
+    padding: 8px 0 12px;
+  }
+  .info-date {
+    font-size: 13px;
+  }
+  .trading-badge {
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 12px;
+  }
+  .trading-dot { font-size: 9px; }
+  .trading-text { font-size: 12px; }
+
+  .table-header {
+    padding: 12px 16px;
+    border-radius: 12px 12px 0 0;
+    border-bottom-width: 1px;
+  }
+  .th { font-size: 12px; }
+  .th-rank { width: 36px; }
+  .th-name { padding-left: 8px; }
+  .th-close { width: 90px; }
+  .th-pct { width: 110px; }
+  .th-rs { width: 50px; }
+
+  .stock-list {
+    border-radius: 0 0 12px 12px;
+    box-shadow: 0 1px 12px rgba(0, 0, 0, 0.05);
+  }
+  .stock-row {
+    padding: 14px 16px;
+    transition: background-color 0.15s;
+  }
+  .stock-row:hover {
+    background-color: #f5f7fa;
+  }
+
+  .col-rank { width: 36px; }
+  .col-name { padding-left: 8px; }
+  .col-close { width: 90px; }
+  .col-pct { width: 110px; }
+  .col-rs { width: 50px; }
+
+  .rank-num { font-size: 13px; }
+  .stock-name { font-size: 15px; }
+  .stock-code { font-size: 12px; margin-top: 2px; }
+  .close-price { font-size: 15px; }
+  .change-badge { padding: 2px 10px; border-radius: 6px; }
+  .change-text { font-size: 13px; }
+  .change-abs { font-size: 11px; }
+  .rs-badge { width: 38px; height: 26px; border-radius: 6px; }
+  .rs-value { font-size: 13px; }
+
+  .site-footer {
+    padding: 32px 0 48px;
+    gap: 6px;
+  }
+  .footer-icp {
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .footer-icp:hover { color: #8c8c9a; }
+  .footer-copy { font-size: 12px; }
+}
+</style>
