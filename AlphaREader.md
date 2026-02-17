@@ -125,7 +125,6 @@ Pipeline 是系统的核心，定义在 `backend/app/services/pipeline.py` 的 `
 | 6 | Seeking Alpha |
 | 7 | TechCrunch |
 | 8 | 新浪财经 |
-| 9-11 | 同花顺 / 东方财富 |
 
 #### Redis 持久化
 - `load_index()` — 启动时从 Redis Hash 加载 SimHash 索引

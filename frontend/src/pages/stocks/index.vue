@@ -4,6 +4,9 @@
     <view class="stocks-header">
       <text class="stocks-title">RS Rating</text>
       <text class="stocks-subtitle">相对强度排行 · Top 100</text>
+      <view class="rs-desc" :class="{ 'rs-desc-expanded': descExpanded }" @click="descExpanded = !descExpanded">
+        <text class="rs-desc-text">RS Rating（相对强度评级）是衡量股票相对于市场整体表现强弱的量化指标，由《投资者商业日报》（Investor's Business Daily, IBD）开发并广泛应用于成长股投资中。该评级通过对比某只股票在过去52周内的价格表现，与全市场所有上市股票进行排名，得出一个1到99之间的分数，分数越高，代表该股票的表现优于市场中越高比例的个股。例如，RS Rating为90，意味着该股票在过去一年中表现优于90%的其他股票。</text>
+      </view>
     </view>
 
     <!-- 数据日期 & 状态 -->
@@ -90,6 +93,7 @@ import { fetchRSRating } from '@/utils/api'
 const stockList = ref([])
 const dataDate = ref('')
 const loading = ref(true)
+const descExpanded = ref(false)
 
 // 判断当前是否在 A 股交易时段（周一至周五 9:30-15:00）
 const isTrading = computed(() => {
@@ -181,6 +185,41 @@ const onOpenIcp = () => {
   color: #8c8c9a;
   margin-top: 6rpx;
   letter-spacing: 1rpx;
+  display: block;
+}
+
+/* ── RS Description ── */
+.rs-desc {
+  margin-top: 12rpx;
+  padding: 16rpx 20rpx;
+  background: rgba(140, 140, 154, 0.06);
+  border-radius: 12rpx;
+  overflow: hidden;
+  max-height: 80rpx;
+  transition: max-height 0.3s ease;
+  position: relative;
+}
+.rs-desc::after {
+  content: '...点击展开';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  padding: 0 20rpx 0 40rpx;
+  background: linear-gradient(90deg, transparent, rgba(240, 242, 245, 1) 40%);
+  font-size: 20rpx;
+  color: #8c8c9a;
+  line-height: 40rpx;
+}
+.rs-desc-expanded {
+  max-height: 600rpx;
+}
+.rs-desc-expanded::after {
+  display: none;
+}
+.rs-desc-text {
+  font-size: 22rpx;
+  color: #8c8c9a;
+  line-height: 1.7;
   display: block;
 }
 
@@ -426,6 +465,23 @@ const onOpenIcp = () => {
   .stocks-subtitle {
     font-size: 13px;
     margin-top: 4px;
+  }
+  .rs-desc {
+    margin-top: 8px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    max-height: 40px;
+  }
+  .rs-desc::after {
+    padding: 0 14px 0 30px;
+    font-size: 11px;
+    line-height: 20px;
+  }
+  .rs-desc-expanded {
+    max-height: 300px;
+  }
+  .rs-desc-text {
+    font-size: 12px;
   }
   .info-bar {
     padding: 8px 0 12px;
