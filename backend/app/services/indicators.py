@@ -262,6 +262,23 @@ async def load_rs_rating(
         target_date = date.today()
 
     async with async_session() as session:
+        # 若指定日期无数据，自动回退到最近有数据的交易日
+        check = await session.execute(
+            select(func.count())
+            .select_from(StockRSRating)
+            .where(StockRSRating.trade_date == target_date)
+        )
+        if (check.scalar() or 0) == 0:
+            latest = await session.execute(
+                select(StockRSRating.trade_date)
+                .order_by(StockRSRating.trade_date.desc())
+                .limit(1)
+            )
+            row = latest.scalar()
+            if row is not None:
+                logger.info("日期 %s 无数据，回退到最近交易日 %s", target_date, row)
+                target_date = row
+
         query = (
             select(StockRSRating)
             .where(StockRSRating.trade_date == target_date)

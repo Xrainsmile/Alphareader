@@ -95,9 +95,12 @@ async def get_rs_rating(
 
     items = [RSRatingItem(**row) for row in df.to_dict("records")] if not df.empty else []
 
+    # 使用实际数据日期（可能回退到最近交易日）
+    actual_date = items[0].trade_date if items else query_date
+
     return RSRatingResponse(
         count=len(items),
-        date=query_date,
+        date=actual_date,
         items=items,
     )
 
