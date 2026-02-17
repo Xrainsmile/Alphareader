@@ -33,5 +33,9 @@ Thumbs.db
 # Postgres data
 pgdata/
 
+# Stock data SQLite cache (legacy)
+*.db
+backend/app/services/data/
+
 # Redis data
 redisdata/
