@@ -131,10 +131,10 @@ def _compute_rs_rating_sync(df: pd.DataFrame) -> pd.DataFrame:
                 "ts_code": code,
                 "name": name_map.get(code, ""),
                 "trade_date": latest_date.date() if hasattr(latest_date, "date") else latest_date,
-                "p3": result["P3"],
-                "p6": result["P6"],
-                "p9": result["P9"],
-                "p12": result["P12"],
+                "p3": None if np.isnan(result["P3"]) else result["P3"],
+                "p6": None if np.isnan(result["P6"]) else result["P6"],
+                "p9": None if np.isnan(result["P9"]) else result["P9"],
+                "p12": None if np.isnan(result["P12"]) else result["P12"],
                 "score": result["Score"],
             })
 
@@ -295,16 +295,28 @@ async def load_rs_rating(
     if not rows:
         return pd.DataFrame(columns=["ts_code", "name", "trade_date", "rs_rating"])
 
+    def _safe(v):
+        """Convert NaN/inf to None for JSON serialization."""
+        if v is None:
+            return None
+        try:
+            import math
+            if math.isnan(v) or math.isinf(v):
+                return None
+        except (TypeError, ValueError):
+            pass
+        return v
+
     data = [
         {
             "ts_code": r.ts_code,
             "name": r.name,
             "trade_date": r.trade_date,
-            "p3": r.p3,
-            "p6": r.p6,
-            "p9": r.p9,
-            "p12": r.p12,
-            "score": r.score,
+            "p3": _safe(r.p3),
+            "p6": _safe(r.p6),
+            "p9": _safe(r.p9),
+            "p12": _safe(r.p12),
+            "score": _safe(r.score),
             "rs_rating": r.rs_rating,
         }
         for r in rows
