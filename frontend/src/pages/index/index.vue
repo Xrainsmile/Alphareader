@@ -8,6 +8,114 @@
       <text class="subtitle">高频金融情报 · 信噪比优先</text>
     </view>
 
+    <!-- 搜索栏 -->
+    <view class="search-bar" :class="{ 'search-bar-focus': searchFocused }">
+      <view class="search-input-wrap">
+        <text class="search-icon">🔍</text>
+        <input
+          class="search-input"
+          type="text"
+          placeholder="搜索财经新闻..."
+          :value="searchQuery"
+          @input="onSearchInput"
+          @focus="onSearchFocus"
+          @confirm="onSearchConfirm"
+          confirm-type="search"
+        />
+        <view v-if="searchQuery" class="search-clear" @click="onClearSearch">
+          <text class="search-clear-icon">×</text>
+        </view>
+      </view>
+      <view v-if="searchMode" class="search-cancel" @click="onExitSearch">
+        <text class="search-cancel-text">取消</text>
+      </view>
+    </view>
+
+    <!-- 搜索面板: 热门话题 + 搜索历史 (搜索模式且无查询时) -->
+    <view v-if="searchMode && !searchQuery" class="search-panel">
+      <!-- 搜索历史 -->
+      <view v-if="searchHistory.length" class="sp-section">
+        <view class="sp-section-header">
+          <text class="sp-section-title">搜索历史</text>
+          <view class="sp-clear-btn" @click="clearHistory">
+            <text class="sp-clear-text">清除</text>
+          </view>
+        </view>
+        <view class="sp-tags">
+          <view v-for="h in searchHistory" :key="h" class="sp-tag" @click="onQuickSearch(h)">
+            <text class="sp-tag-text">{{ h }}</text>
+          </view>
+        </view>
+      </view>
+      <!-- 热门话题 -->
+      <view v-if="hotTopics.length" class="sp-section">
+        <view class="sp-section-header">
+          <text class="sp-section-title">热门话题</text>
+        </view>
+        <view class="sp-tags">
+          <view v-for="t in hotTopics" :key="t" class="sp-tag sp-tag-hot" @click="onQuickSearch(t)">
+            <text class="sp-tag-text">{{ t }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 搜索结果 -->
+    <view v-if="searchMode && searchQuery && searchSubmitted" class="search-results">
+      <view class="search-results-header">
+        <text class="search-results-count">找到 {{ searchTotal }} 条结果</text>
+      </view>
+
+      <view v-if="searchLoading && searchList.length === 0" class="loading-container">
+        <text class="loading-text">搜索中...</text>
+      </view>
+
+      <view v-else-if="searchList.length === 0" class="empty-container">
+        <text class="empty-text">未找到相关新闻，换个关键词试试</text>
+      </view>
+
+      <view v-else class="card-wrapper">
+        <view
+          v-for="(item, idx) in searchList"
+          :key="item.id"
+          class="news-card"
+          :class="{ 'news-card-last': idx === searchList.length - 1 }"
+          @click="onOpenUrl(item.url)"
+        >
+          <view class="score-badge" :class="scoreClass(item.ai_score)">
+            <text class="score-num">{{ formatScore(item.ai_score) }}</text>
+          </view>
+          <view class="news-body">
+            <rich-text class="news-title search-highlight" :nodes="item.title_highlighted || item.title"></rich-text>
+            <rich-text v-if="item.summary_highlighted || item.ai_summary" class="news-summary search-highlight" :nodes="item.summary_highlighted || item.ai_summary || ''"></rich-text>
+            <view v-if="item.tags && item.tags.length" class="news-tags">
+              <text v-for="tag in item.tags" :key="tag" class="news-tag">{{ tag }}</text>
+            </view>
+            <view class="news-meta">
+              <text class="meta-source">{{ item.source }}</text>
+              <text class="meta-dot">·</text>
+              <text class="meta-time">{{ formatTime(item.created_at) }}</text>
+              <template v-if="item.relevance_score != null">
+                <text class="meta-dot">·</text>
+                <view class="relevance-badge">
+                  <text class="relevance-label">相关度</text>
+                  <text class="relevance-value">{{ formatRelevance(item.relevance_score) }}</text>
+                </view>
+              </template>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="searchList.length > 0" class="load-more">
+        <text v-if="searchLoadingMore" class="load-more-text">正在加载更多...</text>
+        <text v-else-if="searchNoMore" class="load-more-text">— 没有更多了 —</text>
+      </view>
+    </view>
+
+    <!-- 以下为原有 News Feed 内容 (非搜索模式时显示) -->
+    <template v-if="!searchMode">
+
     <!-- 大模型提示词区域 -->
     <view class="prompt-card" @click="onCopyPrompt">
       <view class="prompt-header">
@@ -186,6 +294,7 @@
     </view>
 
     <!-- 底部备案信息 -->
+    </template>
     <view class="site-footer">
       <text class="footer-icp" @click="onOpenUrl('https://beian.miit.gov.cn/')">蜀ICP备2026006985号</text>
       <text class="footer-copy">© 2026 Rick</text>
@@ -194,9 +303,11 @@
 </template>
 
 <script>
-import { fetchNews, generatePrompt } from '../../utils/api.js'
+import { fetchNews, generatePrompt, searchNews, fetchHotTopics } from '../../utils/api.js'
 
 const PAGE_SIZE = 20
+const SEARCH_HISTORY_KEY = 'alphareader_search_history'
+const MAX_HISTORY = 10
 
 export default {
   data() {
@@ -235,6 +346,20 @@ export default {
         { value: 168, label: '7天' },
         { value: 0, label: '不限' },
       ],
+      // ── 搜索相关 ──
+      searchMode: false,
+      searchFocused: false,
+      searchQuery: '',
+      searchSubmitted: false,
+      searchList: [],
+      searchTotal: 0,
+      searchOffset: 0,
+      searchLoading: false,
+      searchLoadingMore: false,
+      searchNoMore: false,
+      searchHistory: [],
+      hotTopics: [],
+      _searchDebounceTimer: null,
     }
   },
 
@@ -271,7 +396,11 @@ export default {
   },
 
   onReachBottom() {
-    this.loadMore()
+    if (this.searchMode && this.searchSubmitted) {
+      this.searchLoadMore()
+    } else {
+      this.loadMore()
+    }
   },
 
   methods: {
@@ -438,6 +567,141 @@ export default {
       if (score >= 0.05) return 'gravity-normal'
       return 'gravity-low'
     },
+
+    // ── 搜索相关方法 ──
+
+    /** 搜索框获得焦点 */
+    onSearchFocus() {
+      this.searchFocused = true
+      this.searchMode = true
+      this.loadSearchHistory()
+      this.loadHotTopics()
+    },
+
+    /** 搜索输入 (带防抖) */
+    onSearchInput(e) {
+      this.searchQuery = e.detail.value
+      this.searchSubmitted = false
+    },
+
+    /** 回车确认搜索 */
+    onSearchConfirm() {
+      const q = this.searchQuery.trim()
+      if (!q) return
+      this.addToHistory(q)
+      this.doSearch()
+    },
+
+    /** 点击热门话题/历史快速搜索 */
+    onQuickSearch(keyword) {
+      this.searchQuery = keyword
+      this.addToHistory(keyword)
+      this.doSearch()
+    },
+
+    /** 清除搜索输入 */
+    onClearSearch() {
+      this.searchQuery = ''
+      this.searchSubmitted = false
+      this.searchList = []
+      this.searchTotal = 0
+    },
+
+    /** 退出搜索模式 */
+    onExitSearch() {
+      this.searchMode = false
+      this.searchFocused = false
+      this.searchQuery = ''
+      this.searchSubmitted = false
+      this.searchList = []
+      this.searchTotal = 0
+      this.searchOffset = 0
+    },
+
+    /** 执行搜索 */
+    async doSearch() {
+      const q = this.searchQuery.trim()
+      if (!q) return
+      this.searchSubmitted = true
+      this.searchLoading = true
+      this.searchList = []
+      this.searchOffset = 0
+      this.searchNoMore = false
+      try {
+        const data = await searchNews({ q, limit: PAGE_SIZE, offset: 0 })
+        this.searchList = data.items || []
+        this.searchTotal = data.total || 0
+        this.searchOffset = this.searchList.length
+        this.searchNoMore = this.searchOffset >= this.searchTotal
+      } catch (e) {
+        console.error('搜索失败:', e)
+        uni.showToast({ title: '搜索失败', icon: 'none' })
+      } finally {
+        this.searchLoading = false
+      }
+    },
+
+    /** 搜索加载更多 */
+    async searchLoadMore() {
+      if (this.searchLoadingMore || this.searchNoMore || this.searchLoading) return
+      this.searchLoadingMore = true
+      try {
+        const data = await searchNews({
+          q: this.searchQuery.trim(),
+          limit: PAGE_SIZE,
+          offset: this.searchOffset,
+        })
+        const items = data.items || []
+        this.searchList = this.searchList.concat(items)
+        this.searchTotal = data.total || 0
+        this.searchOffset += items.length
+        this.searchNoMore = items.length < PAGE_SIZE || this.searchOffset >= this.searchTotal
+      } catch (e) {
+        console.error('搜索加载更多失败:', e)
+      } finally {
+        this.searchLoadingMore = false
+      }
+    },
+
+    /** 格式化相关度分数 */
+    formatRelevance(score) {
+      if (score == null) return ''
+      // 映射到百分比展示
+      const pct = Math.min(score * 100, 99.9)
+      return pct < 1 ? pct.toFixed(2) : pct.toFixed(1)
+    },
+
+    /** 加载搜索历史 */
+    loadSearchHistory() {
+      try {
+        const raw = uni.getStorageSync(SEARCH_HISTORY_KEY)
+        this.searchHistory = raw ? JSON.parse(raw) : []
+      } catch { this.searchHistory = [] }
+    },
+
+    /** 添加搜索历史 */
+    addToHistory(keyword) {
+      let history = this.searchHistory.filter(h => h !== keyword)
+      history.unshift(keyword)
+      if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY)
+      this.searchHistory = history
+      try { uni.setStorageSync(SEARCH_HISTORY_KEY, JSON.stringify(history)) } catch {}
+    },
+
+    /** 清除搜索历史 */
+    clearHistory() {
+      this.searchHistory = []
+      try { uni.removeStorageSync(SEARCH_HISTORY_KEY) } catch {}
+    },
+
+    /** 加载热门话题 */
+    async loadHotTopics() {
+      if (this.hotTopics.length) return
+      try {
+        const data = await fetchHotTopics()
+        this.hotTopics = data.topics || []
+      } catch { /* ignore */ }
+    },
   },
 }
 </script>
@@ -470,6 +734,158 @@ export default {
   color: #8c8c9a;
   margin-top: 6rpx;
   letter-spacing: 1rpx;
+}
+
+/* ── Search Bar ── */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin: 16rpx 0 8rpx;
+}
+.search-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 36rpx;
+  padding: 16rpx 24rpx;
+  border: 2rpx solid #e8e8ed;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.search-bar-focus .search-input-wrap {
+  border-color: #4285f4;
+  box-shadow: 0 2rpx 12rpx rgba(66, 133, 244, 0.15);
+}
+.search-icon {
+  font-size: 28rpx;
+  margin-right: 12rpx;
+  flex-shrink: 0;
+}
+.search-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #1a1a2e;
+  background: transparent;
+  border: none;
+  outline: none;
+  line-height: 1.4;
+}
+.search-clear {
+  padding: 4rpx 8rpx;
+  margin-left: 8rpx;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.search-clear-icon {
+  font-size: 32rpx;
+  color: #b0b0be;
+  font-weight: 500;
+}
+.search-cancel {
+  flex-shrink: 0;
+  padding: 8rpx 4rpx;
+  cursor: pointer;
+}
+.search-cancel-text {
+  font-size: 28rpx;
+  color: #4285f4;
+  font-weight: 500;
+}
+
+/* ── Search Panel (History + Hot Topics) ── */
+.search-panel {
+  padding: 16rpx 0;
+}
+.sp-section {
+  margin-bottom: 28rpx;
+}
+.sp-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+.sp-section-title {
+  font-size: 26rpx;
+  color: #6b6b7b;
+  font-weight: 600;
+}
+.sp-clear-btn {
+  padding: 4rpx 16rpx;
+  cursor: pointer;
+}
+.sp-clear-text {
+  font-size: 24rpx;
+  color: #b0b0be;
+}
+.sp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+.sp-tag {
+  padding: 12rpx 24rpx;
+  background: #ffffff;
+  border-radius: 24rpx;
+  border: 1rpx solid #e8e8ed;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.sp-tag:active {
+  background: #f0f2f5;
+}
+.sp-tag-hot {
+  background: rgba(66, 133, 244, 0.06);
+  border-color: rgba(66, 133, 244, 0.2);
+}
+.sp-tag-text {
+  font-size: 24rpx;
+  color: #3a3a4a;
+}
+.sp-tag-hot .sp-tag-text {
+  color: #4285f4;
+}
+
+/* ── Search Results ── */
+.search-results {
+  padding-bottom: 20rpx;
+}
+.search-results-header {
+  padding: 8rpx 0 16rpx;
+}
+.search-results-count {
+  font-size: 24rpx;
+  color: #8c8c9a;
+}
+
+/* ── Search Highlight ── */
+.search-highlight :deep(mark) {
+  background: rgba(66, 133, 244, 0.18);
+  color: #1a73e8;
+  font-weight: 600;
+  padding: 0 2rpx;
+  border-radius: 4rpx;
+}
+
+/* ── Relevance Badge ── */
+.relevance-badge {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 2rpx 12rpx;
+  background: rgba(66, 133, 244, 0.08);
+  border-radius: 16rpx;
+}
+.relevance-label {
+  font-size: 20rpx;
+  color: #8c8c9a;
+}
+.relevance-value {
+  font-size: 20rpx;
+  color: #4285f4;
+  font-weight: 600;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
 }
 
 /* ── Filter Trigger Bar ── */
@@ -976,6 +1392,46 @@ export default {
     margin: 0 auto;
     padding: 0 24px;
   }
+
+  /* ── Search Bar (PC) ── */
+  .search-bar {
+    margin: 12px 0 8px;
+    gap: 10px;
+  }
+  .search-input-wrap {
+    border-radius: 22px;
+    padding: 10px 18px;
+    border-width: 1px;
+  }
+  .search-icon { font-size: 15px; margin-right: 8px; }
+  .search-input { font-size: 15px; }
+  .search-clear-icon { font-size: 18px; }
+  .search-cancel-text { font-size: 15px; }
+  .search-input-wrap:hover {
+    border-color: #c0c0cc;
+  }
+  .search-bar-focus .search-input-wrap:hover {
+    border-color: #4285f4;
+  }
+  .sp-section { margin-bottom: 18px; }
+  .sp-section-title { font-size: 14px; }
+  .sp-clear-text { font-size: 13px; }
+  .sp-tags { gap: 8px; }
+  .sp-tag {
+    padding: 7px 16px;
+    border-radius: 16px;
+  }
+  .sp-tag:hover { background: #f0f2f5; }
+  .sp-tag-hot:hover { background: rgba(66, 133, 244, 0.1); }
+  .sp-tag-text { font-size: 13px; }
+  .search-results-count { font-size: 13px; }
+  .relevance-badge {
+    gap: 3px;
+    padding: 1px 8px;
+    border-radius: 10px;
+  }
+  .relevance-label { font-size: 11px; }
+  .relevance-value { font-size: 11px; }
 
   /* ── Header ── */
   .header {

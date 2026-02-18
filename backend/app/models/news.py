@@ -3,8 +3,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy import Column, DateTime, Index, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -30,10 +30,16 @@ class News(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    # Full-text search vector: auto-populated by DB trigger
+    # 'simple' config works well for both Chinese and English (unigram tokenization)
+    search_vector = Column(TSVECTOR, nullable=True)
+
     # ── Composite Indexes for query performance ──
     __table_args__ = (
         # Primary query pattern: today's top news
         Index("ix_news_created_score", created_at.desc(), ai_score.desc()),
         # Source + score filtering
         Index("ix_news_source_score", "source", ai_score.desc()),
+        # GIN index for full-text search
+        Index("ix_news_search_vector", "search_vector", postgresql_using="gin"),
     )

@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.news import News
 from app.redis import get_redis
 from app.services.pipeline import run_pipeline
+from app.services.search import get_hot_topics, get_search_suggestions, search_news
 from app.utils.ranking import calculate_ranking_score, gravity_sql_expression
 
 logger = logging.getLogger("alphareader.api.news")
@@ -189,3 +190,42 @@ async def list_news(
         "gravity": gravity,
         "max_age_hours": max_age_hours,
     }
+
+
+# ── 搜索 API ──
+
+
+@router.get("/search")
+async def search(
+    q: str = Query(..., min_length=1, max_length=200, description="搜索关键词"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    min_score: int = Query(6, ge=0, le=10),
+    db: AsyncSession = Depends(get_db),
+):
+    """搜索新闻。
+
+    排序算法: 混合排序 = 文本相关度(ts_rank_cd) × 质量权重(ln(ai_score+1)) × 时间衰减
+    支持中英文关键词搜索和模糊匹配。
+    返回结果包含标题和摘要的关键词高亮。
+    """
+    return await search_news(db, q, limit=limit, offset=offset, min_score=min_score)
+
+
+@router.get("/search/suggest")
+async def search_suggest(
+    q: str = Query(..., min_length=1, max_length=100, description="搜索前缀"),
+    db: AsyncSession = Depends(get_db),
+):
+    """搜索建议 — 根据输入前缀返回自动补全建议。"""
+    suggestions = await get_search_suggestions(db, q)
+    return {"suggestions": suggestions}
+
+
+@router.get("/search/hot")
+async def search_hot(
+    db: AsyncSession = Depends(get_db),
+):
+    """热门话题 — 过去 24 小时高分新闻的高频标签，用于搜索推荐。"""
+    topics = await get_hot_topics(db)
+    return {"topics": topics}

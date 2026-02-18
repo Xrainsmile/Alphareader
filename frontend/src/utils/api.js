@@ -49,6 +49,31 @@ export function fetchNews(params = {}) {
 }
 
 /**
+ * 搜索新闻
+ */
+export function searchNews(params = {}) {
+  const query = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return request(`/api/v1/news/search${query ? '?' + query : ''}`)
+}
+
+/**
+ * 搜索建议（自动补全）
+ */
+export function fetchSearchSuggestions(q) {
+  return request(`/api/v1/news/search/suggest?q=${encodeURIComponent(q)}`)
+}
+
+/**
+ * 热门话题
+ */
+export function fetchHotTopics() {
+  return request(`/api/v1/news/search/hot`)
+}
+
+/**
  * 生成大模型提示词
  */
 export function generatePrompt(params = {}) {
