@@ -66,7 +66,7 @@ class RSRatingItem(BaseModel):
     p6: float | None = None
     p9: float | None = None
     p12: float | None = None
-    score: float
+    score: float | None = None
     rs_rating: int
     close: float | None = None
     pct_change: float | None = None
@@ -131,6 +131,10 @@ async def get_rs_rating(
         top_n=top_n,
         min_rating=min_rating,
     )
+
+    # NaN → None，防止 JSON 序列化报错
+    if not df.empty:
+        df = df.where(df.notna(), None)
 
     items = [RSRatingItem(**row) for row in df.to_dict("records")] if not df.empty else []
 
@@ -222,6 +226,9 @@ async def search_stocks(
 
     if df_all.empty:
         return StockSearchResponse(count=0, date=query_date, items=[], message=None)
+
+    # NaN → None，防止 JSON 序列化报错
+    df_all = df_all.where(df_all.notna(), None)
 
     actual_date = df_all["trade_date"].iloc[0]
 
