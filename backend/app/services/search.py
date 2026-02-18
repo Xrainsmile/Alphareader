@@ -79,16 +79,18 @@ scored AS (
         ) AS summary_highlighted
     FROM news n, query_input qi
     WHERE
-        -- 全文搜索匹配 OR ILIKE 模糊匹配 (兜底中文搜索)
+        -- 全文搜索匹配 OR ILIKE 模糊匹配 (兜底中文搜索) OR 标签匹配
         (n.search_vector @@ qi.tsq
          OR n.title ILIKE '%%' || qi.raw_query || '%%'
-         OR COALESCE(n.ai_summary, '') ILIKE '%%' || qi.raw_query || '%%')
+         OR COALESCE(n.ai_summary, '') ILIKE '%%' || qi.raw_query || '%%'
+         OR qi.raw_query = ANY(n.tags))
         -- 基础质量过滤
         AND COALESCE(n.ai_score, 0) >= :min_score
 )
 SELECT
     *,
     -- 最终混合排序分: 文本相关度 × 质量权重 × 时间衰减
+    -- 标签精确命中额外加权
     (text_relevance * quality_weight * time_decay) AS final_score
 FROM scored
 ORDER BY final_score DESC
@@ -106,7 +108,8 @@ FROM news n, query_input qi
 WHERE
     (n.search_vector @@ qi.tsq
      OR n.title ILIKE '%%' || qi.raw_query || '%%'
-     OR COALESCE(n.ai_summary, '') ILIKE '%%' || qi.raw_query || '%%')
+     OR COALESCE(n.ai_summary, '') ILIKE '%%' || qi.raw_query || '%%'
+     OR qi.raw_query = ANY(n.tags))
     AND COALESCE(n.ai_score, 0) >= :min_score
 """
 

@@ -89,7 +89,7 @@
             <rich-text class="news-title search-highlight" :nodes="item.title_highlighted || item.title"></rich-text>
             <rich-text v-if="item.summary_highlighted || item.ai_summary" class="news-summary search-highlight" :nodes="item.summary_highlighted || item.ai_summary || ''"></rich-text>
             <view v-if="item.tags && item.tags.length" class="news-tags">
-              <text v-for="tag in item.tags" :key="tag" class="news-tag">{{ tag }}</text>
+              <text v-for="tag in item.tags" :key="tag" class="news-tag news-tag-clickable" @click.stop="onTagSearch(tag)">{{ tag }}</text>
             </view>
             <view class="news-meta">
               <text class="meta-source">{{ item.source }}</text>
@@ -266,7 +266,7 @@
 
             <!-- Tags -->
             <view v-if="item.tags && item.tags.length" class="news-tags">
-              <text v-for="tag in item.tags" :key="tag" class="news-tag">{{ tag }}</text>
+              <text v-for="tag in item.tags" :key="tag" class="news-tag news-tag-clickable" @click.stop="onTagSearch(tag)">{{ tag }}</text>
             </view>
 
             <view class="news-meta">
@@ -596,6 +596,17 @@ export default {
     onQuickSearch(keyword) {
       this.searchQuery = keyword
       this.addToHistory(keyword)
+      this.doSearch()
+    },
+
+    /** 点击新闻标签触发搜索 */
+    onTagSearch(tag) {
+      this.searchMode = true
+      this.searchFocused = true
+      this.searchQuery = tag
+      this.addToHistory(tag)
+      this.loadSearchHistory()
+      this.loadHotTopics()
       this.doSearch()
     },
 
@@ -1288,6 +1299,13 @@ export default {
   padding: 4rpx 12rpx;
   line-height: 1.6;
 }
+.news-tag-clickable {
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.news-tag-clickable:active {
+  background: rgba(66, 133, 244, 0.2);
+}
 
 /* ── Meta ── */
 .news-meta {
@@ -1647,6 +1665,9 @@ export default {
     font-size: 12px;
     border-radius: 4px;
     padding: 2px 8px;
+  }
+  .news-tag-clickable:hover {
+    background: rgba(66, 133, 244, 0.18);
   }
 
   /* ── Meta ── */
