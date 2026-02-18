@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import traceback
 from datetime import date, datetime
 from enum import Enum
 
+import numpy as np
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -132,9 +134,9 @@ async def get_rs_rating(
         min_rating=min_rating,
     )
 
-    # NaN → None，防止 JSON 序列化报错
+    # NaN/inf → None，防止 JSON 序列化报错
     if not df.empty:
-        df = df.where(df.notna(), None)
+        df = df.replace({np.nan: None, np.inf: None, -np.inf: None})
 
     items = [RSRatingItem(**row) for row in df.to_dict("records")] if not df.empty else []
 
@@ -227,8 +229,8 @@ async def search_stocks(
     if df_all.empty:
         return StockSearchResponse(count=0, date=query_date, items=[], message=None)
 
-    # NaN → None，防止 JSON 序列化报错
-    df_all = df_all.where(df_all.notna(), None)
+    # NaN/inf → None，防止 JSON 序列化报错
+    df_all = df_all.replace({np.nan: None, np.inf: None, -np.inf: None})
 
     actual_date = df_all["trade_date"].iloc[0]
 

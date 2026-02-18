@@ -338,7 +338,10 @@ async def load_rs_rating(
         }
         for r in rows
     ]
-    return pd.DataFrame(data)
+    result_df = pd.DataFrame(data)
+    # 最终兜底：确保无 NaN/inf 残留
+    result_df = result_df.replace({np.nan: None, np.inf: None, -np.inf: None})
+    return result_df
 
 
 # ============================================================
