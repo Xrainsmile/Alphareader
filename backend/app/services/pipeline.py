@@ -3,7 +3,7 @@
 职责：编排整个新闻处理流水线，按顺序执行五个阶段：
 
   Step 1: 抓取 (Fetch)      — 并发抓取所有信源
-  Step 2: 去重 (Dedup)       — 长短文本路由：长文本三层去重 / 短文本语义向量去重
+  Step 2: 去重 (Dedup)       — SimHash + SequenceMatcher + TF-IDF 三层去重
   Step 3: AI 评分 (Filter)   — 发送 DeepSeek API 批量评分，过滤 score < 6 的
   Step 4: 存储 (Store)       — Upsert 到 PostgreSQL（ON CONFLICT DO NOTHING）
   Step 5: 标记已处理 (Mark)  — 将成功存储的 URL 标记到 Redis，避免重复抓取
@@ -131,7 +131,7 @@ async def run_pipeline() -> dict:
 
     五个阶段：
     1. Fetch  — 并发抓取所有信源（含 Redis URL 去重）
-    2. Dedup  — 长短文本路由去重（长文本三层 + 短文本语义向量，24h/30min 窗口）
+    2. Dedup  — SimHash + SequenceMatcher + TF-IDF 三层跨源去重（24h 窗口）
     3. Filter — DeepSeek 批量评分（每批 20 条），丢弃 score < 6 的
     4. Store  — 高分条目 Upsert 到 PostgreSQL
     5. Mark   — 成功存储的 URL 标记到 Redis 防止下次重复抓取
