@@ -112,3 +112,14 @@ export function fetchRSRating(params = {}) {
     .join('&')
   return request(`/api/v1/stocks/rs_rating${query ? '?' + query : ''}`)
 }
+
+/**
+ * 搜索股票（代码/名称/拼音首字母）
+ */
+export function searchStocks(params = {}) {
+  const query = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return request(`/api/v1/stocks/search${query ? '?' + query : ''}`)
+}

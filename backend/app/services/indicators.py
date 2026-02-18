@@ -292,7 +292,11 @@ async def load_rs_rating(
                 & (StockRSRating.trade_date == StockDailyQuote.trade_date),
             )
             .where(StockRSRating.trade_date == target_date)
-            .order_by(StockRSRating.rs_rating.desc())
+            .order_by(
+                StockRSRating.rs_rating.desc(),
+                StockDailyQuote.pct_change.desc().nulls_last(),
+                StockDailyQuote.close.desc().nulls_last(),
+            )
         )
         if min_rating is not None:
             query = query.where(StockRSRating.rs_rating >= min_rating)

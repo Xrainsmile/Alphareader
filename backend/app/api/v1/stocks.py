@@ -79,6 +79,42 @@ class RSRatingResponse(BaseModel):
     items: list[RSRatingItem]
 
 
+class StockSearchResponse(BaseModel):
+    count: int
+    date: date
+    items: list[RSRatingItem]
+    message: str | None = None
+
+
+# ── Pinyin Initial Helper (zero-dependency) ──
+
+# GB2312 一级汉字按拼音排序的声母分界点
+_PINYIN_TABLE = (
+    ("\u5416", "A"), ("\u82ad", "B"), ("\u64e6", "C"), ("\u6491", "D"),
+    ("\u86fe", "E"), ("\u53d1", "F"), ("\u5676", "G"), ("\u54c8", "H"),
+    ("\u4e0c", "J"), ("\u5494", "K"), ("\u5783", "L"), ("\u5988", "M"),
+    ("\u62ff", "N"), ("\u5662", "O"), ("\u5991", "P"), ("\u671f", "Q"),
+    ("\u7652", "R"), ("\u6492", "S"), ("\u584c", "T"), ("\u5140", "W"),
+    ("\u5915", "X"), ("\u538b", "Y"), ("\u531d", "Z"),
+)
+
+def _pinyin_initial(ch: str) -> str:
+    """Return the uppercase pinyin initial of a single Chinese character."""
+    if "\u4e00" <= ch <= "\u9fff":
+        for boundary, letter in reversed(_PINYIN_TABLE):
+            if ch >= boundary:
+                return letter
+        return "A"
+    if ch.isascii() and ch.isalpha():
+        return ch.upper()
+    return ""
+
+
+def _name_to_initials(name: str) -> str:
+    """Convert a stock name to its pinyin initials string. e.g. '贵州茅台' -> 'GZMT'"""
+    return "".join(_pinyin_initial(c) for c in name)
+
+
 # ── Endpoints ──
 
 @router.get("/rs_rating", response_model=RSRatingResponse)
@@ -165,4 +201,73 @@ async def trigger_rs_rating_compute(
             "status": "accepted",
             "message": "RS Rating 计算已在后台启动，请通过 GET /api/v1/stocks/rs_rating/status 查看进度",
         },
+    )
+
+
+@router.get("/search", response_model=StockSearchResponse)
+async def search_stocks(
+    q: str = Query(..., min_length=1, max_length=20, description="搜索关键词（代码/名称/拼音首字母）"),
+    target_date: date | None = Query(None, description="查询日期，默认今天"),
+):
+    """搜索股票 — 支持代码、名称、拼音首字母。
+
+    在 RS Rating >= 80 的股票中搜索。
+    若无结果，返回提示信息。
+    """
+    query_date = target_date or date.today()
+    keyword = q.strip().upper()
+
+    # 加载全量数据（无 min_rating 限制）以判断是否存在
+    df_all = await load_rs_rating(target_date=query_date, top_n=5000)
+
+    if df_all.empty:
+        return StockSearchResponse(count=0, date=query_date, items=[], message=None)
+
+    actual_date = df_all["trade_date"].iloc[0]
+
+    # 先在全量数据中搜索匹配项
+    def _match(row) -> bool:
+        code = str(row.get("ts_code", "")).upper()
+        name = str(row.get("name", ""))
+        initials = _name_to_initials(name)
+        return (
+            keyword in code
+            or keyword in name.upper()
+            or keyword in initials
+        )
+
+    records = df_all.to_dict("records")
+    matched_all = [r for r in records if _match(r)]
+
+    # 在匹配中筛选 RS >= 80
+    matched_rs80 = [r for r in matched_all if (r.get("rs_rating") or 0) >= 80]
+
+    if matched_rs80:
+        # 排序：rs_rating DESC, pct_change DESC, close DESC
+        matched_rs80.sort(
+            key=lambda r: (
+                r.get("rs_rating") or 0,
+                r.get("pct_change") or -9999,
+                r.get("close") or -9999,
+            ),
+            reverse=True,
+        )
+        items = [RSRatingItem(**r) for r in matched_rs80]
+        return StockSearchResponse(count=len(items), date=actual_date, items=items)
+
+    # 有匹配但都不在 RS >= 80 内
+    if matched_all:
+        return StockSearchResponse(
+            count=0,
+            date=actual_date,
+            items=[],
+            message=f"您搜索的标的 RS Rating ≤80",
+        )
+
+    # 完全无匹配
+    return StockSearchResponse(
+        count=0,
+        date=actual_date,
+        items=[],
+        message=f"未找到匹配「{q.strip()}」的股票",
     )
