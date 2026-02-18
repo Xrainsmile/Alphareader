@@ -3,7 +3,7 @@
     <!-- Header -->
     <view class="header">
       <view class="header-top">
-        <text class="logo">AlphaReader</text>
+        <text class="logo" @click="onLogoTap">AlphaReader</text>
       </view>
       <text class="subtitle">高频金融情报 · 信噪比优先</text>
     </view>
@@ -115,20 +115,6 @@
 
     <!-- 以下为原有 News Feed 内容 (非搜索模式时显示) -->
     <template v-if="!searchMode">
-
-    <!-- 大模型提示词区域 -->
-    <view class="prompt-card" @click="onCopyPrompt">
-      <view class="prompt-header">
-        <text class="prompt-icon">✨</text>
-        <text class="prompt-title">复制为大模型对话提示词</text>
-      </view>
-      <text class="prompt-desc">
-        {{ promptCopied ? '已复制到剪贴板!' : '一键生成今日 Top 66 结构化分析提示词' }}
-      </text>
-      <view v-if="promptLoading" class="prompt-loading">
-        <text class="loading-spinner">生成中...</text>
-      </view>
-    </view>
 
     <!-- 筛选按钮 + 已选标签 -->
     <view class="filter-trigger-bar">
@@ -331,6 +317,8 @@ export default {
       tmpScore: 6,
       promptLoading: false,
       promptCopied: false,
+      _logoTapCount: 0,
+      _logoTapTimer: null,
       scoreOptions: [6, 7, 8, 9],
       cnSources: ['财联社', '新浪财经', '华尔街见闻'],
       enSources: ['MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch', 'Finnhub'],
@@ -493,6 +481,7 @@ export default {
       if (this.promptLoading) return
       this.promptLoading = true
       this.promptCopied = false
+      uni.showToast({ title: '生成中...', icon: 'loading', mask: true, duration: 10000 })
 
       try {
         const res = await generatePrompt({ top_n: 66 })
@@ -501,6 +490,7 @@ export default {
             data: res.prompt,
             success: () => {
               this.promptCopied = true
+              uni.showToast({ title: 'Prompt 已复制', icon: 'success' })
               setTimeout(() => { this.promptCopied = false }, 3000)
             },
           })
@@ -513,6 +503,20 @@ export default {
       } finally {
         this.promptLoading = false
       }
+    },
+
+    /** 三击 Logo 触发隐藏彩蛋：复制大模型提示词 */
+    onLogoTap() {
+      this._logoTapCount++
+      if (this._logoTapTimer) clearTimeout(this._logoTapTimer)
+      if (this._logoTapCount >= 3) {
+        this._logoTapCount = 0
+        this.onCopyPrompt()
+        return
+      }
+      this._logoTapTimer = setTimeout(() => {
+        this._logoTapCount = 0
+      }, 1500)
     },
 
     onOpenUrl(url) {
@@ -739,6 +743,9 @@ export default {
   color: #1a1a2e;
   letter-spacing: 1rpx;
   font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .subtitle {
   font-size: 24rpx;
@@ -1144,43 +1151,6 @@ export default {
   font-weight: 600;
 }
 
-/* ── Prompt Card ── */
-.prompt-card {
-  margin: 16rpx 0;
-  padding: 28rpx 32rpx;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border-radius: 20rpx;
-  box-shadow: 0 8rpx 24rpx rgba(102, 126, 234, 0.25);
-  cursor: pointer;
-  transition: box-shadow 0.2s, transform 0.15s;
-}
-.prompt-header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 10rpx;
-}
-.prompt-icon {
-  font-size: 34rpx;
-  margin-right: 12rpx;
-}
-.prompt-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: #ffffff;
-}
-.prompt-desc {
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.8);
-  line-height: 1.5;
-}
-.prompt-loading {
-  margin-top: 10rpx;
-}
-.loading-spinner {
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.7);
-}
-
 /* ── News List ── */
 .news-list {
   padding-bottom: 20rpx;
@@ -1574,31 +1544,6 @@ export default {
   }
   .filter-confirm-text {
     font-size: 14px;
-  }
-
-  /* ── Prompt Card ── */
-  .prompt-card {
-    margin: 12px 0;
-    padding: 20px 24px;
-    border-radius: 14px;
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.2);
-  }
-  .prompt-card:hover {
-    box-shadow: 0 8px 28px rgba(102, 126, 234, 0.35);
-    transform: translateY(-1px);
-  }
-  .prompt-icon {
-    font-size: 20px;
-    margin-right: 8px;
-  }
-  .prompt-title {
-    font-size: 16px;
-  }
-  .prompt-desc {
-    font-size: 13px;
-  }
-  .loading-spinner {
-    font-size: 13px;
   }
 
   /* ── News List ── */
