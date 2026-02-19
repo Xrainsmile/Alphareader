@@ -76,13 +76,9 @@ SOURCE_PRIORITY = {
     "第一财经": 3,
     "Reuters": 4,
     "MarketWatch": 4,
-    "CNBC": 5,
     "Seeking Alpha": 6,
     "TechCrunch": 7,
-    "新浪财经": 8,
-    "同花顺": 9,
-    "东方财富": 10,
-    "东方财富快讯": 11,
+    "Finnhub": 8,
 }
 
 # 标题清洗正则：去掉【】[]括号标记及其内容、去掉中英文标点和空白

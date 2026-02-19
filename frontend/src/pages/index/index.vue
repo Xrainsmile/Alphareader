@@ -320,8 +320,8 @@ export default {
       _logoTapCount: 0,
       _logoTapTimer: null,
       scoreOptions: [6, 7, 8, 9],
-      cnSources: ['财联社', '新浪财经', '华尔街见闻'],
-      enSources: ['MarketWatch', 'CNBC World', 'CNBC US Markets', 'Seeking Alpha', 'TechCrunch', 'Finnhub'],
+      cnSources: ['财联社', '华尔街见闻'],
+      enSources: ['MarketWatch', 'Seeking Alpha', 'TechCrunch', 'Finnhub'],
       sortTabs: [
         { value: 'hot', label: 'Gravity' },
         { value: 'latest', label: '最新' },

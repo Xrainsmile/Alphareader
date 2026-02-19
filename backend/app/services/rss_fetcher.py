@@ -425,23 +425,12 @@ FEED_SOURCES: list[FeedSource] = [
         parser=_parse_wallstreetcn,
     ),
     # 同花顺、东方财富公告、东方财富快讯、第一财经 已移除（2026-02-11）
+    # 新浪财经、CNBC World、CNBC US Markets 已移除（2026-02-19）
     # ── International Sources (RSS/Atom XML) ──
     FeedSource(
         name="MarketWatch",
         url="https://feeds.marketwatch.com/marketwatch/topstories/",
         parser=_parse_marketwatch,
-        is_rss=True,
-    ),
-    FeedSource(
-        name="CNBC World",
-        url="https://www.cnbc.com/id/100727362/device/rss/rss.html",
-        parser=_parse_cnbc,
-        is_rss=True,
-    ),
-    FeedSource(
-        name="CNBC US Markets",
-        url="https://www.cnbc.com/id/10001147/device/rss/rss.html",
-        parser=_parse_cnbc,
         is_rss=True,
     ),
     FeedSource(
