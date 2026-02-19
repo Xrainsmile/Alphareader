@@ -4,10 +4,11 @@
 ═══════════════════════════════════════════════
 进入去重前，先根据"清洗后标题+正文"长度做路由：
 
-  【长文本通道】长度 > 150 字 → 原有三层去重
+  【长文本通道】长度 > 150 字 → 四层去重
     第一层：SimHash 指纹 + 汉明距离（≤5 视为重复）
-    第二层：SequenceMatcher 标题相似度（>0.5 视为重复）
-    第三层：TF-IDF 余弦相似度（>0.65 视为重复）
+    第二层：SequenceMatcher 标题相似度（>0.5 视为重复），2 小时窗口逐条比对
+    第三层：TF-IDF 余弦相似度（>0.65 视为重复），当前批次内部比对
+    第四层：标题语义去重（智谱 Embedding-3），跨批次跨源跨措辞识别同一事件
 
   【短文本语义通道】长度 ≤ 150 字（金融快讯等）
     调用智谱 Embedding-3 API 获取 256 维向量，计算余弦相似度，
@@ -274,15 +275,15 @@ class NewsDeduplicator:
         return unique
 
     # ────────────────────────────────────────────
-    # 长文本通道（原有三层逻辑，完整保留）
+    # 长文本通道（四层去重）
     # ────────────────────────────────────────────
 
     async def _dedup_long_text(self, items: list) -> tuple[list, int]:
-        """长文本三层去重：SimHash + SequenceMatcher + TF-IDF。"""
+        """长文本四层去重：SimHash + SequenceMatcher + TF-IDF + 标题语义。"""
         if not items:
             return [], 0
 
-        # ── Layer 1 + 2: SimHash + SequenceMatcher（逐条与 24h 索引比对）──
+        # ── Layer 1 + 2: SimHash + SequenceMatcher（逐条与历史索引比对）──
         survivors: list = []
         l12_dropped = 0
 
@@ -318,8 +319,97 @@ class NewsDeduplicator:
         else:
             unique = survivors
 
-        total_dropped = l12_dropped + l3_dropped
+        # ── Layer 4: 标题语义去重（Embedding 跨批次检查）──
+        # 针对不同措辞描述同一事件的情况（如中英文翻译差异、改写）
+        l4_dropped = 0
+        if len(unique) >= 1:
+            unique, l4_dropped = await self._title_semantic_dedup(unique)
+
+        total_dropped = l12_dropped + l3_dropped + l4_dropped
         return unique, total_dropped
+
+    async def _title_semantic_dedup(self, items: list) -> tuple[list, int]:
+        """Layer 4: 对长文本标题做 Embedding 语义去重。
+
+        用智谱 Embedding-3 获取标题向量，与 Embedding 索引中的近期标题
+        以及当前批次内部做余弦相似度比对。阈值复用短文本通道设置。
+        仅用标题（非全文），有效识别跨源/跨语言的同一事件。
+        """
+        titles = [item.title for item in items]
+        vectors = await _call_zhipu_embedding(titles)
+
+        if vectors is None or len(vectors) != len(items):
+            logger.debug("L4 title semantic dedup skipped: embedding unavailable")
+            return items, 0
+
+        now = time.time()
+        cutoff = now - SHORT_TEXT_TTL_SECONDS
+        valid_emb_index = [e for e in self._emb_index if e.timestamp >= cutoff]
+
+        survivors: list = []
+        dropped = 0
+
+        for i, item in enumerate(items):
+            vec = vectors[i]
+            is_dup = False
+
+            # 与 Embedding 索引（含短文本历史）比对
+            for entry in valid_emb_index:
+                sim = _cosine_sim(vec, entry.vector)
+                if sim > EMBEDDING_COSINE_THRESHOLD:
+                    is_dup = True
+                    logger.info(
+                        'L4 title-semantic dup (cos=%.3f): [%s]"%s" ≈ [%s]"%s"',
+                        sim, item.source, item.title[:40],
+                        entry.source, entry.title[:40],
+                    )
+                    break
+                elif sim > EMBEDDING_GRAY_ZONE_LOW:
+                    title_text = self._get_clean_text(item)
+                    is_dup = self._number_safeguard(
+                        title_text, entry.title, sim, item, entry,
+                    )
+                    if is_dup:
+                        break
+
+            # 与当前批次已通过的幸存者比对
+            if not is_dup:
+                for j, kept in enumerate(survivors):
+                    kept_idx = items.index(kept)
+                    sim = _cosine_sim(vec, vectors[kept_idx])
+                    if sim > EMBEDDING_COSINE_THRESHOLD:
+                        is_dup = True
+                        logger.info(
+                            'L4 title-semantic batch dup (cos=%.3f): [%s]"%s" ≈ [%s]"%s"',
+                            sim, item.source, item.title[:40],
+                            kept.source, kept.title[:40],
+                        )
+                        break
+                    elif sim > EMBEDDING_GRAY_ZONE_LOW:
+                        kept_text = self._get_clean_text(kept)
+                        title_text = self._get_clean_text(item)
+                        is_dup = self._number_safeguard(
+                            title_text, kept_text, sim, item, kept,
+                        )
+                        if is_dup:
+                            break
+
+            if is_dup:
+                dropped += 1
+                continue
+
+            # 通过去重，将标题向量加入 Embedding 索引（供后续批次使用）
+            self._emb_index.append(_EmbeddingEntry(
+                vector=vec,
+                title=item.title,
+                source=item.source,
+                timestamp=now,
+            ))
+            survivors.append(item)
+
+        if dropped > 0:
+            logger.info("L4 title-semantic: dropped %d long-text duplicates", dropped)
+        return survivors, dropped
 
     # ────────────────────────────────────────────
     # 短文本语义通道（智谱 Embedding-3 API）
@@ -532,23 +622,34 @@ class NewsDeduplicator:
     def _find_duplicate(self, sh: Simhash, clean_title: str) -> _IndexEntry | None:
         """在索引中查找是否存在重复条目。
 
-        第一层：汉明距离 ≤ 5 → 直接判定重复
-        第二层：汉明距离 6~12 时，用 SequenceMatcher 做标题相似度兜底（> 0.5 判定重复）
-               同时包含子串包含检测
+        第一层：SimHash 汉明距离 ≤ 5 → 直接判定重复
+        第二层：SequenceMatcher 标题相似度 > 0.5 → 判定重复
+               包含子串包含检测。对所有索引条目执行，不受汉明距离限制。
+               为控制性能，仅对 2 小时内的近期条目做逐条标题比对。
         """
+        recent_cutoff = time.time() - 2 * 3600  # 2 小时窗口
+        title_candidates: list[_IndexEntry] = []
+
         for entry in self._index:
             dist = self._hamming(sh.value, entry.simhash_value)
             if dist <= SIMHASH_HAMMING_THRESHOLD:
                 return entry
 
-            if dist <= 12:
+            # 收集近期条目用于 L2 标题相似度检查（不限汉明距离）
+            if entry.timestamp >= recent_cutoff:
+                title_candidates.append(entry)
+
+        # L2: 对近期索引做标题相似度检查
+        if clean_title:
+            for entry in title_candidates:
                 existing_clean = self._clean(entry.title)
-                if clean_title and existing_clean:
-                    if clean_title in existing_clean or existing_clean in clean_title:
-                        return entry
-                    ratio = SequenceMatcher(None, clean_title, existing_clean).ratio()
-                    if ratio > SEQMATCH_RATIO_THRESHOLD:
-                        return entry
+                if not existing_clean:
+                    continue
+                if clean_title in existing_clean or existing_clean in clean_title:
+                    return entry
+                ratio = SequenceMatcher(None, clean_title, existing_clean).ratio()
+                if ratio > SEQMATCH_RATIO_THRESHOLD:
+                    return entry
 
         return None
 
