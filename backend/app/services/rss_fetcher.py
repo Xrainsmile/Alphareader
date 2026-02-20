@@ -2,9 +2,9 @@
 =================================
 职责：从多个中英文金融信源并发抓取新闻，返回去重后的原始新闻列表。
 
-当前活跃信源（9 个）：
-  中文：财联社 / 新浪财经 / 华尔街见闻（通过 JSON API）
-  英文：MarketWatch / CNBC World / CNBC US Markets / Seeking Alpha / TechCrunch（通过 RSS/Atom XML）
+当前活跃信源（6 个）：
+  中文：财联社 / 华尔街见闻（通过 JSON API）
+  英文：MarketWatch / Seeking Alpha / TechCrunch（通过 RSS/Atom XML）
         Finnhub（通过 JSON API，需 API Key）
 
 处理流程：
@@ -413,11 +413,6 @@ FEED_SOURCES: list[FeedSource] = [
         name="财联社",
         url="https://www.cls.cn/nodeapi/updateTelegraphList?app=CailianpressWeb&os=web&sv=8.4.6&rn=30",
         parser=_parse_cls,
-    ),
-    FeedSource(
-        name="新浪财经",
-        url="https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&num=30&page=1",
-        parser=_parse_sina,
     ),
     FeedSource(
         name="华尔街见闻",
