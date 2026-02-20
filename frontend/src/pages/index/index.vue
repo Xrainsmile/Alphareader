@@ -5,8 +5,7 @@
       <view class="header-top">
         <text class="logo">AlphaReader</text>
         <view class="inspire-btn" :class="{ 'inspire-btn-copied': promptCopied }" @click="onInspireCopy">
-          <text class="inspire-icon">💡</text>
-          <text class="inspire-label">{{ promptCopied ? '已复制' : '灵感' }}</text>
+          <text class="inspire-icon">{{ promptCopied ? '✅' : '💡' }}</text>
         </view>
       </view>
       <text class="subtitle">高频金融情报 · 信噪比优先</text>
@@ -815,11 +814,12 @@ ${newsBlock}
 .inspire-btn {
   display: flex;
   align-items: center;
-  gap: 6rpx;
-  padding: 10rpx 20rpx;
+  justify-content: center;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
   background: linear-gradient(135deg, rgba(255, 196, 0, 0.12), rgba(255, 149, 0, 0.12));
   border: 1rpx solid rgba(255, 170, 0, 0.25);
-  border-radius: 28rpx;
   cursor: pointer;
   transition: all 0.2s ease;
   -webkit-tap-highlight-color: transparent;
@@ -827,25 +827,16 @@ ${newsBlock}
   -webkit-user-select: none;
 }
 .inspire-btn:active {
-  transform: scale(0.95);
-  background: linear-gradient(135deg, rgba(255, 196, 0, 0.22), rgba(255, 149, 0, 0.22));
+  transform: scale(0.9);
+  background: linear-gradient(135deg, rgba(255, 196, 0, 0.25), rgba(255, 149, 0, 0.25));
 }
 .inspire-btn-copied {
-  background: linear-gradient(135deg, rgba(52, 199, 89, 0.12), rgba(40, 167, 69, 0.12));
+  background: linear-gradient(135deg, rgba(52, 199, 89, 0.15), rgba(40, 167, 69, 0.15));
   border-color: rgba(52, 199, 89, 0.3);
 }
 .inspire-icon {
-  font-size: 28rpx;
+  font-size: 32rpx;
   line-height: 1;
-}
-.inspire-label {
-  font-size: 24rpx;
-  color: #e68a00;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.inspire-btn-copied .inspire-label {
-  color: #28a745;
 }
 .subtitle {
   font-size: 24rpx;
@@ -1530,20 +1521,18 @@ ${newsBlock}
     letter-spacing: 0.5px;
   }
   .inspire-btn {
-    gap: 4px;
-    padding: 6px 14px;
-    border-radius: 18px;
+    width: 36px;
+    height: 36px;
   }
   .inspire-btn:hover {
-    background: linear-gradient(135deg, rgba(255, 196, 0, 0.2), rgba(255, 149, 0, 0.2));
+    background: linear-gradient(135deg, rgba(255, 196, 0, 0.22), rgba(255, 149, 0, 0.22));
     box-shadow: 0 2px 8px rgba(255, 170, 0, 0.15);
   }
   .inspire-btn-copied:hover {
     background: linear-gradient(135deg, rgba(52, 199, 89, 0.18), rgba(40, 167, 69, 0.18));
     box-shadow: 0 2px 8px rgba(52, 199, 89, 0.15);
   }
-  .inspire-icon { font-size: 15px; }
-  .inspire-label { font-size: 13px; }
+  .inspire-icon { font-size: 18px; }
   .subtitle {
     font-size: 13px;
     margin-top: 4px;
