@@ -59,7 +59,7 @@ REDIS_SIMHASH_KEY = "alphareader:simhash_index"
 # ── 短文本语义通道阈值 ──
 EMBEDDING_COSINE_THRESHOLD = 0.85   # 余弦相似度 > 0.85 → 直接判重
 EMBEDDING_GRAY_ZONE_LOW = 0.78      # 灰色地带下界：0.78~0.85 触发数值抗误杀
-SHORT_TEXT_TTL_SECONDS = 30 * 60    # Embedding 索引滑动窗口：30 分钟
+SHORT_TEXT_TTL_SECONDS = 90 * 60    # Embedding 索引滑动窗口：90 分钟
 REDIS_EMBEDDING_KEY = "alphareader:embedding_index"
 
 # ── 智谱 Embedding-3 API 配置 ──
@@ -208,7 +208,7 @@ class NewsDeduplicator:
 
     def __init__(self) -> None:
         self._index: list[_IndexEntry] = []           # SimHash 索引（24h 窗口）
-        self._emb_index: list[_EmbeddingEntry] = []   # Embedding 索引（30min 窗口）
+        self._emb_index: list[_EmbeddingEntry] = []   # Embedding 索引（90min 窗口）
 
     # ────────────────────────────────────────────
     # Public API
@@ -438,7 +438,7 @@ class NewsDeduplicator:
         now = time.time()
         cutoff = now - SHORT_TEXT_TTL_SECONDS
 
-        # 过滤出 30 分钟内的有效索引条目
+        # 过滤出 90 分钟内的有效索引条目
         valid_index = [e for e in self._emb_index if e.timestamp >= cutoff]
 
         survivors: list = []
@@ -780,7 +780,7 @@ class NewsDeduplicator:
             except (ValueError, KeyError, json.JSONDecodeError) as e:
                 logger.debug("Skipping malformed Embedding index entry: %s", e)
 
-        logger.info("Loaded Embedding index: %d entries (30min window)", len(self._emb_index))
+        logger.info("Loaded Embedding index: %d entries (90min window)", len(self._emb_index))
 
     async def _save_embedding_index(self) -> None:
         """将 Embedding 索引持久化回 Redis（原子 RENAME 策略）。"""
