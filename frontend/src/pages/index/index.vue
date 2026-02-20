@@ -5,7 +5,8 @@
       <view class="header-top">
         <text class="logo">AlphaReader</text>
         <view class="inspire-btn" :class="{ 'inspire-btn-copied': promptCopied }" @click="onInspireCopy">
-          <text class="inspire-icon">{{ promptCopied ? '✅' : '💡' }}</text>
+          <image v-if="!promptCopied" class="inspire-icon" src="/static/icons/circle-three.svg" mode="aspectFit" />
+          <image v-else class="inspire-icon" src="/static/icons/done-all.svg" mode="aspectFit" />
         </view>
       </view>
       <text class="subtitle">高频金融情报 · 信噪比优先</text>
@@ -818,8 +819,8 @@ ${newsBlock}
   width: 64rpx;
   height: 64rpx;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(255, 196, 0, 0.12), rgba(255, 149, 0, 0.12));
-  border: 1rpx solid rgba(255, 170, 0, 0.25);
+  background: rgba(26, 26, 46, 0.06);
+  border: 1rpx solid rgba(26, 26, 46, 0.1);
   cursor: pointer;
   transition: all 0.2s ease;
   -webkit-tap-highlight-color: transparent;
@@ -828,15 +829,15 @@ ${newsBlock}
 }
 .inspire-btn:active {
   transform: scale(0.9);
-  background: linear-gradient(135deg, rgba(255, 196, 0, 0.25), rgba(255, 149, 0, 0.25));
+  background: rgba(26, 26, 46, 0.12);
 }
 .inspire-btn-copied {
-  background: linear-gradient(135deg, rgba(52, 199, 89, 0.15), rgba(40, 167, 69, 0.15));
-  border-color: rgba(52, 199, 89, 0.3);
+  background: rgba(52, 199, 89, 0.1);
+  border-color: rgba(52, 199, 89, 0.25);
 }
 .inspire-icon {
-  font-size: 32rpx;
-  line-height: 1;
+  width: 36rpx;
+  height: 36rpx;
 }
 .subtitle {
   font-size: 24rpx;
@@ -1525,14 +1526,14 @@ ${newsBlock}
     height: 36px;
   }
   .inspire-btn:hover {
-    background: linear-gradient(135deg, rgba(255, 196, 0, 0.22), rgba(255, 149, 0, 0.22));
-    box-shadow: 0 2px 8px rgba(255, 170, 0, 0.15);
+    background: rgba(26, 26, 46, 0.1);
+    box-shadow: 0 2px 8px rgba(26, 26, 46, 0.08);
   }
   .inspire-btn-copied:hover {
-    background: linear-gradient(135deg, rgba(52, 199, 89, 0.18), rgba(40, 167, 69, 0.18));
-    box-shadow: 0 2px 8px rgba(52, 199, 89, 0.15);
+    background: rgba(52, 199, 89, 0.15);
+    box-shadow: 0 2px 8px rgba(52, 199, 89, 0.1);
   }
-  .inspire-icon { font-size: 18px; }
+  .inspire-icon { width: 20px; height: 20px; }
   .subtitle {
     font-size: 13px;
     margin-top: 4px;

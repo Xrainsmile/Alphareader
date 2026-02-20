@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+  <!-- First checkmark (back) -->
+  <polyline points="6 26 16 36 34 12"/>
+  <!-- Second checkmark (front, offset) -->
+  <polyline points="14 26 24 36 42 12"/>
+</svg>
