@@ -160,7 +160,7 @@
       <!-- 净值概览卡 -->
       <view class="sb-hero-card">
         <view class="sb-hero-top">
-          <text class="sb-hero-since">成立于 {{ sbSummary.latest_date ? sbSummary.latest_date.slice(0, 4) + '.01.01' : '--' }}</text>
+          <text class="sb-hero-since">成立于 2026.02.24</text>
         </view>
         <view class="sb-hero-body">
           <view class="sb-hero-left">
@@ -169,22 +169,26 @@
             </text>
             <text class="sb-nav-sub">当前单位净值</text>
           </view>
-          <!-- 迷你净值曲线 -->
-          <view v-if="navSeries.length > 1" class="sb-mini-chart">
-            <view class="sb-chart-inner">
-              <view
-                v-for="(point, idx) in navChartPoints"
-                :key="idx"
-                class="sb-chart-dot-wrap"
-                :style="{ left: point.x + '%' }"
-              >
-                <view
-                  class="sb-chart-dot"
-                  :class="point.nav >= 1 ? 'sb-dot-up' : 'sb-dot-down'"
-                  :style="{ bottom: point.y + '%' }"
-                ></view>
-              </view>
-            </view>
+        </view>
+        <!-- 圆滑净值曲线 SVG -->
+        <view v-if="navSeries.length > 1" class="sb-nav-chart">
+          <view class="sb-nav-chart-inner" :style="{ height: '160rpx' }">
+            <!-- #ifdef H5 -->
+            <svg xmlns="http://www.w3.org/2000/svg" :viewBox="`0 0 ${navChartWidth} ${navChartHeight}`" class="sb-svg-chart">
+              <defs>
+                <linearGradient id="navFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" :stop-color="navTrendColor" stop-opacity="0.2" />
+                  <stop offset="100%" :stop-color="navTrendColor" stop-opacity="0.02" />
+                </linearGradient>
+              </defs>
+              <!-- 面积填充 -->
+              <path :d="navAreaPath" fill="url(#navFill)" />
+              <!-- 曲线 -->
+              <path :d="navCurvePath" fill="none" :stroke="navTrendColor" stroke-width="2" stroke-linecap="round" />
+              <!-- 基准线 -->
+              <line x1="0" :y1="navBaseY" :x2="navChartWidth" :y2="navBaseY" stroke="#d0d0d8" stroke-width="0.5" stroke-dasharray="4,3" />
+            </svg>
+            <!-- #endif -->
           </view>
         </view>
         <!-- 指标行 -->
@@ -210,20 +214,36 @@
         </view>
         <view class="sb-snapshot-tags">
           <view
-            class="sb-tag sb-tag-hold"
-            :class="{ 'sb-tag-active': sbFilter === 'holding' }"
-            @click="sbFilter = sbFilter === 'holding' ? '' : 'holding'; loadSandboxStocks()"
+            class="sb-tag sb-tag-retain"
+            :class="{ 'sb-tag-active': sbFilter === 'retain' }"
+            @click="toggleDisciplineFilter('retain')"
           >
-            <text class="sb-tag-label">持仓 Hold</text>
-            <text class="sb-tag-num">{{ sbSummary.holding_count || 0 }}支</text>
+            <text class="sb-tag-label">留存 Retain</text>
+            <text class="sb-tag-num">{{ sbSummary.retain_count || 0 }}支</text>
           </view>
           <view
-            class="sb-tag sb-tag-watch"
-            :class="{ 'sb-tag-active': sbFilter === 'watching' }"
-            @click="sbFilter = sbFilter === 'watching' ? '' : 'watching'; loadSandboxStocks()"
+            class="sb-tag sb-tag-gray"
+            :class="{ 'sb-tag-active': sbFilter === 'gray' }"
+            @click="toggleDisciplineFilter('gray')"
           >
-            <text class="sb-tag-label">观察 Watch</text>
-            <text class="sb-tag-num">{{ sbSummary.watching_count || 0 }}支</text>
+            <text class="sb-tag-label">灰度 Gray</text>
+            <text class="sb-tag-num">{{ sbSummary.gray_count || 0 }}支</text>
+          </view>
+          <view
+            class="sb-tag sb-tag-research"
+            :class="{ 'sb-tag-active': sbFilter === 'research' }"
+            @click="toggleDisciplineFilter('research')"
+          >
+            <text class="sb-tag-label">用研 Research</text>
+            <text class="sb-tag-num">{{ sbSummary.research_count || 0 }}支</text>
+          </view>
+          <view
+            class="sb-tag sb-tag-churn"
+            :class="{ 'sb-tag-active': sbFilter === 'churn' }"
+            @click="toggleDisciplineFilter('churn')"
+          >
+            <text class="sb-tag-label">流失 Churn</text>
+            <text class="sb-tag-num">{{ sbSummary.churn_count || 0 }}支</text>
           </view>
         </view>
       </view>
@@ -250,8 +270,8 @@
               <text class="sb-stock-name">{{ item.name }}</text>
               <text class="sb-stock-code">（{{ item.ts_code }}）</text>
             </view>
-            <view class="sb-status-badge" :class="'sb-status-' + item.status">
-              <text class="sb-status-text">{{ statusLabel(item.status) }}</text>
+            <view class="sb-status-badge" :class="'sb-status-' + (item.latest_analysis ? item.latest_analysis.discipline_action : 'retain')">
+              <text class="sb-status-text">{{ disciplineLabel(item.latest_analysis ? item.latest_analysis.discipline_action : 'retain') }}</text>
             </view>
           </view>
 
@@ -408,6 +428,11 @@ const formatShortDate = (iso) => {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
+const toggleDisciplineFilter = (action) => {
+  sbFilter.value = sbFilter.value === action ? '' : action
+  loadSandboxStocks()
+}
+
 const switchToSandbox = () => {
   activeTab.value = 'sandbox'
   if (!sbLoaded) {
@@ -421,7 +446,7 @@ const loadSandboxData = async () => {
   try {
     const [overview, stocks] = await Promise.all([
       fetchSandboxOverview(90),
-      apiFetchSandboxStocks(sbFilter.value),
+      apiFetchSandboxStocks('', sbFilter.value),
     ])
     sbSummary.value = overview.summary || {}
     navSeries.value = overview.nav_series || []
@@ -435,35 +460,74 @@ const loadSandboxData = async () => {
 
 const loadSandboxStocks = async () => {
   try {
-    const data = await apiFetchSandboxStocks(sbFilter.value)
+    const data = await apiFetchSandboxStocks('', sbFilter.value)
     sbStocks.value = data.items || []
   } catch (e) {
     console.error(e)
   }
 }
 
-// 净值图表计算
-const navChartPoints = computed(() => {
+// 净值 SVG 曲线计算
+const navChartWidth = 400
+const navChartHeight = 100
+
+const navTrendColor = computed(() => {
+  const series = navSeries.value
+  if (series.length < 2) return '#3b82f6'
+  return series[series.length - 1].nav >= 1.0 ? '#3b82f6' : '#22c55e'
+})
+
+const navSvgPoints = computed(() => {
   const series = navSeries.value
   if (series.length < 2) return []
   const navs = series.map(s => s.nav)
-  const min = Math.min(...navs, 1) - 0.01
-  const max = Math.max(...navs, 1) + 0.01
+  const min = Math.min(...navs, 1) - 0.005
+  const max = Math.max(...navs, 1) + 0.005
   const range = max - min || 1
+  const pad = 4
   return series.map((s, i) => ({
-    x: (i / (series.length - 1)) * 100,
-    y: ((s.nav - min) / range) * 100,
-    nav: s.nav,
+    x: pad + (i / (series.length - 1)) * (navChartWidth - pad * 2),
+    y: pad + (1 - (s.nav - min) / range) * (navChartHeight - pad * 2),
   }))
 })
 
-const navBaselineY = computed(() => {
+const navBaseY = computed(() => {
   const series = navSeries.value
-  if (series.length < 2) return 50
+  if (series.length < 2) return navChartHeight / 2
   const navs = series.map(s => s.nav)
-  const min = Math.min(...navs, 1) - 0.01
-  const max = Math.max(...navs, 1) + 0.01
-  return ((1 - min) / (max - min || 1)) * 100
+  const min = Math.min(...navs, 1) - 0.005
+  const max = Math.max(...navs, 1) + 0.005
+  const pad = 4
+  return pad + (1 - (1.0 - min) / (max - min || 1)) * (navChartHeight - pad * 2)
+})
+
+// Catmull-Rom → SVG cubic Bezier 平滑曲线
+const navCurvePath = computed(() => {
+  const pts = navSvgPoints.value
+  if (pts.length < 2) return ''
+  if (pts.length === 2) return `M${pts[0].x},${pts[0].y} L${pts[1].x},${pts[1].y}`
+
+  let d = `M${pts[0].x},${pts[0].y}`
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(i - 1, 0)]
+    const p1 = pts[i]
+    const p2 = pts[i + 1]
+    const p3 = pts[Math.min(i + 2, pts.length - 1)]
+    const t = 0.3
+    const cp1x = p1.x + (p2.x - p0.x) * t
+    const cp1y = p1.y + (p2.y - p0.y) * t
+    const cp2x = p2.x - (p3.x - p1.x) * t
+    const cp2y = p2.y - (p3.y - p1.y) * t
+    d += ` C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`
+  }
+  return d
+})
+
+const navAreaPath = computed(() => {
+  const curve = navCurvePath.value
+  if (!curve) return ''
+  const pts = navSvgPoints.value
+  return `${curve} L${pts[pts.length - 1].x},${navChartHeight} L${pts[0].x},${navChartHeight} Z`
 })
 
 const goToDetail = (id) => {
@@ -736,22 +800,17 @@ const onOpenIcp = () => {
   font-size: 22rpx; color: #8c8c9a; margin-top: 6rpx; font-weight: 500;
 }
 
-/* 迷你净值曲线 */
-.sb-mini-chart {
-  width: 220rpx; height: 100rpx; position: relative; flex-shrink: 0;
+/* 迷你净值曲线 → SVG 圆滑曲线 */
+.sb-nav-chart {
+  margin: 16rpx 0 24rpx;
 }
-.sb-chart-inner {
-  position: relative; width: 100%; height: 100%;
+.sb-nav-chart-inner {
+  width: 100%; position: relative; overflow: hidden; border-radius: 12rpx;
+  background: #fafbfc;
 }
-.sb-chart-dot-wrap {
-  position: absolute; width: 2rpx; height: 100%;
+.sb-svg-chart {
+  width: 100%; height: 100%; display: block;
 }
-.sb-chart-dot {
-  position: absolute; width: 6rpx; height: 6rpx; border-radius: 50%;
-  transform: translate(-50%, 50%);
-}
-.sb-dot-up { background: #3b82f6; }
-.sb-dot-down { background: #8c8c9a; }
 
 /* 指标行 */
 .sb-metric-row {
@@ -782,10 +841,10 @@ const onOpenIcp = () => {
 .sb-snapshot-title { font-size: 30rpx; font-weight: 700; color: #1a1a2e; }
 .sb-snapshot-time { font-size: 22rpx; color: #b0b0be; }
 .sb-snapshot-tags {
-  display: flex; gap: 12rpx;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx;
 }
 .sb-tag {
-  flex: 1; border-radius: 16rpx; padding: 20rpx 16rpx;
+  border-radius: 16rpx; padding: 20rpx 16rpx;
   display: flex; flex-direction: column; align-items: center; gap: 6rpx;
   cursor: pointer; transition: all 0.2s; border: 2rpx solid transparent;
 }
@@ -795,12 +854,18 @@ const onOpenIcp = () => {
   font-size: 36rpx; font-weight: 800;
   font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
 }
-.sb-tag-hold { background: #fef2f2; }
-.sb-tag-hold .sb-tag-label { color: #ef4444; }
-.sb-tag-hold .sb-tag-num { color: #1a1a2e; }
-.sb-tag-watch { background: #eff6ff; }
-.sb-tag-watch .sb-tag-label { color: #3b82f6; }
-.sb-tag-watch .sb-tag-num { color: #1a1a2e; }
+.sb-tag-retain { background: #eff6ff; }
+.sb-tag-retain .sb-tag-label { color: #3b82f6; }
+.sb-tag-retain .sb-tag-num { color: #1a1a2e; }
+.sb-tag-gray { background: #f3f4f6; }
+.sb-tag-gray .sb-tag-label { color: #6b7280; }
+.sb-tag-gray .sb-tag-num { color: #1a1a2e; }
+.sb-tag-research { background: #faf5ff; }
+.sb-tag-research .sb-tag-label { color: #a855f7; }
+.sb-tag-research .sb-tag-num { color: #1a1a2e; }
+.sb-tag-churn { background: #fef2f2; }
+.sb-tag-churn .sb-tag-label { color: #ef4444; }
+.sb-tag-churn .sb-tag-num { color: #1a1a2e; }
 
 /* ── 股票卡片 ── */
 .sb-stock-list { margin-top: 16rpx; }
@@ -834,12 +899,14 @@ const onOpenIcp = () => {
   display: inline-flex;
 }
 .sb-status-text { font-size: 22rpx; font-weight: 600; }
-.sb-status-holding { background: #dcfce7; }
-.sb-status-holding .sb-status-text { color: #16a34a; }
-.sb-status-watching { background: #dbeafe; }
-.sb-status-watching .sb-status-text { color: #2563eb; }
-.sb-status-exited { background: #f3f4f6; }
-.sb-status-exited .sb-status-text { color: #6b7280; }
+.sb-status-retain { background: #dbeafe; }
+.sb-status-retain .sb-status-text { color: #2563eb; }
+.sb-status-gray { background: #f3f4f6; }
+.sb-status-gray .sb-status-text { color: #6b7280; }
+.sb-status-research { background: #f3e8ff; }
+.sb-status-research .sb-status-text { color: #9333ea; }
+.sb-status-churn { background: #fef2f2; }
+.sb-status-churn .sb-status-text { color: #dc2626; }
 
 /* 评分 */
 .sb-score-row {
@@ -971,7 +1038,8 @@ const onOpenIcp = () => {
   .sb-hero-since { font-size: 12px; }
   .sb-nav-big { font-size: 40px; }
   .sb-nav-sub { font-size: 12px; }
-  .sb-mini-chart { width: 140px; height: 60px; }
+  .sb-mini-chart, .sb-nav-chart-inner { height: 100px !important; }
+  .sb-nav-chart { margin: 10px 0 18px; }
   .sb-metric-row { gap: 8px; }
   .sb-metric-item { padding: 12px 16px; border-radius: 10px; }
   .sb-metric-label { font-size: 12px; }
@@ -980,7 +1048,7 @@ const onOpenIcp = () => {
   .sb-snapshot { margin-top: 18px; }
   .sb-snapshot-title { font-size: 16px; }
   .sb-snapshot-time { font-size: 12px; }
-  .sb-snapshot-tags { gap: 8px; }
+  .sb-snapshot-tags { gap: 8px; grid-template-columns: 1fr 1fr 1fr 1fr; }
   .sb-tag { padding: 14px 12px; border-radius: 10px; }
   .sb-tag-label { font-size: 12px; }
   .sb-tag-num { font-size: 22px; }

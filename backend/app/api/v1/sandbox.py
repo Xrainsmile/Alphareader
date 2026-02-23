@@ -98,6 +98,26 @@ async def sandbox_overview(
     )
     counts = count_result.one()
 
+    # 按 discipline_action 统计（基于每只活跃股票的最新推演记录）
+    active_stocks_result = await db.execute(
+        select(SandboxStock.id).where(SandboxStock.status.in_(["holding", "watching"]))
+    )
+    active_ids = [row[0] for row in active_stocks_result.all()]
+
+    discipline_counts = {"retain": 0, "gray": 0, "research": 0, "churn": 0}
+    for sid in active_ids:
+        la_result = await db.execute(
+            select(SandboxAnalysis.discipline_action)
+            .where(SandboxAnalysis.stock_id == sid)
+            .order_by(desc(SandboxAnalysis.created_at))
+            .limit(1)
+        )
+        action = la_result.scalar()
+        if action and action in discipline_counts:
+            discipline_counts[action] += 1
+        else:
+            discipline_counts["retain"] += 1  # 无推演记录默认留存
+
     latest_nav = nav_rows[-1] if nav_rows else None
     prev_nav = nav_rows[-2] if len(nav_rows) >= 2 else None
 
@@ -137,6 +157,10 @@ async def sandbox_overview(
             "exited_count": counts.exited,
             "total_active": total_active,
             "latest_date": str(latest_nav.trade_date) if latest_nav else None,
+            "retain_count": discipline_counts["retain"],
+            "gray_count": discipline_counts["gray"],
+            "research_count": discipline_counts["research"],
+            "churn_count": discipline_counts["churn"],
         },
     }
 
@@ -144,9 +168,10 @@ async def sandbox_overview(
 @router.get("/stocks")
 async def sandbox_stock_list(
     status: str | None = Query(None, pattern=r"^(watching|holding|exited)$"),
+    discipline: str | None = Query(None, pattern=r"^(retain|gray|research|churn)$"),
     db: AsyncSession = Depends(get_db),
 ):
-    """观察池列表，附最新一条推演摘要。"""
+    """观察池列表，附最新一条推演摘要。支持按 discipline_action 筛选。"""
     query = select(SandboxStock).order_by(desc(SandboxStock.updated_at))
     if status:
         query = query.where(SandboxStock.status == status)
@@ -163,6 +188,12 @@ async def sandbox_stock_list(
             .limit(1)
         )
         la = latest_analysis.scalar_one_or_none()
+
+        # 按 discipline_action 过滤
+        if discipline:
+            action = la.discipline_action if la else "retain"
+            if action != discipline:
+                continue
 
         # 持仓统计
         trade_result = await db.execute(

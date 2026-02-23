@@ -136,8 +136,11 @@ export function fetchSandboxOverview(days = 90) {
 /**
  * 观察池列表
  */
-export function fetchSandboxStocks(status = '') {
-  const q = status ? `?status=${status}` : ''
+export function fetchSandboxStocks(status = '', discipline = '') {
+  const params = []
+  if (status) params.push(`status=${status}`)
+  if (discipline) params.push(`discipline=${discipline}`)
+  const q = params.length ? `?${params.join('&')}` : ''
   return request(`/api/v1/sandbox/stocks${q}`)
 }
 
