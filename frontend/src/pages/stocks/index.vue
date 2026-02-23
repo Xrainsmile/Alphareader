@@ -191,17 +191,31 @@
             <!-- #endif -->
           </view>
         </view>
-        <!-- 指标行 -->
+        <!-- 收益率指标行 -->
         <view class="sb-metric-row">
           <view class="sb-metric-item">
-            <text class="sb-metric-label">日内收益</text>
-            <text class="sb-metric-val" :class="(sbSummary.daily_pnl || 0) >= 0 ? 'metric-up' : 'metric-down'">
-              {{ (sbSummary.daily_pnl || 0) >= 0 ? '+' : '' }}{{ (sbSummary.daily_pnl || 0).toFixed(1) }}%
+            <text class="sb-metric-label">成立以来</text>
+            <text class="sb-metric-val" :class="pnlClass(sbSummary.pnl_since_inception)">
+              {{ formatPnlVal(sbSummary.pnl_since_inception) }}
             </text>
           </view>
           <view class="sb-metric-item">
-            <text class="sb-metric-label">当前仓位</text>
-            <text class="sb-metric-val metric-neutral">{{ (sbSummary.position_pct || 0).toFixed(0) }}%</text>
+            <text class="sb-metric-label">近一年</text>
+            <text class="sb-metric-val" :class="pnlClass(sbSummary.pnl_1y)">
+              {{ formatPnlVal(sbSummary.pnl_1y) }}
+            </text>
+          </view>
+          <view class="sb-metric-item">
+            <text class="sb-metric-label">近三月</text>
+            <text class="sb-metric-val" :class="pnlClass(sbSummary.pnl_3m)">
+              {{ formatPnlVal(sbSummary.pnl_3m) }}
+            </text>
+          </view>
+          <view class="sb-metric-item">
+            <text class="sb-metric-label">今年以来</text>
+            <text class="sb-metric-val" :class="pnlClass(sbSummary.pnl_ytd)">
+              {{ formatPnlVal(sbSummary.pnl_ytd) }}
+            </text>
           </view>
         </view>
       </view>
@@ -426,6 +440,16 @@ const formatShortDate = (iso) => {
   if (!iso) return ''
   const d = new Date(iso)
   return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+const pnlClass = (v) => {
+  const n = v || 0
+  return n > 0 ? 'metric-up' : n < 0 ? 'metric-down' : 'metric-neutral'
+}
+
+const formatPnlVal = (v) => {
+  const n = v || 0
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
 }
 
 const toggleDisciplineFilter = (action) => {
@@ -814,16 +838,16 @@ const onOpenIcp = () => {
 
 /* 指标行 */
 .sb-metric-row {
-  display: flex; gap: 12rpx;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx;
 }
 .sb-metric-item {
-  flex: 1; background: #f5f7fa; border-radius: 14rpx;
+  background: #f5f7fa; border-radius: 14rpx;
   padding: 18rpx 20rpx;
   display: flex; flex-direction: column; gap: 4rpx;
 }
 .sb-metric-label { font-size: 22rpx; color: #8c8c9a; font-weight: 500; }
 .sb-metric-val {
-  font-size: 36rpx; font-weight: 800;
+  font-size: 32rpx; font-weight: 800;
   font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
 }
 .metric-up { color: #ef4444; }
@@ -1040,10 +1064,10 @@ const onOpenIcp = () => {
   .sb-nav-sub { font-size: 12px; }
   .sb-mini-chart, .sb-nav-chart-inner { height: 100px !important; }
   .sb-nav-chart { margin: 10px 0 18px; }
-  .sb-metric-row { gap: 8px; }
+  .sb-metric-row { gap: 8px; grid-template-columns: 1fr 1fr 1fr 1fr; }
   .sb-metric-item { padding: 12px 16px; border-radius: 10px; }
   .sb-metric-label { font-size: 12px; }
-  .sb-metric-val { font-size: 22px; }
+  .sb-metric-val { font-size: 18px; }
 
   .sb-snapshot { margin-top: 18px; }
   .sb-snapshot-title { font-size: 16px; }

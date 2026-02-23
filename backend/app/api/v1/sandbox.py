@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
@@ -136,6 +136,49 @@ async def sandbox_overview(
     # 观察池总数（不含退出）
     total_active = counts.holding + counts.watching
 
+    # ── 多区间收益率计算 ──
+    # 查询全部净值记录（用于跨区间计算）
+    all_nav_result = await db.execute(
+        select(SandboxNav).order_by(SandboxNav.trade_date)
+    )
+    all_navs = all_nav_result.scalars().all()
+
+    def _find_nav_at_or_before(navs, target_date):
+        """找到 target_date 当天或之前最近的净值记录。"""
+        best = None
+        for n in navs:
+            if n.trade_date <= target_date:
+                best = n
+            else:
+                break
+        return best
+
+    def _calc_return(navs, start_date):
+        """计算从 start_date 到最新的收益率。"""
+        if not navs:
+            return 0.0
+        base = _find_nav_at_or_before(navs, start_date)
+        latest = navs[-1]
+        if base is None or float(base.nav) == 0:
+            return round(float(latest.total_pnl), 2)
+        return round((float(latest.nav) - float(base.nav)) / float(base.nav) * 100, 2)
+
+    today = date.today()
+    inception_date = date(2026, 2, 24)  # 成立日
+
+    # 成立以来收益率
+    pnl_since_inception = _calc_return(all_navs, inception_date) if all_navs else 0.0
+
+    # 近一年
+    pnl_1y = _calc_return(all_navs, today - timedelta(days=365))
+
+    # 近三月
+    pnl_3m = _calc_return(all_navs, today - timedelta(days=90))
+
+    # 今年以来 (YTD)
+    ytd_start = date(today.year, 1, 1)
+    pnl_ytd = _calc_return(all_navs, ytd_start)
+
     return {
         "nav_series": [
             {
@@ -161,6 +204,10 @@ async def sandbox_overview(
             "gray_count": discipline_counts["gray"],
             "research_count": discipline_counts["research"],
             "churn_count": discipline_counts["churn"],
+            "pnl_since_inception": pnl_since_inception,
+            "pnl_1y": pnl_1y,
+            "pnl_3m": pnl_3m,
+            "pnl_ytd": pnl_ytd,
         },
     }
 
