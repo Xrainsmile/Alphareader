@@ -157,94 +157,86 @@
          模拟仓 Tab
          ═══════════════════════════════════════════════════════ -->
     <template v-if="activeTab === 'sandbox'">
-      <!-- 概览卡片 -->
-      <view class="sandbox-overview">
-        <view class="nav-card">
-          <view class="nav-main">
-            <text class="nav-label">单位净值</text>
-            <text class="nav-value" :class="sbSummary.total_pnl >= 0 ? 'nav-up' : 'nav-down'">
+      <!-- 净值概览卡 -->
+      <view class="sb-hero-card">
+        <view class="sb-hero-top">
+          <text class="sb-hero-since">成立于 {{ sbSummary.latest_date ? sbSummary.latest_date.slice(0, 4) + '.01.01' : '--' }}</text>
+        </view>
+        <view class="sb-hero-body">
+          <view class="sb-hero-left">
+            <text class="sb-nav-big" :class="sbSummary.total_pnl >= 0 ? '' : 'sb-nav-down'">
               {{ sbSummary.latest_nav?.toFixed(4) || '1.0000' }}
             </text>
+            <text class="sb-nav-sub">当前单位净值</text>
           </view>
-          <view class="nav-pnl">
-            <text class="pnl-label">累计收益</text>
-            <text class="pnl-value" :class="sbSummary.total_pnl >= 0 ? 'pnl-up' : 'pnl-down'">
-              {{ sbSummary.total_pnl >= 0 ? '+' : '' }}{{ sbSummary.total_pnl?.toFixed(2) || '0.00' }}%
+          <!-- 迷你净值曲线 -->
+          <view v-if="navSeries.length > 1" class="sb-mini-chart">
+            <view class="sb-chart-inner">
+              <view
+                v-for="(point, idx) in navChartPoints"
+                :key="idx"
+                class="sb-chart-dot-wrap"
+                :style="{ left: point.x + '%' }"
+              >
+                <view
+                  class="sb-chart-dot"
+                  :class="point.nav >= 1 ? 'sb-dot-up' : 'sb-dot-down'"
+                  :style="{ bottom: point.y + '%' }"
+                ></view>
+              </view>
+            </view>
+          </view>
+        </view>
+        <!-- 指标行 -->
+        <view class="sb-metric-row">
+          <view class="sb-metric-item">
+            <text class="sb-metric-label">日内收益</text>
+            <text class="sb-metric-val" :class="(sbSummary.daily_pnl || 0) >= 0 ? 'metric-up' : 'metric-down'">
+              {{ (sbSummary.daily_pnl || 0) >= 0 ? '+' : '' }}{{ (sbSummary.daily_pnl || 0).toFixed(1) }}%
             </text>
           </view>
-        </view>
-        <view class="stat-row">
-          <view class="stat-item">
-            <text class="stat-num">{{ sbSummary.holding_count || 0 }}</text>
-            <text class="stat-label">持仓</text>
-          </view>
-          <view class="stat-item">
-            <text class="stat-num">{{ sbSummary.watching_count || 0 }}</text>
-            <text class="stat-label">观察</text>
-          </view>
-          <view class="stat-item">
-            <text class="stat-num">{{ sbSummary.exited_count || 0 }}</text>
-            <text class="stat-label">退出</text>
+          <view class="sb-metric-item">
+            <text class="sb-metric-label">当前仓位</text>
+            <text class="sb-metric-val metric-neutral">{{ (sbSummary.position_pct || 0).toFixed(0) }}%</text>
           </view>
         </view>
       </view>
 
-      <!-- 净值曲线 -->
-      <view v-if="navSeries.length > 1" class="nav-chart-card">
-        <text class="section-title">净值走势</text>
-        <view class="nav-chart">
-          <view class="chart-area">
-            <view
-              v-for="(point, idx) in navChartPoints"
-              :key="idx"
-              class="chart-bar-wrap"
-              :style="{ left: point.x + '%' }"
-            >
-              <view
-                class="chart-dot"
-                :class="point.nav >= 1 ? 'dot-up' : 'dot-down'"
-                :style="{ bottom: point.y + '%' }"
-              ></view>
-            </view>
-            <!-- 基准线 -->
-            <view class="chart-baseline" :style="{ bottom: navBaselineY + '%' }"></view>
+      <!-- 观察池快照 -->
+      <view class="sb-snapshot">
+        <view class="sb-snapshot-header">
+          <text class="sb-snapshot-title">观察池快照 ({{ sbSummary.total_active || 0 }}支)</text>
+          <text class="sb-snapshot-time">{{ sbSummary.latest_date || '' }}</text>
+        </view>
+        <view class="sb-snapshot-tags">
+          <view
+            class="sb-tag sb-tag-hold"
+            :class="{ 'sb-tag-active': sbFilter === 'holding' }"
+            @click="sbFilter = sbFilter === 'holding' ? '' : 'holding'; loadSandboxStocks()"
+          >
+            <text class="sb-tag-label">持仓 Hold</text>
+            <text class="sb-tag-num">{{ sbSummary.holding_count || 0 }}支</text>
           </view>
-          <view class="chart-labels">
-            <text class="chart-label-start">{{ navSeries[0]?.date?.slice(5) || '' }}</text>
-            <text class="chart-label-end">{{ navSeries[navSeries.length - 1]?.date?.slice(5) || '' }}</text>
+          <view
+            class="sb-tag sb-tag-watch"
+            :class="{ 'sb-tag-active': sbFilter === 'watching' }"
+            @click="sbFilter = sbFilter === 'watching' ? '' : 'watching'; loadSandboxStocks()"
+          >
+            <text class="sb-tag-label">观察 Watch</text>
+            <text class="sb-tag-num">{{ sbSummary.watching_count || 0 }}支</text>
           </view>
         </view>
       </view>
 
-      <!-- 状态筛选 -->
-      <view class="filter-bar">
-        <text class="section-title">观察池</text>
-        <view class="filter-chips">
-          <view
-            class="chip"
-            :class="{ 'chip-active': sbFilter === '' }"
-            @click="sbFilter = ''; loadSandboxStocks()"
-          ><text class="chip-text">全部</text></view>
-          <view
-            class="chip"
-            :class="{ 'chip-active': sbFilter === 'holding' }"
-            @click="sbFilter = 'holding'; loadSandboxStocks()"
-          ><text class="chip-text">持仓</text></view>
-          <view
-            class="chip"
-            :class="{ 'chip-active': sbFilter === 'watching' }"
-            @click="sbFilter = 'watching'; loadSandboxStocks()"
-          ><text class="chip-text">观察</text></view>
-        </view>
-      </view>
-
-      <!-- 股票列表 -->
+      <!-- 加载 / 空态 -->
       <view v-if="sbLoading" class="empty-state">
         <text class="empty-text">加载中...</text>
       </view>
-      <view v-else-if="sbStocks.length === 0" class="empty-state">
+      <view v-else-if="sbStocks.length === 0" class="empty-state" style="border-radius: 16rpx; margin-top: 12rpx;">
         <text class="empty-text">暂无数据</text>
       </view>
+
+      <!-- 股票列表 -->
       <view v-else class="sb-stock-list">
         <view
           v-for="item in sbStocks"
@@ -252,24 +244,42 @@
           class="sb-stock-card"
           @click="goToDetail(item.id)"
         >
+          <!-- 头部: 名称 + 状态 -->
           <view class="sb-card-top">
-            <view class="sb-card-info">
+            <view class="sb-card-name-row">
               <text class="sb-stock-name">{{ item.name }}</text>
-              <text class="sb-stock-code">{{ item.ts_code }}</text>
+              <text class="sb-stock-code">（{{ item.ts_code }}）</text>
             </view>
             <view class="sb-status-badge" :class="'sb-status-' + item.status">
               <text class="sb-status-text">{{ statusLabel(item.status) }}</text>
             </view>
           </view>
-          <view v-if="item.latest_analysis" class="sb-card-analysis">
-            <view class="sb-direction-badge" :class="'sb-dir-' + item.latest_analysis.direction">
-              <text class="sb-dir-text">{{ dirLabel(item.latest_analysis.direction) }}</text>
+
+          <!-- 推演摘要 -->
+          <template v-if="item.latest_analysis">
+            <!-- 评分 -->
+            <view class="sb-score-row">
+              <text class="sb-score-label">综合评分：</text>
+              <text class="sb-score-big" :class="scoreClass(item.latest_analysis.score)">{{ item.latest_analysis.score.toFixed(1) }}</text>
+              <text class="sb-score-max">/ 5.0</text>
             </view>
-            <text class="sb-analysis-title">{{ item.latest_analysis.title }}</text>
-          </view>
+
+            <!-- 哨子 Verdict -->
+            <text class="sb-verdict">{{ item.latest_analysis.verdict }}</text>
+
+            <!-- 动作标签 + 风控 -->
+            <view class="sb-action-row">
+              <view class="sb-disc-badge" :class="'sb-disc-' + item.latest_analysis.discipline_action">
+                <text class="sb-disc-text">{{ disciplineLabel(item.latest_analysis.discipline_action) }}</text>
+              </view>
+              <text class="sb-analysis-date">{{ formatShortDate(item.latest_analysis.created_at) }}</text>
+            </view>
+          </template>
+
           <view v-if="item.net_shares > 0" class="sb-card-bottom">
             <text class="sb-shares">持仓 {{ item.net_shares }} 股</text>
           </view>
+
           <view class="sb-card-arrow">
             <text class="arrow-icon">›</text>
           </view>
@@ -383,7 +393,20 @@ const sbFilter = ref('')
 let sbLoaded = false
 
 const statusLabel = (s) => ({ holding: '持仓', watching: '观察', exited: '退出' }[s] || s)
-const dirLabel = (d) => ({ bullish: '看多', bearish: '看空', neutral: '中性' }[d] || d)
+
+const disciplineLabel = (d) => ({ retain: '留存', gray: '灰度', research: '用研', churn: '流失' }[d] || d)
+
+const scoreClass = (score) => {
+  if (score >= 4) return 'sb-score-high'
+  if (score >= 2.5) return 'sb-score-mid'
+  return 'sb-score-low'
+}
+
+const formatShortDate = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
 
 const switchToSandbox = () => {
   activeTab.value = 'sandbox'
@@ -686,149 +709,124 @@ const onOpenIcp = () => {
    模拟仓样式
    ═══════════════════════════════════════════════════════ */
 
-.sandbox-overview { margin: 12rpx 0 0; }
-
-.nav-card {
-  background: linear-gradient(135deg, #1a1a2e, #2d2d4e);
-  border-radius: 16rpx;
-  padding: 32rpx 28rpx;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.nav-main { display: flex; flex-direction: column; }
-.nav-label { font-size: 22rpx; color: rgba(255, 255, 255, 0.6); }
-.nav-value {
-  font-size: 48rpx; font-weight: 800; margin-top: 6rpx;
-  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
-}
-.nav-up { color: #ff6b6b; }
-.nav-down { color: #51cf66; }
-.nav-pnl { display: flex; flex-direction: column; align-items: flex-end; }
-.pnl-label { font-size: 22rpx; color: rgba(255, 255, 255, 0.6); }
-.pnl-value {
-  font-size: 36rpx; font-weight: 700; margin-top: 6rpx;
-  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
-}
-.pnl-up { color: #ff6b6b; }
-.pnl-down { color: #51cf66; }
-
-.stat-row {
-  display: flex; gap: 12rpx; margin-top: 12rpx;
-}
-.stat-item {
-  flex: 1;
+/* ── 净值概览卡 ── */
+.sb-hero-card {
   background: #ffffff;
-  border-radius: 12rpx;
-  padding: 20rpx 16rpx;
-  text-align: center;
-  box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
+  border-radius: 20rpx;
+  padding: 28rpx 28rpx 24rpx;
+  margin: 16rpx 0 0;
+  box-shadow: 0 2rpx 16rpx rgba(0, 0, 0, 0.05);
 }
-.stat-num {
-  font-size: 36rpx; font-weight: 800; color: #1a1a2e; display: block;
+.sb-hero-top { margin-bottom: 8rpx; }
+.sb-hero-since {
+  font-size: 22rpx; color: #8c8c9a; font-weight: 500;
+}
+.sb-hero-body {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 24rpx;
+}
+.sb-hero-left { display: flex; flex-direction: column; }
+.sb-nav-big {
+  font-size: 64rpx; font-weight: 900; color: #1a1a2e; line-height: 1.1;
   font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+  letter-spacing: -1rpx;
 }
-.stat-label { font-size: 22rpx; color: #8c8c9a; display: block; margin-top: 4rpx; }
+.sb-nav-down { color: #22c55e; }
+.sb-nav-sub {
+  font-size: 22rpx; color: #8c8c9a; margin-top: 6rpx; font-weight: 500;
+}
 
-/* ── 净值走势图 ── */
-.nav-chart-card {
-  background: #ffffff;
-  border-radius: 16rpx;
-  padding: 24rpx;
-  margin-top: 16rpx;
-  box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
+/* 迷你净值曲线 */
+.sb-mini-chart {
+  width: 220rpx; height: 100rpx; position: relative; flex-shrink: 0;
 }
-.section-title {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: #1a1a2e;
-  display: block;
-  margin-bottom: 16rpx;
+.sb-chart-inner {
+  position: relative; width: 100%; height: 100%;
 }
-.nav-chart { position: relative; }
-.chart-area {
-  position: relative;
-  height: 200rpx;
-  margin: 0 8rpx;
+.sb-chart-dot-wrap {
+  position: absolute; width: 2rpx; height: 100%;
 }
-.chart-bar-wrap {
-  position: absolute;
-  width: 2rpx;
-  height: 100%;
-}
-.chart-dot {
-  position: absolute;
-  width: 8rpx;
-  height: 8rpx;
-  border-radius: 50%;
+.sb-chart-dot {
+  position: absolute; width: 6rpx; height: 6rpx; border-radius: 50%;
   transform: translate(-50%, 50%);
 }
-.dot-up { background: #ff6b6b; }
-.dot-down { background: #51cf66; }
-.chart-baseline {
-  position: absolute;
-  left: 0; right: 0;
-  height: 1rpx;
-  background: #e8e8f0;
-  border-style: dashed;
-}
-.chart-labels {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8rpx;
-}
-.chart-label-start, .chart-label-end {
-  font-size: 20rpx;
-  color: #b0b0be;
-}
+.sb-dot-up { background: #3b82f6; }
+.sb-dot-down { background: #8c8c9a; }
 
-/* ── 筛选栏 ── */
-.filter-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 24rpx;
-  padding: 0 4rpx;
+/* 指标行 */
+.sb-metric-row {
+  display: flex; gap: 12rpx;
 }
-.filter-chips {
-  display: flex;
-  gap: 8rpx;
+.sb-metric-item {
+  flex: 1; background: #f5f7fa; border-radius: 14rpx;
+  padding: 18rpx 20rpx;
+  display: flex; flex-direction: column; gap: 4rpx;
 }
-.chip {
-  padding: 8rpx 20rpx;
-  border-radius: 20rpx;
-  background: #ffffff;
-  border: 2rpx solid #e8e8ed;
-  cursor: pointer;
-  transition: all 0.2s;
+.sb-metric-label { font-size: 22rpx; color: #8c8c9a; font-weight: 500; }
+.sb-metric-val {
+  font-size: 36rpx; font-weight: 800;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
 }
-.chip-active {
-  background: #1a1a2e;
-  border-color: #1a1a2e;
-}
-.chip-text { font-size: 24rpx; color: #8c8c9a; }
-.chip-active .chip-text { color: #ffffff; }
+.metric-up { color: #ef4444; }
+.metric-down { color: #22c55e; }
+.metric-neutral { color: #1a1a2e; }
 
-/* ── 模拟仓股票卡片 ── */
+/* ── 观察池快照 ── */
+.sb-snapshot {
+  margin-top: 24rpx; padding: 0 4rpx;
+}
+.sb-snapshot-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16rpx;
+}
+.sb-snapshot-title { font-size: 30rpx; font-weight: 700; color: #1a1a2e; }
+.sb-snapshot-time { font-size: 22rpx; color: #b0b0be; }
+.sb-snapshot-tags {
+  display: flex; gap: 12rpx;
+}
+.sb-tag {
+  flex: 1; border-radius: 16rpx; padding: 20rpx 16rpx;
+  display: flex; flex-direction: column; align-items: center; gap: 6rpx;
+  cursor: pointer; transition: all 0.2s; border: 2rpx solid transparent;
+}
+.sb-tag-active { border-color: #1a1a2e; box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.1); }
+.sb-tag-label { font-size: 22rpx; font-weight: 600; }
+.sb-tag-num {
+  font-size: 36rpx; font-weight: 800;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+}
+.sb-tag-hold { background: #fef2f2; }
+.sb-tag-hold .sb-tag-label { color: #ef4444; }
+.sb-tag-hold .sb-tag-num { color: #1a1a2e; }
+.sb-tag-watch { background: #eff6ff; }
+.sb-tag-watch .sb-tag-label { color: #3b82f6; }
+.sb-tag-watch .sb-tag-num { color: #1a1a2e; }
+
+/* ── 股票卡片 ── */
 .sb-stock-list { margin-top: 16rpx; }
 .sb-stock-card {
   background: #ffffff;
   border-radius: 16rpx;
   padding: 24rpx;
-  margin-bottom: 12rpx;
+  margin-bottom: 16rpx;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
   position: relative;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: box-shadow 0.15s;
 }
 .sb-card-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 16rpx;
+  padding-bottom: 14rpx;
+  border-bottom: 1rpx solid #f0f0f2;
 }
-.sb-card-info { display: flex; flex-direction: column; }
-.sb-stock-name { font-size: 30rpx; font-weight: 700; color: #1a1a2e; }
-.sb-stock-code { font-size: 22rpx; color: #b0b0be; margin-top: 4rpx; font-family: 'SF Mono', 'Menlo', monospace; }
+.sb-card-name-row {
+  display: flex; align-items: baseline; gap: 4rpx;
+}
+.sb-stock-name { font-size: 32rpx; font-weight: 800; color: #1a1a2e; }
+.sb-stock-code { font-size: 24rpx; color: #8c8c9a; font-weight: 500; }
 
 .sb-status-badge {
   padding: 6rpx 16rpx;
@@ -843,37 +841,43 @@ const onOpenIcp = () => {
 .sb-status-exited { background: #f3f4f6; }
 .sb-status-exited .sb-status-text { color: #6b7280; }
 
-.sb-card-analysis {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  margin-top: 14rpx;
-  padding-top: 14rpx;
-  border-top: 1rpx solid #f0f0f2;
+/* 评分 */
+.sb-score-row {
+  display: flex; align-items: baseline; gap: 6rpx; margin-bottom: 10rpx;
 }
-.sb-direction-badge {
-  padding: 4rpx 12rpx;
-  border-radius: 8rpx;
-  flex-shrink: 0;
+.sb-score-label { font-size: 24rpx; color: #8c8c9a; font-weight: 500; }
+.sb-score-big {
+  font-size: 42rpx; font-weight: 900;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
 }
-.sb-dir-text { font-size: 20rpx; font-weight: 600; }
-.sb-dir-bullish { background: rgba(255, 59, 48, 0.1); }
-.sb-dir-bullish .sb-dir-text { color: #ff3b30; }
-.sb-dir-bearish { background: rgba(52, 199, 89, 0.1); }
-.sb-dir-bearish .sb-dir-text { color: #34c759; }
-.sb-dir-neutral { background: rgba(142, 142, 147, 0.1); }
-.sb-dir-neutral .sb-dir-text { color: #8e8e93; }
-.sb-analysis-title {
-  font-size: 24rpx;
-  color: #4a4a5a;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
+.sb-score-high { color: #1a1a2e; }
+.sb-score-mid { color: #f59e0b; }
+.sb-score-low { color: #ef4444; }
+.sb-score-max { font-size: 24rpx; color: #b0b0be; font-weight: 500; }
+
+/* Verdict */
+.sb-verdict {
+  font-size: 26rpx; color: #4a4a5a; line-height: 1.6; display: block;
+  margin-bottom: 12rpx;
 }
-.sb-card-bottom {
-  margin-top: 10rpx;
+
+/* 动作标签行 */
+.sb-action-row {
+  display: flex; align-items: center; gap: 10rpx;
 }
+.sb-disc-badge { padding: 4rpx 14rpx; border-radius: 8rpx; }
+.sb-disc-text { font-size: 22rpx; font-weight: 600; }
+.sb-disc-retain { background: rgba(59, 130, 246, 0.1); }
+.sb-disc-retain .sb-disc-text { color: #3b82f6; }
+.sb-disc-gray { background: rgba(142, 142, 147, 0.1); }
+.sb-disc-gray .sb-disc-text { color: #8e8e93; }
+.sb-disc-research { background: rgba(168, 85, 247, 0.1); }
+.sb-disc-research .sb-disc-text { color: #a855f7; }
+.sb-disc-churn { background: rgba(239, 68, 68, 0.1); }
+.sb-disc-churn .sb-disc-text { color: #ef4444; }
+.sb-analysis-date { font-size: 22rpx; color: #b0b0be; }
+
+.sb-card-bottom { margin-top: 10rpx; }
 .sb-shares { font-size: 22rpx; color: #8c8c9a; }
 
 .sb-card-arrow {
@@ -963,35 +967,39 @@ const onOpenIcp = () => {
   .rs-value { font-size: 13px; }
 
   /* 模拟仓 PC 适配 */
-  .nav-card { padding: 24px 20px; border-radius: 12px; }
-  .nav-label { font-size: 12px; }
-  .nav-value { font-size: 32px; }
-  .pnl-label { font-size: 12px; }
-  .pnl-value { font-size: 24px; }
-  .stat-row { gap: 8px; margin-top: 8px; }
-  .stat-item { padding: 14px 12px; border-radius: 8px; }
-  .stat-num { font-size: 22px; }
-  .stat-label { font-size: 12px; }
+  .sb-hero-card { padding: 20px 22px 18px; border-radius: 14px; margin-top: 12px; }
+  .sb-hero-since { font-size: 12px; }
+  .sb-nav-big { font-size: 40px; }
+  .sb-nav-sub { font-size: 12px; }
+  .sb-mini-chart { width: 140px; height: 60px; }
+  .sb-metric-row { gap: 8px; }
+  .sb-metric-item { padding: 12px 16px; border-radius: 10px; }
+  .sb-metric-label { font-size: 12px; }
+  .sb-metric-val { font-size: 22px; }
 
-  .nav-chart-card { padding: 18px; margin-top: 12px; border-radius: 12px; }
-  .section-title { font-size: 15px; margin-bottom: 12px; }
-  .chart-area { height: 120px; }
-
-  .filter-bar { margin-top: 18px; }
-  .chip { padding: 5px 14px; border-radius: 12px; }
-  .chip-text { font-size: 13px; }
+  .sb-snapshot { margin-top: 18px; }
+  .sb-snapshot-title { font-size: 16px; }
+  .sb-snapshot-time { font-size: 12px; }
+  .sb-snapshot-tags { gap: 8px; }
+  .sb-tag { padding: 14px 12px; border-radius: 10px; }
+  .sb-tag-label { font-size: 12px; }
+  .sb-tag-num { font-size: 22px; }
 
   .sb-stock-list { margin-top: 12px; }
-  .sb-stock-card { padding: 18px; margin-bottom: 8px; border-radius: 12px; transition: box-shadow 0.15s; }
+  .sb-stock-card { padding: 18px; margin-bottom: 10px; border-radius: 12px; transition: box-shadow 0.15s; }
   .sb-stock-card:hover { box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08); }
-  .sb-stock-name { font-size: 16px; }
-  .sb-stock-code { font-size: 12px; }
+  .sb-card-top { margin-bottom: 12px; padding-bottom: 10px; }
+  .sb-stock-name { font-size: 17px; }
+  .sb-stock-code { font-size: 13px; }
   .sb-status-badge { padding: 3px 10px; border-radius: 10px; }
   .sb-status-text { font-size: 12px; }
-  .sb-card-analysis { margin-top: 10px; padding-top: 10px; }
-  .sb-direction-badge { padding: 2px 8px; border-radius: 5px; }
-  .sb-dir-text { font-size: 11px; }
-  .sb-analysis-title { font-size: 13px; }
+  .sb-score-label { font-size: 13px; }
+  .sb-score-big { font-size: 26px; }
+  .sb-score-max { font-size: 13px; }
+  .sb-verdict { font-size: 14px; }
+  .sb-disc-badge { padding: 2px 10px; border-radius: 5px; }
+  .sb-disc-text { font-size: 12px; }
+  .sb-analysis-date { font-size: 12px; }
   .sb-shares { font-size: 12px; }
   .arrow-icon { font-size: 22px; }
 

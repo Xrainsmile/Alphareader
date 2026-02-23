@@ -9,15 +9,14 @@
       <!-- 股票头部 -->
       <view class="detail-header">
         <view class="header-info">
-          <text class="detail-name">{{ stock.name }}</text>
-          <text class="detail-code">{{ stock.ts_code }}</text>
+          <view class="header-name-row">
+            <text class="detail-name">{{ stock.name }}</text>
+            <text class="detail-code">（{{ stock.ts_code }}）</text>
+          </view>
         </view>
         <view class="header-right">
           <view class="status-badge" :class="'status-' + stock.status">
             <text class="status-text">{{ statusLabel(stock.status) }}</text>
-          </view>
-          <view v-if="stock.net_shares > 0" class="shares-info">
-            <text class="shares-text">持仓 {{ stock.net_shares }} 股</text>
           </view>
         </view>
       </view>
@@ -43,58 +42,76 @@
           v-for="item in analyses"
           :key="item.id"
           class="analysis-card"
-          :class="{ 'analysis-expanded': expandedId === item.id }"
-          @click="toggleExpand(item.id)"
         >
-          <!-- 头部：评分 + 动作 + 时间 -->
-          <view class="analysis-top">
-            <view class="analysis-score-row">
-              <view class="score-badge" :class="scoreClass(item.score)">
-                <text class="score-text">{{ item.score.toFixed(1) }}</text>
+          <!-- 综合评分 -->
+          <view class="a-score-section">
+            <text class="a-score-label">综合评分：</text>
+            <text class="a-score-big" :class="scoreClass(item.score)">{{ item.score.toFixed(1) }}</text>
+            <text class="a-score-max">/ 5.0</text>
+          </view>
+
+          <!-- 盘面逻辑推演 -->
+          <view class="a-logic-section">
+            <view class="a-logic-header">
+              <view class="a-logic-bar"></view>
+              <text class="a-logic-title">盘面逻辑推演</text>
+            </view>
+
+            <view class="a-logic-item">
+              <text class="a-logic-sub">· 趋势 (TREND)</text>
+              <text class="a-logic-text-bold">{{ extractTitle(item.trend) }}</text>
+              <text v-if="extractDesc(item.trend)" class="a-logic-text">{{ extractDesc(item.trend) }}</text>
+            </view>
+
+            <view class="a-logic-item">
+              <text class="a-logic-sub">· 形态 (SETUP)</text>
+              <text class="a-logic-text-bold">{{ extractTitle(item.pattern) }}</text>
+              <text v-if="extractDesc(item.pattern)" class="a-logic-text">{{ extractDesc(item.pattern) }}</text>
+            </view>
+
+            <view class="a-logic-item">
+              <text class="a-logic-sub">· 量价 (P&V)</text>
+              <text class="a-logic-text-bold">{{ extractTitle(item.volume_price) }}</text>
+              <text v-if="extractDesc(item.volume_price)" class="a-logic-text">{{ extractDesc(item.volume_price) }}</text>
+            </view>
+          </view>
+
+          <!-- 纪律与计划 -->
+          <view class="a-discipline-section">
+            <view class="a-logic-header">
+              <view class="a-logic-bar"></view>
+              <text class="a-logic-title">纪律与计划</text>
+            </view>
+
+            <view class="a-discipline-content">
+              <view class="a-disc-row">
+                <view class="discipline-badge" :class="'disc-' + item.discipline_action">
+                  <text class="disc-text">{{ disciplineLabel(item.discipline_action) }}</text>
+                </view>
+                <text class="a-disc-date">{{ formatDate(item.created_at) }}</text>
               </view>
-              <view class="discipline-badge" :class="'disc-' + item.discipline_action">
-                <text class="disc-text">{{ disciplineLabel(item.discipline_action) }}</text>
+
+              <!-- 风控 -->
+              <view v-if="item.risk_type" class="a-risk-block">
+                <view class="risk-tag" :class="'risk-' + item.risk_type">
+                  <text class="risk-label">{{ item.risk_type === 'top' ? 'Top' : 'Bottom' }}</text>
+                  <text v-if="item.risk_price" class="risk-price">¥{{ item.risk_price }}</text>
+                </view>
+                <text v-if="item.risk_note" class="a-risk-note">{{ item.risk_note }}</text>
               </view>
             </view>
-            <text class="analysis-date">{{ formatDate(item.created_at) }}</text>
           </view>
 
-          <!-- 哨子 Verdict（始终显示） -->
-          <text class="analysis-verdict">{{ item.verdict }}</text>
-
-          <!-- 风控标签 -->
-          <view v-if="item.risk_type" class="risk-row">
-            <view class="risk-tag" :class="'risk-' + item.risk_type">
-              <text class="risk-label">{{ item.risk_type === 'top' ? 'Top' : 'Bottom' }}</text>
-              <text v-if="item.risk_price" class="risk-price">¥{{ item.risk_price }}</text>
-            </view>
+          <!-- 亏盈思考 -->
+          <view v-if="item.pnl_thinking" class="a-pnl-section">
+            <text class="a-pnl-label">亏盈思考</text>
+            <text class="a-pnl-text">{{ item.pnl_thinking }}</text>
           </view>
 
-          <!-- 展开详情 -->
-          <view v-if="expandedId === item.id" class="analysis-detail">
-            <view class="detail-item">
-              <text class="detail-label">趋势判断</text>
-              <text class="detail-text">{{ item.trend }}</text>
-            </view>
-            <view class="detail-item">
-              <text class="detail-label">形态识别</text>
-              <text class="detail-text">{{ item.pattern }}</text>
-            </view>
-            <view class="detail-item">
-              <text class="detail-label">量价行为</text>
-              <text class="detail-text">{{ item.volume_price }}</text>
-            </view>
-            <view v-if="item.risk_note" class="detail-item">
-              <text class="detail-label">风控说明</text>
-              <text class="detail-text">{{ item.risk_note }}</text>
-            </view>
-            <view class="detail-item">
-              <text class="detail-label">亏盈思考</text>
-              <text class="detail-text">{{ item.pnl_thinking }}</text>
-            </view>
-          </view>
-          <view class="expand-hint">
-            <text class="expand-text">{{ expandedId === item.id ? '收起' : '展开详情' }}</text>
+          <!-- 哨子 Verdict -->
+          <view class="a-verdict-section">
+            <text class="a-verdict-label">哨子 Verdict</text>
+            <text class="a-verdict-text">{{ item.verdict }}</text>
           </view>
         </view>
       </view>
@@ -148,26 +165,35 @@ const loading = ref(true)
 const stock = ref(null)
 const analyses = ref([])
 const trades = ref([])
-const expandedId = ref(null)
 
 const statusLabel = (s) => ({ holding: '持仓', watching: '观察', exited: '退出' }[s] || s)
 
 const disciplineLabel = (d) => ({ retain: '留存', gray: '灰度', research: '用研', churn: '流失' }[d] || d)
 
 const scoreClass = (score) => {
-  if (score >= 4) return 'score-high'
-  if (score >= 2.5) return 'score-mid'
-  return 'score-low'
+  if (score >= 4) return 'a-score-high'
+  if (score >= 2.5) return 'a-score-mid'
+  return 'a-score-low'
+}
+
+// 从文本中提取标题行（第一句 / 换行前）和描述部分
+const extractTitle = (text) => {
+  if (!text) return ''
+  const parts = text.split(/[，。\n]/)
+  return parts[0] || text
+}
+const extractDesc = (text) => {
+  if (!text) return ''
+  const idx = text.search(/[，。\n]/)
+  if (idx < 0) return ''
+  const rest = text.slice(idx + 1).trim()
+  return rest || ''
 }
 
 const formatDate = (iso) => {
   if (!iso) return ''
   const d = new Date(iso)
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-const toggleExpand = (id) => {
-  expandedId.value = expandedId.value === id ? null : id
 }
 
 onLoad(async (options) => {
@@ -213,17 +239,17 @@ onLoad(async (options) => {
 .detail-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   padding: 24rpx 0 16rpx;
 }
 .header-info { display: flex; flex-direction: column; }
+.header-name-row { display: flex; align-items: baseline; gap: 4rpx; }
 .detail-name {
-  font-size: 40rpx; font-weight: 800; color: #1a1a2e;
+  font-size: 36rpx; font-weight: 800; color: #1a1a2e;
   font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
 }
 .detail-code {
-  font-size: 24rpx; color: #b0b0be; margin-top: 4rpx;
-  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 24rpx; color: #8c8c9a; font-weight: 500;
 }
 .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8rpx; }
 .status-badge {
@@ -236,8 +262,6 @@ onLoad(async (options) => {
 .status-watching .status-text { color: #2563eb; }
 .status-exited { background: #f3f4f6; }
 .status-exited .status-text { color: #6b7280; }
-.shares-info { }
-.shares-text { font-size: 22rpx; color: #8c8c9a; }
 
 /* ── Reason Card ── */
 .reason-card {
@@ -270,36 +294,78 @@ onLoad(async (options) => {
 }
 .empty-text { font-size: 28rpx; color: #b0b0be; }
 
-/* ── Analysis Cards ── */
+/* ═══ Analysis Cards — 设计稿风格 ═══ */
 .analysis-list { }
 .analysis-card {
   background: #ffffff;
   border-radius: 16rpx;
-  padding: 24rpx;
-  margin-bottom: 12rpx;
+  padding: 28rpx;
+  margin-bottom: 16rpx;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
-  cursor: pointer;
-  transition: box-shadow 0.15s;
 }
-.analysis-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+
+/* 综合评分 */
+.a-score-section {
+  display: flex; align-items: baseline; gap: 6rpx;
+  margin-bottom: 20rpx;
+  padding-bottom: 18rpx;
+  border-bottom: 1rpx solid #f0f0f2;
+}
+.a-score-label { font-size: 24rpx; color: #8c8c9a; font-weight: 500; }
+.a-score-big {
+  font-size: 48rpx; font-weight: 900;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+  line-height: 1;
+}
+.a-score-high { color: #1a1a2e; }
+.a-score-mid { color: #f59e0b; }
+.a-score-low { color: #ef4444; }
+.a-score-max { font-size: 24rpx; color: #b0b0be; font-weight: 500; }
+
+/* 盘面逻辑推演 */
+.a-logic-section {
+  margin-bottom: 20rpx;
+}
+.a-logic-header {
+  display: flex; align-items: center; gap: 10rpx;
+  margin-bottom: 16rpx;
+}
+.a-logic-bar {
+  width: 6rpx; height: 28rpx; background: #3b82f6; border-radius: 3rpx;
+}
+.a-logic-title {
+  font-size: 28rpx; font-weight: 700; color: #1a1a2e;
+}
+.a-logic-item {
+  padding-left: 16rpx;
+  margin-bottom: 16rpx;
+}
+.a-logic-sub {
+  font-size: 22rpx; color: #8c8c9a; font-weight: 500;
+  display: block; margin-bottom: 4rpx;
+}
+.a-logic-text-bold {
+  font-size: 28rpx; font-weight: 700; color: #1a1a2e;
+  display: block; line-height: 1.4;
+}
+.a-logic-text {
+  font-size: 24rpx; color: #6a6a7a; line-height: 1.6;
+  display: block; margin-top: 4rpx;
+}
+
+/* 纪律与计划 */
+.a-discipline-section {
+  margin-bottom: 20rpx;
+}
+.a-discipline-content {
+  padding-left: 16rpx;
+}
+.a-disc-row {
+  display: flex; align-items: center; gap: 12rpx;
   margin-bottom: 10rpx;
 }
-.analysis-score-row { display: flex; align-items: center; gap: 10rpx; }
-
-.score-badge {
-  padding: 4rpx 16rpx; border-radius: 10rpx;
-  min-width: 52rpx; text-align: center;
-}
-.score-text { font-size: 26rpx; font-weight: 800; color: #fff; }
-.score-high { background: #22c55e; }
-.score-mid { background: #f59e0b; }
-.score-low { background: #ef4444; }
-
-.discipline-badge { padding: 4rpx 14rpx; border-radius: 8rpx; }
-.disc-text { font-size: 22rpx; font-weight: 600; }
+.discipline-badge { padding: 6rpx 16rpx; border-radius: 10rpx; }
+.disc-text { font-size: 24rpx; font-weight: 700; }
 .disc-retain { background: rgba(59, 130, 246, 0.1); }
 .disc-retain .disc-text { color: #3b82f6; }
 .disc-gray { background: rgba(142, 142, 147, 0.1); }
@@ -308,17 +374,13 @@ onLoad(async (options) => {
 .disc-research .disc-text { color: #a855f7; }
 .disc-churn { background: rgba(239, 68, 68, 0.1); }
 .disc-churn .disc-text { color: #ef4444; }
+.a-disc-date { font-size: 22rpx; color: #b0b0be; }
 
-.analysis-date { font-size: 22rpx; color: #b0b0be; }
-
-.analysis-verdict {
-  font-size: 28rpx; font-weight: 600; color: #1a1a2e;
-  line-height: 1.5; display: block; margin-bottom: 6rpx;
+.a-risk-block {
+  margin-top: 8rpx;
 }
-
-.risk-row { display: flex; gap: 10rpx; margin-top: 8rpx; }
 .risk-tag {
-  display: flex; align-items: center; gap: 6rpx;
+  display: inline-flex; align-items: center; gap: 6rpx;
   padding: 6rpx 14rpx; border-radius: 8rpx;
 }
 .risk-label { font-size: 22rpx; font-weight: 700; }
@@ -327,25 +389,37 @@ onLoad(async (options) => {
 .risk-top .risk-label, .risk-top .risk-price { color: #ef4444; }
 .risk-bottom { background: rgba(34, 197, 94, 0.08); }
 .risk-bottom .risk-label, .risk-bottom .risk-price { color: #22c55e; }
-
-.analysis-detail {
-  margin-top: 16rpx;
-  padding-top: 16rpx;
-  border-top: 1rpx solid #f0f0f2;
-}
-.detail-item { margin-bottom: 14rpx; }
-.detail-label {
-  font-size: 22rpx; color: #8c8c9a; font-weight: 600; display: block; margin-bottom: 4rpx;
-}
-.detail-text {
-  font-size: 26rpx; color: #4a4a5a; line-height: 1.6; display: block;
+.a-risk-note {
+  font-size: 24rpx; color: #6a6a7a; line-height: 1.6;
+  display: block; margin-top: 8rpx;
 }
 
-.expand-hint {
-  margin-top: 10rpx;
-  text-align: center;
+/* 亏盈思考 */
+.a-pnl-section {
+  background: #f8f9fb; border-radius: 12rpx;
+  padding: 16rpx 20rpx; margin-bottom: 16rpx;
 }
-.expand-text { font-size: 22rpx; color: #4285f4; font-weight: 500; }
+.a-pnl-label {
+  font-size: 22rpx; color: #8c8c9a; font-weight: 600;
+  display: block; margin-bottom: 6rpx;
+}
+.a-pnl-text {
+  font-size: 24rpx; color: #4a4a5a; line-height: 1.6; display: block;
+}
+
+/* 哨子 Verdict */
+.a-verdict-section {
+  background: #f0f4ff; border-radius: 12rpx;
+  padding: 16rpx 20rpx;
+}
+.a-verdict-label {
+  font-size: 22rpx; color: #3b82f6; font-weight: 600;
+  display: block; margin-bottom: 6rpx;
+}
+.a-verdict-text {
+  font-size: 26rpx; color: #1a1a2e; font-weight: 600;
+  line-height: 1.5; display: block;
+}
 
 /* ── Trade List ── */
 .trade-list {
@@ -389,11 +463,10 @@ onLoad(async (options) => {
     padding: 0 24px 32px;
   }
   .detail-header { padding: 18px 0 12px; }
-  .detail-name { font-size: 24px; }
-  .detail-code { font-size: 13px; }
+  .detail-name { font-size: 22px; }
+  .detail-code { font-size: 14px; }
   .status-badge { padding: 3px 12px; border-radius: 10px; }
   .status-text { font-size: 13px; }
-  .shares-text { font-size: 12px; }
 
   .reason-card { padding: 14px 18px; border-radius: 12px; }
   .reason-label { font-size: 12px; }
@@ -406,20 +479,35 @@ onLoad(async (options) => {
   .empty-card { border-radius: 12px; padding: 48px 0; }
   .empty-text { font-size: 15px; }
 
-  .analysis-card { padding: 18px; margin-bottom: 8px; border-radius: 12px; }
-  .analysis-card:hover { box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08); }
-  .score-badge { padding: 2px 10px; border-radius: 6px; min-width: 32px; }
-  .score-text { font-size: 14px; }
-  .discipline-badge { padding: 2px 10px; border-radius: 5px; }
-  .disc-text { font-size: 12px; }
-  .analysis-date { font-size: 12px; }
-  .analysis-verdict { font-size: 15px; }
+  .analysis-card { padding: 20px; margin-bottom: 12px; border-radius: 12px; }
+
+  .a-score-label { font-size: 13px; }
+  .a-score-big { font-size: 30px; }
+  .a-score-max { font-size: 13px; }
+  .a-score-section { margin-bottom: 14px; padding-bottom: 12px; }
+
+  .a-logic-bar { width: 3px; height: 16px; }
+  .a-logic-title { font-size: 15px; }
+  .a-logic-sub { font-size: 12px; }
+  .a-logic-text-bold { font-size: 15px; }
+  .a-logic-text { font-size: 13px; }
+  .a-logic-item { padding-left: 10px; margin-bottom: 10px; }
+
+  .discipline-badge { padding: 3px 12px; border-radius: 6px; }
+  .disc-text { font-size: 13px; }
+  .a-disc-date { font-size: 12px; }
   .risk-tag { padding: 3px 10px; border-radius: 5px; }
   .risk-label { font-size: 12px; }
   .risk-price { font-size: 13px; }
-  .detail-label { font-size: 12px; }
-  .detail-text { font-size: 14px; }
-  .expand-text { font-size: 12px; }
+  .a-risk-note { font-size: 13px; }
+
+  .a-pnl-section { padding: 10px 14px; border-radius: 8px; }
+  .a-pnl-label { font-size: 12px; }
+  .a-pnl-text { font-size: 13px; }
+
+  .a-verdict-section { padding: 10px 14px; border-radius: 8px; }
+  .a-verdict-label { font-size: 12px; }
+  .a-verdict-text { font-size: 14px; }
 
   .trade-list { border-radius: 12px; }
   .trade-row { padding: 14px 18px; }

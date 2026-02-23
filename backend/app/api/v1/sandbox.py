@@ -99,6 +99,22 @@ async def sandbox_overview(
     counts = count_result.one()
 
     latest_nav = nav_rows[-1] if nav_rows else None
+    prev_nav = nav_rows[-2] if len(nav_rows) >= 2 else None
+
+    # 日内收益 = (latest_nav - prev_nav) / prev_nav * 100
+    daily_pnl = 0.0
+    if latest_nav and prev_nav and prev_nav.nav:
+        daily_pnl = round((float(latest_nav.nav) - float(prev_nav.nav)) / float(prev_nav.nav) * 100, 2)
+
+    # 仓位 = market_value / (market_value + cash) * 100
+    position_pct = 0.0
+    if latest_nav:
+        total_assets = float(latest_nav.total_market_value) + float(latest_nav.cash)
+        if total_assets > 0:
+            position_pct = round(float(latest_nav.total_market_value) / total_assets * 100, 1)
+
+    # 观察池总数（不含退出）
+    total_active = counts.holding + counts.watching
 
     return {
         "nav_series": [
@@ -114,9 +130,13 @@ async def sandbox_overview(
         "summary": {
             "latest_nav": round(float(latest_nav.nav), 4) if latest_nav else 1.0,
             "total_pnl": round(float(latest_nav.total_pnl), 2) if latest_nav else 0.0,
+            "daily_pnl": daily_pnl,
+            "position_pct": position_pct,
             "holding_count": counts.holding,
             "watching_count": counts.watching,
             "exited_count": counts.exited,
+            "total_active": total_active,
+            "latest_date": str(latest_nav.trade_date) if latest_nav else None,
         },
     }
 
