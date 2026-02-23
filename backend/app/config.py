@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # API 地址
     DEEPSEEK_MODEL: str = "deepseek-chat"                           # 模型名称
     DEEPSEEK_BATCH_SIZE: int = 20                                   # 每批评分条数
-    DEEPSEEK_SCORE_THRESHOLD: int = 6                               # 入库分数阈值（≥6 才存储）
+    DEEPSEEK_SCORE_THRESHOLD: int = 5                               # 入库分数阈值（≥5 才存储）
     DEEPSEEK_MAX_RETRIES: int = 2                                   # API 失败最大重试次数
 
     # ── 调度器 — Pipeline 定时执行 ──

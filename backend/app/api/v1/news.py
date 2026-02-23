@@ -76,7 +76,7 @@ async def clear_dedup_cache():
 async def list_news(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    min_score: int = Query(6, ge=0, le=10),
+    min_score: int = Query(5, ge=0, le=10),
     source: str | None = Query(None),
     sector: str | None = Query(None),
     sort: SortMode = Query(SortMode.HOT, description="Sort mode: hot (gravity decay), latest, score"),
@@ -200,7 +200,7 @@ async def search(
     q: str = Query(..., min_length=1, max_length=200, description="搜索关键词"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    min_score: int = Query(6, ge=0, le=10),
+    min_score: int = Query(5, ge=0, le=10),
     db: AsyncSession = Depends(get_db),
 ):
     """搜索新闻。
