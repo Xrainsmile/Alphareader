@@ -48,12 +48,16 @@ class StockCreate(BaseModel):
 class AnalysisCreate(BaseModel):
     stock_id: int
     ts_code: str = Field(..., max_length=10)
-    title: str = Field(..., max_length=128)
-    direction: str = Field("neutral", pattern=r"^(bullish|bearish|neutral)$")
-    summary: str
-    content: str | None = None
-    target_price: float | None = None
-    stop_loss: float | None = None
+    score: float = Field(..., ge=0, le=5)
+    trend: str = Field(..., max_length=200)
+    pattern: str = Field(..., max_length=200)
+    volume_price: str = Field(..., max_length=200)
+    discipline_action: str = Field(..., pattern=r"^(retain|gray|research|churn)$")
+    risk_type: str | None = Field(None, pattern=r"^(top|bottom)$")
+    risk_price: float | None = None
+    risk_note: str | None = Field(None, max_length=200)
+    pnl_thinking: str = Field(..., max_length=200)
+    verdict: str = Field(..., max_length=200)
 
 class TradeCreate(BaseModel):
     stock_id: int
@@ -163,9 +167,9 @@ async def sandbox_stock_list(
             "added_at": s.added_at.isoformat() if s.added_at else None,
             "latest_analysis": {
                 "id": la.id,
-                "title": la.title,
-                "direction": la.direction,
-                "summary": la.summary,
+                "score": la.score,
+                "discipline_action": la.discipline_action,
+                "verdict": la.verdict,
                 "created_at": la.created_at.isoformat(),
             } if la else None,
         })
@@ -217,12 +221,16 @@ async def sandbox_stock_detail(
         "analyses": [
             {
                 "id": a.id,
-                "title": a.title,
-                "direction": a.direction,
-                "summary": a.summary,
-                "content": a.content,
-                "target_price": a.target_price,
-                "stop_loss": a.stop_loss,
+                "score": a.score,
+                "trend": a.trend,
+                "pattern": a.pattern,
+                "volume_price": a.volume_price,
+                "discipline_action": a.discipline_action,
+                "risk_type": a.risk_type,
+                "risk_price": a.risk_price,
+                "risk_note": a.risk_note,
+                "pnl_thinking": a.pnl_thinking,
+                "verdict": a.verdict,
                 "created_at": a.created_at.isoformat(),
             }
             for a in analyses
@@ -309,12 +317,16 @@ async def admin_add_analysis(
     analysis = SandboxAnalysis(
         stock_id=body.stock_id,
         ts_code=body.ts_code,
-        title=body.title,
-        direction=body.direction,
-        summary=body.summary,
-        content=body.content,
-        target_price=body.target_price,
-        stop_loss=body.stop_loss,
+        score=body.score,
+        trend=body.trend,
+        pattern=body.pattern,
+        volume_price=body.volume_price,
+        discipline_action=body.discipline_action,
+        risk_type=body.risk_type,
+        risk_price=body.risk_price,
+        risk_note=body.risk_note,
+        pnl_thinking=body.pnl_thinking,
+        verdict=body.verdict,
     )
     db.add(analysis)
     await db.commit()

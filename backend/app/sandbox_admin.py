@@ -117,24 +117,64 @@ tr:hover td{background:#f8f8fc}
     <h3>新增推演记录</h3>
     <div class="form-row">
       <div class="form-group"><label>选择股票</label><select id="a-stock"></select></div>
-      <div class="form-group"><label>方向</label>
-        <select id="a-direction">
-          <option value="bullish">看多</option>
-          <option value="bearish">看空</option>
-          <option value="neutral">中性</option>
-        </select>
+      <div class="form-group" style="max-width:160px"><label>综合评分 (0-5)</label>
+        <input id="a-score" type="number" step="0.1" min="0" max="5" placeholder="如 3.5">
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group" style="flex:3"><label>标题</label><input id="a-title" placeholder="推演标题"></div>
-      <div class="form-group"><label>目标价</label><input id="a-target" type="number" step="0.01" placeholder="可选"></div>
-      <div class="form-group"><label>止损价</label><input id="a-stoploss" type="number" step="0.01" placeholder="可选"></div>
+      <div class="form-group" style="flex:1"><label>趋势判断 (200字以内)</label>
+        <textarea id="a-trend" maxlength="200" placeholder="描述当前趋势..."></textarea>
+      </div>
     </div>
     <div class="form-row">
-      <div class="form-group" style="flex:1"><label>摘要</label><textarea id="a-summary" placeholder="简要分析结论"></textarea></div>
+      <div class="form-group" style="flex:1"><label>形态识别 (200字以内)</label>
+        <textarea id="a-pattern" maxlength="200" placeholder="描述技术形态..."></textarea>
+      </div>
     </div>
     <div class="form-row">
-      <div class="form-group" style="flex:1"><label>正文 (Markdown, 可选)</label><textarea id="a-content" rows="6" placeholder="详细分析..."></textarea></div>
+      <div class="form-group" style="flex:1"><label>量价行为 (200字以内)</label>
+        <textarea id="a-volprice" maxlength="200" placeholder="描述量价特征..."></textarea>
+      </div>
+    </div>
+
+    <div style="border-top:1.5px solid var(--border);margin:16px 0;padding-top:16px">
+      <h4 style="font-size:15px;margin-bottom:12px;color:var(--text)">纪律与计划</h4>
+      <div class="form-row">
+        <div class="form-group" style="max-width:180px"><label>动作</label>
+          <select id="a-discipline">
+            <option value="retain">留存</option>
+            <option value="gray">灰度</option>
+            <option value="research">用研</option>
+            <option value="churn">流失</option>
+          </select>
+        </div>
+        <div class="form-group" style="max-width:140px"><label>风控</label>
+          <select id="a-risktype" onchange="toggleRiskFields()">
+            <option value="">不设置</option>
+            <option value="top">Top</option>
+            <option value="bottom">Bottom</option>
+          </select>
+        </div>
+        <div class="form-group risk-field" style="max-width:140px;display:none"><label>风控价格</label>
+          <input id="a-riskprice" type="number" step="0.01" placeholder="价格">
+        </div>
+      </div>
+      <div class="form-row risk-field" style="display:none">
+        <div class="form-group" style="flex:1"><label>风控说明 (200字以内)</label>
+          <textarea id="a-risknote" maxlength="200" placeholder="风控计划说明..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group" style="flex:1"><label>亏盈思考 (200字以内)</label>
+        <textarea id="a-pnl" maxlength="200" placeholder="对亏盈的思考..."></textarea>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1"><label>哨子 Verdict (200字以内)</label>
+        <textarea id="a-verdict" maxlength="200" placeholder="最终判断..."></textarea>
+      </div>
     </div>
     <div class="form-row">
       <button class="btn btn-primary" onclick="addAnalysis()">提交推演</button>
@@ -288,24 +328,43 @@ async function removeStock(id){
 
 // ── 推演 ──
 
+function toggleRiskFields(){
+  const show=!!document.getElementById('a-risktype').value;
+  document.querySelectorAll('.risk-field').forEach(el=>{el.style.display=show?'':'none'});
+  if(!show){document.getElementById('a-riskprice').value='';document.getElementById('a-risknote').value='';}
+}
+
+const DISCIPLINE_LABELS={retain:'留存',gray:'灰度',research:'用研',churn:'流失'};
+const RISK_LABELS={top:'Top',bottom:'Bottom'};
+
 async function addAnalysis(){
   const sel=document.getElementById('a-stock');
   if(!sel.value){showToast('请先添加股票',false);return;}
+  const score=parseFloat(document.getElementById('a-score').value);
+  if(isNaN(score)||score<0||score>5){showToast('评分须为 0-5',false);return;}
+  const trend=document.getElementById('a-trend').value.trim();
+  const pattern=document.getElementById('a-pattern').value.trim();
+  const volprice=document.getElementById('a-volprice').value.trim();
+  const pnl=document.getElementById('a-pnl').value.trim();
+  const verdict=document.getElementById('a-verdict').value.trim();
+  if(!trend||!pattern||!volprice||!pnl||!verdict){showToast('趋势/形态/量价/亏盈/哨子均为必填',false);return;}
+  const riskType=document.getElementById('a-risktype').value||null;
   const body={
     stock_id:parseInt(sel.value),
     ts_code:sel.options[sel.selectedIndex].dataset.code,
-    title:document.getElementById('a-title').value.trim(),
-    direction:document.getElementById('a-direction').value,
-    summary:document.getElementById('a-summary').value.trim(),
-    content:document.getElementById('a-content').value.trim()||null,
-    target_price:parseFloat(document.getElementById('a-target').value)||null,
-    stop_loss:parseFloat(document.getElementById('a-stoploss').value)||null,
+    score:Math.round(score*10)/10,
+    trend,pattern,volume_price:volprice,
+    discipline_action:document.getElementById('a-discipline').value,
+    risk_type:riskType,
+    risk_price:riskType?parseFloat(document.getElementById('a-riskprice').value)||null:null,
+    risk_note:riskType?document.getElementById('a-risknote').value.trim()||null:null,
+    pnl_thinking:pnl,verdict,
   };
-  if(!body.title||!body.summary){showToast('标题和摘要必填',false);return;}
   try{
     await api('/admin/analyses',{method:'POST',body});
     showToast('推演已提交');
-    ['a-title','a-summary','a-content','a-target','a-stoploss'].forEach(id=>document.getElementById(id).value='');
+    ['a-score','a-trend','a-pattern','a-volprice','a-riskprice','a-risknote','a-pnl','a-verdict'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('a-risktype').value='';toggleRiskFields();
     loadAnalysisHistory();
   }catch(e){showToast(e.message,false)}
 }
@@ -313,16 +372,17 @@ async function addAnalysis(){
 async function loadAnalysisHistory(){
   const div=document.getElementById('analysisHistory');
   try{
-    // 展示每只股票最新推演
     let html='';
     for(const s of allStocks.filter(s=>s.latest_analysis)){
       const a=s.latest_analysis;
-      const dirBadge=`<span class="badge badge-${a.direction}">${{bullish:'看多',bearish:'看空',neutral:'中性'}[a.direction]}</span>`;
+      const scoreBg=a.score>=4?'var(--green)':a.score>=2.5?'var(--amber)':'var(--red)';
+      const actionLabel=DISCIPLINE_LABELS[a.discipline_action]||a.discipline_action;
       html+=`<div style="padding:12px 0;border-bottom:1px solid var(--border)">
-        <strong>${s.ts_code} ${s.name}</strong> ${dirBadge}
+        <strong>${s.ts_code} ${s.name}</strong>
+        <span style="display:inline-block;background:${scoreBg};color:#fff;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:700;margin-left:8px">${a.score}</span>
+        <span class="badge badge-watching" style="margin-left:6px">${actionLabel}</span>
         <span style="color:var(--muted);font-size:12px;margin-left:8px">${fmtDate(a.created_at)}</span>
-        <div style="font-size:14px;margin-top:6px"><strong>${a.title}</strong></div>
-        <div style="font-size:13px;color:var(--muted);margin-top:4px">${a.summary}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px">${a.verdict}</div>
       </div>`;
     }
     div.innerHTML=html||'<div class="empty">暂无推演记录</div>';

@@ -61,9 +61,10 @@ class SandboxStock(Base):
 
 
 class SandboxAnalysis(Base):
-    """推演记录 — 对某只观察池股票的分析结论。
+    """推演记录 — 对某只观察池股票的多维度分析。
 
-    direction: bullish / bearish / neutral
+    discipline_action: retain(留存) / gray(灰度) / research(用研) / churn(流失)
+    risk_type: top / bottom (可选)
     """
 
     __tablename__ = "sandbox_analyses"
@@ -71,14 +72,35 @@ class SandboxAnalysis(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     stock_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     ts_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
-    title: Mapped[str] = mapped_column(String(128), nullable=False)
-    direction: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="neutral"
-    )  # bullish / bearish / neutral
-    summary: Mapped[str] = mapped_column(Text, nullable=False)  # 分析摘要
-    content: Mapped[str | None] = mapped_column(Text, nullable=True)  # 详细正文(Markdown)
-    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # 1. 综合评分 (0-5, 支持一位小数)
+    score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+
+    # 2. 趋势判断
+    trend: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+    # 3. 形态识别
+    pattern: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+    # 4. 量价行为
+    volume_price: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+    # 5a. 纪律与计划 — 动作 (retain/gray/research/churn)
+    discipline_action: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="retain"
+    )
+
+    # 5b. 纪律与计划 — 风控
+    risk_type: Mapped[str | None] = mapped_column(String(8), nullable=True)  # top / bottom
+    risk_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    risk_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # 6. 亏盈思考
+    pnl_thinking: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+    # 7. 哨子 Verdict
+    verdict: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

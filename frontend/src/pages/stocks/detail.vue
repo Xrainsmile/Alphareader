@@ -46,32 +46,54 @@
           :class="{ 'analysis-expanded': expandedId === item.id }"
           @click="toggleExpand(item.id)"
         >
+          <!-- 头部：评分 + 动作 + 时间 -->
           <view class="analysis-top">
-            <view class="analysis-dir" :class="'dir-' + item.direction">
-              <text class="dir-text">{{ dirLabel(item.direction) }}</text>
+            <view class="analysis-score-row">
+              <view class="score-badge" :class="scoreClass(item.score)">
+                <text class="score-text">{{ item.score.toFixed(1) }}</text>
+              </view>
+              <view class="discipline-badge" :class="'disc-' + item.discipline_action">
+                <text class="disc-text">{{ disciplineLabel(item.discipline_action) }}</text>
+              </view>
             </view>
             <text class="analysis-date">{{ formatDate(item.created_at) }}</text>
           </view>
-          <text class="analysis-title">{{ item.title }}</text>
-          <text class="analysis-summary">{{ item.summary }}</text>
 
-          <!-- 目标价 & 止损 -->
-          <view v-if="item.target_price || item.stop_loss" class="price-row">
-            <view v-if="item.target_price" class="price-tag price-target">
-              <text class="price-label">目标</text>
-              <text class="price-value">¥{{ item.target_price }}</text>
-            </view>
-            <view v-if="item.stop_loss" class="price-tag price-stop">
-              <text class="price-label">止损</text>
-              <text class="price-value">¥{{ item.stop_loss }}</text>
+          <!-- 哨子 Verdict（始终显示） -->
+          <text class="analysis-verdict">{{ item.verdict }}</text>
+
+          <!-- 风控标签 -->
+          <view v-if="item.risk_type" class="risk-row">
+            <view class="risk-tag" :class="'risk-' + item.risk_type">
+              <text class="risk-label">{{ item.risk_type === 'top' ? 'Top' : 'Bottom' }}</text>
+              <text v-if="item.risk_price" class="risk-price">¥{{ item.risk_price }}</text>
             </view>
           </view>
 
-          <!-- 展开正文 -->
-          <view v-if="expandedId === item.id && item.content" class="analysis-content">
-            <text class="content-text">{{ item.content }}</text>
+          <!-- 展开详情 -->
+          <view v-if="expandedId === item.id" class="analysis-detail">
+            <view class="detail-item">
+              <text class="detail-label">趋势判断</text>
+              <text class="detail-text">{{ item.trend }}</text>
+            </view>
+            <view class="detail-item">
+              <text class="detail-label">形态识别</text>
+              <text class="detail-text">{{ item.pattern }}</text>
+            </view>
+            <view class="detail-item">
+              <text class="detail-label">量价行为</text>
+              <text class="detail-text">{{ item.volume_price }}</text>
+            </view>
+            <view v-if="item.risk_note" class="detail-item">
+              <text class="detail-label">风控说明</text>
+              <text class="detail-text">{{ item.risk_note }}</text>
+            </view>
+            <view class="detail-item">
+              <text class="detail-label">亏盈思考</text>
+              <text class="detail-text">{{ item.pnl_thinking }}</text>
+            </view>
           </view>
-          <view v-if="item.content" class="expand-hint">
+          <view class="expand-hint">
             <text class="expand-text">{{ expandedId === item.id ? '收起' : '展开详情' }}</text>
           </view>
         </view>
@@ -129,7 +151,14 @@ const trades = ref([])
 const expandedId = ref(null)
 
 const statusLabel = (s) => ({ holding: '持仓', watching: '观察', exited: '退出' }[s] || s)
-const dirLabel = (d) => ({ bullish: '看多', bearish: '看空', neutral: '中性' }[d] || d)
+
+const disciplineLabel = (d) => ({ retain: '留存', gray: '灰度', research: '用研', churn: '流失' }[d] || d)
+
+const scoreClass = (score) => {
+  if (score >= 4) return 'score-high'
+  if (score >= 2.5) return 'score-mid'
+  return 'score-low'
+}
 
 const formatDate = (iso) => {
   if (!iso) return ''
@@ -258,49 +287,58 @@ onLoad(async (options) => {
   justify-content: space-between;
   margin-bottom: 10rpx;
 }
-.analysis-dir {
-  padding: 4rpx 14rpx; border-radius: 8rpx;
+.analysis-score-row { display: flex; align-items: center; gap: 10rpx; }
+
+.score-badge {
+  padding: 4rpx 16rpx; border-radius: 10rpx;
+  min-width: 52rpx; text-align: center;
 }
-.dir-text { font-size: 22rpx; font-weight: 600; }
-.dir-bullish { background: rgba(255, 59, 48, 0.1); }
-.dir-bullish .dir-text { color: #ff3b30; }
-.dir-bearish { background: rgba(52, 199, 89, 0.1); }
-.dir-bearish .dir-text { color: #34c759; }
-.dir-neutral { background: rgba(142, 142, 147, 0.1); }
-.dir-neutral .dir-text { color: #8e8e93; }
+.score-text { font-size: 26rpx; font-weight: 800; color: #fff; }
+.score-high { background: #22c55e; }
+.score-mid { background: #f59e0b; }
+.score-low { background: #ef4444; }
+
+.discipline-badge { padding: 4rpx 14rpx; border-radius: 8rpx; }
+.disc-text { font-size: 22rpx; font-weight: 600; }
+.disc-retain { background: rgba(59, 130, 246, 0.1); }
+.disc-retain .disc-text { color: #3b82f6; }
+.disc-gray { background: rgba(142, 142, 147, 0.1); }
+.disc-gray .disc-text { color: #8e8e93; }
+.disc-research { background: rgba(168, 85, 247, 0.1); }
+.disc-research .disc-text { color: #a855f7; }
+.disc-churn { background: rgba(239, 68, 68, 0.1); }
+.disc-churn .disc-text { color: #ef4444; }
+
 .analysis-date { font-size: 22rpx; color: #b0b0be; }
-.analysis-title {
-  font-size: 30rpx; font-weight: 700; color: #1a1a2e;
-  line-height: 1.4; display: block; margin-bottom: 8rpx;
-}
-.analysis-summary {
-  font-size: 26rpx; color: #6a6a7a; line-height: 1.6; display: block;
+
+.analysis-verdict {
+  font-size: 28rpx; font-weight: 600; color: #1a1a2e;
+  line-height: 1.5; display: block; margin-bottom: 6rpx;
 }
 
-.price-row {
-  display: flex; gap: 12rpx; margin-top: 14rpx;
-}
-.price-tag {
+.risk-row { display: flex; gap: 10rpx; margin-top: 8rpx; }
+.risk-tag {
   display: flex; align-items: center; gap: 6rpx;
   padding: 6rpx 14rpx; border-radius: 8rpx;
 }
-.price-label { font-size: 20rpx; font-weight: 600; }
-.price-value { font-size: 24rpx; font-weight: 700; font-family: 'SF Pro Display', 'DIN Alternate', sans-serif; }
-.price-target { background: rgba(255, 59, 48, 0.08); }
-.price-target .price-label { color: #ff3b30; }
-.price-target .price-value { color: #ff3b30; }
-.price-stop { background: rgba(52, 199, 89, 0.08); }
-.price-stop .price-label { color: #34c759; }
-.price-stop .price-value { color: #34c759; }
+.risk-label { font-size: 22rpx; font-weight: 700; }
+.risk-price { font-size: 24rpx; font-weight: 700; font-family: 'SF Pro Display', 'DIN Alternate', sans-serif; }
+.risk-top { background: rgba(239, 68, 68, 0.08); }
+.risk-top .risk-label, .risk-top .risk-price { color: #ef4444; }
+.risk-bottom { background: rgba(34, 197, 94, 0.08); }
+.risk-bottom .risk-label, .risk-bottom .risk-price { color: #22c55e; }
 
-.analysis-content {
+.analysis-detail {
   margin-top: 16rpx;
   padding-top: 16rpx;
   border-top: 1rpx solid #f0f0f2;
 }
-.content-text {
-  font-size: 26rpx; color: #4a4a5a; line-height: 1.8;
-  white-space: pre-wrap; display: block;
+.detail-item { margin-bottom: 14rpx; }
+.detail-label {
+  font-size: 22rpx; color: #8c8c9a; font-weight: 600; display: block; margin-bottom: 4rpx;
+}
+.detail-text {
+  font-size: 26rpx; color: #4a4a5a; line-height: 1.6; display: block;
 }
 
 .expand-hint {
@@ -370,15 +408,17 @@ onLoad(async (options) => {
 
   .analysis-card { padding: 18px; margin-bottom: 8px; border-radius: 12px; }
   .analysis-card:hover { box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08); }
-  .analysis-dir { padding: 2px 10px; border-radius: 5px; }
-  .dir-text { font-size: 12px; }
+  .score-badge { padding: 2px 10px; border-radius: 6px; min-width: 32px; }
+  .score-text { font-size: 14px; }
+  .discipline-badge { padding: 2px 10px; border-radius: 5px; }
+  .disc-text { font-size: 12px; }
   .analysis-date { font-size: 12px; }
-  .analysis-title { font-size: 16px; }
-  .analysis-summary { font-size: 14px; }
-  .price-tag { padding: 3px 10px; border-radius: 5px; }
-  .price-label { font-size: 11px; }
-  .price-value { font-size: 13px; }
-  .content-text { font-size: 14px; }
+  .analysis-verdict { font-size: 15px; }
+  .risk-tag { padding: 3px 10px; border-radius: 5px; }
+  .risk-label { font-size: 12px; }
+  .risk-price { font-size: 13px; }
+  .detail-label { font-size: 12px; }
+  .detail-text { font-size: 14px; }
   .expand-text { font-size: 12px; }
 
   .trade-list { border-radius: 12px; }
