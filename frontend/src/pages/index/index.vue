@@ -310,7 +310,7 @@ export default {
       noMore: false,
       filterOpen: false,
       // 实际生效的筛选值
-      minScore: 6,
+      minScore: 5,
       currentSource: '',
       currentSort: 'hot',
       maxAgeHours: 72,
@@ -318,9 +318,9 @@ export default {
       tmpSort: 'hot',
       tmpAge: 72,
       tmpSource: '',
-      tmpScore: 6,
+      tmpScore: 5,
       promptCopied: false,
-      scoreOptions: [6, 7, 8, 9],
+      scoreOptions: [5, 6, 7, 8, 9],
       cnSources: ['财联社', '华尔街见闻'],
       enSources: ['MarketWatch', 'Seeking Alpha', 'TechCrunch', 'Finnhub'],
       sortTabs: [
@@ -358,7 +358,7 @@ export default {
       return tab ? tab.label : ''
     },
     hasActiveFilter() {
-      return this.currentSort !== 'hot' || this.minScore !== 6 || this.currentSource !== '' || this.maxAgeHours !== 72
+      return this.currentSort !== 'hot' || this.minScore !== 5 || this.currentSource !== '' || this.maxAgeHours !== 72
     },
     /** 外层筛选按钮右侧展示的标签列表 */
     filterTags() {
@@ -369,7 +369,7 @@ export default {
       const age = this.ageOptions.find(a => a.value === this.maxAgeHours)
       if (age && this.maxAgeHours !== 72) tags.push(age.label)
       if (this.currentSource) tags.push(this.currentSource)
-      if (this.minScore !== 6) tags.push(`≥${this.minScore}`)
+      if (this.minScore !== 5) tags.push(`≥${this.minScore}`)
       return tags
     },
   },
@@ -597,7 +597,8 @@ ${newsBlock}
       if (score >= 9) return 'score-high'
       if (score >= 8) return 'score-medium'
       if (score >= 7) return 'score-normal'
-      return 'score-low'
+      if (score >= 6) return 'score-low'
+      return 'score-muted'
     },
 
     formatScore(score) {
@@ -1316,6 +1317,9 @@ ${newsBlock}
 }
 .score-low {
   background: linear-gradient(135deg, #5ac778, #48b066);
+}
+.score-muted {
+  background: linear-gradient(135deg, #a0a0b0, #8c8c9a);
 }
 
 /* ── News Body ── */
