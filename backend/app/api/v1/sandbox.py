@@ -23,7 +23,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func, select
+from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -144,7 +144,7 @@ async def sandbox_stock_list(
         trade_result = await db.execute(
             select(
                 func.sum(
-                    func.case(
+                    case(
                         (SandboxTrade.action == "buy", SandboxTrade.shares),
                         else_=-SandboxTrade.shares,
                     )
