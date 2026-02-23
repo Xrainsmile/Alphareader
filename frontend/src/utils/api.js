@@ -123,3 +123,15 @@ export function searchStocks(params = {}) {
     .join('&')
   return request(`/api/v1/stocks/search${query ? '?' + query : ''}`)
 }
+
+// ── Analytics API（用户行为上报）──
+
+/**
+ * 批量上报用户行为事件
+ */
+export function reportAnalyticsEvents(events) {
+  return request('/api/v1/analytics/events', {
+    method: 'POST',
+    data: { events },
+  })
+}

@@ -72,6 +72,10 @@ app.add_middleware(
 
 app.include_router(v1_router)
 
+# ── Dashboard（统计仪表盘，密码保护）──
+from app.dashboard import router as dashboard_router
+app.include_router(dashboard_router)
+
 # ── Debug Panel (only in DEBUG mode) ──
 if settings.DEBUG:
     from app.debug_panel import router as debug_router

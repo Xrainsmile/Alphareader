@@ -84,7 +84,7 @@
           :key="item.id"
           class="news-card"
           :class="{ 'news-card-last': idx === searchList.length - 1 }"
-          @click="onOpenUrl(item.url)"
+          @click="onOpenUrl(item.url, item.id)"
         >
           <view class="score-badge" :class="scoreClass(item.ai_score)">
             <text class="score-num">{{ formatScore(item.ai_score) }}</text>
@@ -243,7 +243,8 @@
           :key="item.id"
           class="news-card"
           :class="{ 'news-card-last': idx === newsList.length - 1 }"
-          @click="onOpenUrl(item.url)"
+          :data-news-id="item.id"
+          @click="onOpenUrl(item.url, item.id)"
         >
           <!-- Score Badge -->
           <view class="score-badge" :class="scoreClass(item.ai_score)">
@@ -294,6 +295,7 @@
 
 <script>
 import { fetchNews, searchNews, fetchHotTopics } from '../../utils/api.js'
+import { initTracker, trackImpression, trackClick, destroyTracker } from '../../utils/tracker.js'
 
 const PAGE_SIZE = 20
 const SEARCH_HISTORY_KEY = 'alphareader_search_history'
@@ -375,7 +377,18 @@ export default {
   },
 
   onShow() {
+    initTracker()
     this.resetAndLoad()
+    // #ifdef H5
+    this._setupImpressionObserver()
+    // #endif
+  },
+
+  onHide() {
+    destroyTracker()
+    // #ifdef H5
+    this._destroyImpressionObserver()
+    // #endif
   },
 
   onPullDownRefresh() {
@@ -417,6 +430,9 @@ export default {
         uni.showToast({ title: '加载失败', icon: 'none' })
       } finally {
         this.loading = false
+        // #ifdef H5
+        this.$nextTick(() => this._observeCards())
+        // #endif
       }
     },
 
@@ -443,6 +459,9 @@ export default {
         uni.showToast({ title: '加载失败', icon: 'none' })
       } finally {
         this.loadingMore = false
+        // #ifdef H5
+        this.$nextTick(() => this._observeCards())
+        // #endif
       }
     },
 
@@ -583,14 +602,49 @@ ${newsBlock}
       // #endif
     },
 
-    onOpenUrl(url) {
+    onOpenUrl(url, newsId) {
       if (!url) return
+      if (newsId) trackClick(newsId)
       // #ifdef H5
       window.open(url, '_blank')
       // #endif
       // #ifndef H5
       uni.setClipboardData({ data: url })
       // #endif
+    },
+
+    /** 曝光追踪：IntersectionObserver 监听新闻卡片进入可视区域 */
+    _setupImpressionObserver() {
+      if (this._impressionObserver) return
+      this._impressedSet = this._impressedSet || new Set()
+      this._impressionObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const id = entry.target.dataset.newsId
+            if (id && !this._impressedSet.has(id)) {
+              this._impressedSet.add(id)
+              trackImpression(id)
+            }
+          }
+        })
+      }, { threshold: 0.5 })
+      this.$nextTick(() => this._observeCards())
+    },
+    _observeCards() {
+      if (!this._impressionObserver) return
+      const cards = document.querySelectorAll('.news-card[data-news-id]')
+      cards.forEach(el => {
+        if (!el._observed) {
+          this._impressionObserver.observe(el)
+          el._observed = true
+        }
+      })
+    },
+    _destroyImpressionObserver() {
+      if (this._impressionObserver) {
+        this._impressionObserver.disconnect()
+        this._impressionObserver = null
+      }
     },
 
     scoreClass(score) {

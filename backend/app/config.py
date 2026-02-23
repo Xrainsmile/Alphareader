@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # ── Reports 同步鉴权 ──
     REPORT_SYNC_TOKEN: str = "your-secret-token"  # Node.js 上传脚本使用的 Bearer Token
 
+    # ── Dashboard 密码保护 ──
+    DASHBOARD_PASSWORD: str = ""  # 为空则不保护（不推荐生产环境）
+
     # ── PostgreSQL 数据库 ──
     POSTGRES_USER: str = "alphareader"     # 数据库用户名
     POSTGRES_PASSWORD: str = "changeme"    # 数据库密码

@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from app.api.v1.analytics import router as analytics_router
 from app.api.v1.bridge import router as bridge_router
 from app.api.v1.health import router as health_router
 from app.api.v1.news import router as news_router
@@ -14,3 +15,4 @@ v1_router.include_router(news_router)
 v1_router.include_router(bridge_router)
 v1_router.include_router(reports_router)
 v1_router.include_router(stocks_router)
+v1_router.include_router(analytics_router)

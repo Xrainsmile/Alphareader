@@ -615,8 +615,15 @@ async def _fetch_with_fallback(
     return None
 
 
-async def fetch_all_feeds() -> list[RawNewsItem]:
-    """并发抓取所有信源，返回去重后的新闻列表。这是抓取阶段的唯一入口。"""
+@dataclass
+class FetchResult:
+    """抓取阶段的返回结果，包含各信源的统计信息。"""
+    items: list[RawNewsItem]
+    by_source: dict[str, int]  # {信源名: 抓取条数}
+
+
+async def fetch_all_feeds() -> FetchResult:
+    """并发抓取所有信源，返回去重后的新闻列表及各信源统计。这是抓取阶段的唯一入口。"""
     from app.config import settings
 
     r = get_redis()
@@ -643,11 +650,14 @@ async def fetch_all_feeds() -> list[RawNewsItem]:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
     all_items: list[RawNewsItem] = []
-    for result in results:
+    by_source: dict[str, int] = {}
+    for source, result in zip(active_sources, results):
         if isinstance(result, list):
             all_items.extend(result)
+            by_source[source.name] = len(result)
         else:
-            logger.error("Feed task error: %s", result)
+            logger.error("Feed task error (%s): %s", source.name, result)
+            by_source[source.name] = 0
 
     logger.info("Total new items across all sources: %d", len(all_items))
-    return all_items
+    return FetchResult(items=all_items, by_source=by_source)

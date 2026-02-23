@@ -18,10 +18,14 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
+from collections import Counter
+from datetime import datetime, timezone
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.database import async_session
+from app.models.analytics import PipelineRun
 from app.models.news import News
 from app.redis import get_redis
 from app.services.deepseek_filter import FilterResult, ScoredNewsItem, filter_news
@@ -132,7 +136,7 @@ async def run_pipeline() -> dict:
     五个阶段：
     1. Fetch  — 并发抓取所有信源（含 Redis URL 去重）
     2. Dedup  — 长短文本路由去重（长文本三层 + 短文本智谱 Embedding API，24h/30min 窗口）
-    3. Filter — DeepSeek 批量评分（每批 20 条），丢弃 score < 6 的
+    3. Filter — DeepSeek 批量评分（每批 20 条），丢弃 score < 阈值的
     4. Store  — 高分条目 Upsert 到 PostgreSQL
     5. Mark   — 成功存储的 URL 标记到 Redis 防止下次重复抓取
 
@@ -140,19 +144,27 @@ async def run_pipeline() -> dict:
     返回摘要 dict 用于日志和 API 响应。
     """
     logger.info("═══ Pipeline run starting ═══")
+    started_at = datetime.now(timezone.utc)
+    t0 = time.monotonic()
     summary: dict = {"fetched": 0, "deduped": 0, "scored": 0, "stored": 0, "errors": []}
+    by_source: dict[str, dict] = {}
+    score_distribution: dict[str, int] = {}
 
     # Step 1: Fetch
     try:
-        raw_items = await fetch_all_feeds()
+        fetch_result = await fetch_all_feeds()
+        raw_items = fetch_result.items
+        by_source = {name: {"fetched": cnt, "passed": 0} for name, cnt in fetch_result.by_source.items()}
     except Exception as e:
         logger.error("Fatal error in fetch stage: %s", e)
         summary["errors"].append(f"fetch: {e}")
+        await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
         return summary
 
     summary["fetched"] = len(raw_items)
     if not raw_items:
         logger.info("No new items fetched, pipeline done.")
+        await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
         return summary
 
     # Step 2: SimHash + title similarity + TF-IDF semantic dedup
@@ -172,6 +184,7 @@ async def run_pipeline() -> dict:
 
     if not unique_items:
         logger.info("All items were duplicates, pipeline done.")
+        await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
         return summary
 
     # Step 3: Filter via DeepSeek
@@ -185,6 +198,16 @@ async def run_pipeline() -> dict:
         scored_items = []
 
     summary["scored"] = len(scored_items)
+
+    # 收集评分分布 & 各信源通过数
+    score_counter: Counter[int] = Counter()
+    source_pass_counter: Counter[str] = Counter()
+    for si in scored_items:
+        score_counter[si.score] += 1
+        source_pass_counter[si.raw.source] += 1
+    score_distribution = {str(k): v for k, v in sorted(score_counter.items())}
+    for src_name in by_source:
+        by_source[src_name]["passed"] = source_pass_counter.get(src_name, 0)
 
     # Step 4: Store to DB
     try:
@@ -204,7 +227,7 @@ async def run_pipeline() -> dict:
         await _mark_urls_as_seen(stored_urls)
 
     # Also mark URLs that passed through the entire pipeline but were filtered
-    # by DeepSeek (score < 6). These are legitimately processed and should not
+    # by DeepSeek (score < threshold). These are legitimately processed and should not
     # be re-fetched.
     #
     # SAFETY: Only do this when ALL batches succeeded. If any batch had errors,
@@ -244,4 +267,38 @@ async def run_pipeline() -> dict:
         del summary["errors"]
 
     logger.info("═══ Pipeline run complete: %s ═══", summary)
+
+    # Step 6: 持久化运行记录到 pipeline_runs 表
+    await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
+
     return summary
+
+
+async def _save_pipeline_run(
+    started_at: datetime,
+    t0: float,
+    summary: dict,
+    by_source: dict,
+    score_distribution: dict,
+) -> None:
+    """将本次 Pipeline 运行结果写入 pipeline_runs 表。"""
+    duration = round(time.monotonic() - t0, 2)
+    try:
+        async with async_session() as session:
+            run = PipelineRun(
+                started_at=started_at,
+                finished_at=datetime.now(timezone.utc),
+                duration_sec=duration,
+                total_fetched=summary.get("fetched", 0),
+                after_dedup=summary.get("deduped", 0),
+                after_score=summary.get("scored", 0),
+                stored=summary.get("stored", 0),
+                by_source=by_source,
+                score_distribution=score_distribution,
+                errors=summary.get("errors", []),
+            )
+            session.add(run)
+            await session.commit()
+            logger.info("Pipeline run record saved (%.1fs)", duration)
+    except Exception as e:
+        logger.warning("Failed to save pipeline run record: %s", e)
