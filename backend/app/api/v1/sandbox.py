@@ -433,6 +433,59 @@ async def admin_add_analysis(
     return {"id": analysis.id}
 
 
+@router.get("/admin/analyses")
+async def admin_list_analyses(
+    stock_id: int | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_admin),
+):
+    """查看所有推演记录，可按 stock_id 筛选。"""
+    query = select(SandboxAnalysis).order_by(desc(SandboxAnalysis.created_at))
+    if stock_id is not None:
+        query = query.where(SandboxAnalysis.stock_id == stock_id)
+    result = await db.execute(query)
+    analyses = result.scalars().all()
+
+    return {
+        "items": [
+            {
+                "id": a.id,
+                "stock_id": a.stock_id,
+                "ts_code": a.ts_code,
+                "score": a.score,
+                "trend": a.trend,
+                "pattern": a.pattern,
+                "volume_price": a.volume_price,
+                "discipline_action": a.discipline_action,
+                "risk_type": a.risk_type,
+                "risk_price": a.risk_price,
+                "risk_note": a.risk_note,
+                "pnl_thinking": a.pnl_thinking,
+                "verdict": a.verdict,
+                "created_at": a.created_at.isoformat(),
+            }
+            for a in analyses
+        ],
+        "total": len(analyses),
+    }
+
+
+@router.delete("/admin/analyses/{analysis_id}")
+async def admin_delete_analysis(
+    analysis_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_admin),
+):
+    """删除推演记录。"""
+    analysis = await db.get(SandboxAnalysis, analysis_id)
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    await db.delete(analysis)
+    await db.commit()
+    logger.info("Deleted analysis #%d for %s", analysis_id, analysis.ts_code)
+    return {"ok": True}
+
+
 @router.post("/admin/trades")
 async def admin_add_trade(
     body: TradeCreate,

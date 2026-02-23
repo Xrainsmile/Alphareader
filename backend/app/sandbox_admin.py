@@ -181,8 +181,18 @@ tr:hover td{background:#f8f8fc}
     </div>
   </div>
   <div class="card">
-    <h3>最近推演记录</h3>
-    <div id="analysisHistory" class="empty">加载中...</div>
+    <h3>推演记录</h3>
+    <div class="form-row" style="margin-bottom:16px">
+      <div class="form-group" style="max-width:260px"><label>按股票筛选</label>
+        <select id="ah-filter" onchange="loadAnalysisHistory()">
+          <option value="">全部股票</option>
+        </select>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>日期</th><th>代码</th><th>评分</th><th>动作</th><th>哨子 Verdict</th><th>操作</th></tr></thead>
+      <tbody id="analysisBody"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+    </table>
   </div>
 </div>
 
@@ -300,6 +310,11 @@ function populateStockSelects(){
     const sel=document.getElementById(id);
     sel.innerHTML=active.map(s=>`<option value="${s.id}" data-code="${s.ts_code}">${s.ts_code} ${s.name}</option>`).join('');
   });
+  // 推演筛选下拉框（含全部股票，不只活跃的）
+  const ahFilter=document.getElementById('ah-filter');
+  const current=ahFilter.value;
+  ahFilter.innerHTML='<option value="">全部股票</option>'+allStocks.map(s=>`<option value="${s.id}">${s.ts_code} ${s.name}</option>`).join('');
+  ahFilter.value=current;
 }
 
 async function addStock(){
@@ -370,23 +385,39 @@ async function addAnalysis(){
 }
 
 async function loadAnalysisHistory(){
-  const div=document.getElementById('analysisHistory');
+  const body=document.getElementById('analysisBody');
+  const filterId=document.getElementById('ah-filter').value;
   try{
-    let html='';
-    for(const s of allStocks.filter(s=>s.latest_analysis)){
-      const a=s.latest_analysis;
+    const params=filterId?`?stock_id=${filterId}`:'';
+    const d=await api(`/admin/analyses${params}`);
+    const items=d.items||[];
+    if(!items.length){body.innerHTML='<tr><td colspan="6" class="empty">暂无推演记录</td></tr>';return;}
+    // 构建股票名称映射
+    const nameMap={};
+    allStocks.forEach(s=>{nameMap[s.ts_code]=s.name});
+    body.innerHTML=items.map(a=>{
       const scoreBg=a.score>=4?'var(--green)':a.score>=2.5?'var(--amber)':'var(--red)';
       const actionLabel=DISCIPLINE_LABELS[a.discipline_action]||a.discipline_action;
-      html+=`<div style="padding:12px 0;border-bottom:1px solid var(--border)">
-        <strong>${s.ts_code} ${s.name}</strong>
-        <span style="display:inline-block;background:${scoreBg};color:#fff;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:700;margin-left:8px">${a.score}</span>
-        <span class="badge badge-watching" style="margin-left:6px">${actionLabel}</span>
-        <span style="color:var(--muted);font-size:12px;margin-left:8px">${fmtDate(a.created_at)}</span>
-        <div style="font-size:13px;color:var(--muted);margin-top:6px">${a.verdict}</div>
-      </div>`;
-    }
-    div.innerHTML=html||'<div class="empty">暂无推演记录</div>';
-  }catch(e){div.innerHTML='<div class="empty">加载失败</div>'}
+      return `<tr>
+        <td style="white-space:nowrap">${fmtDate(a.created_at)}</td>
+        <td><strong>${a.ts_code}</strong><br><span style="color:var(--muted);font-size:12px">${nameMap[a.ts_code]||''}</span></td>
+        <td><span style="display:inline-block;background:${scoreBg};color:#fff;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:700">${a.score}</span></td>
+        <td><span class="badge badge-watching">${actionLabel}</span></td>
+        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.verdict||'').replace(/"/g,'&quot;')}">${a.verdict||'-'}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteAnalysis(${a.id},'${a.ts_code}')">删除</button></td>
+      </tr>`;
+    }).join('');
+  }catch(e){body.innerHTML='<tr><td colspan="6" class="empty">加载失败</td></tr>'}
+}
+
+async function deleteAnalysis(id,code){
+  if(!confirm(`确认删除 ${code} 的推演记录 #${id}？删除后不可恢复。`)) return;
+  try{
+    await api(`/admin/analyses/${id}`,{method:'DELETE'});
+    showToast('推演记录已删除');
+    loadAnalysisHistory();
+    loadStocks(); // 刷新最新推演摘要
+  }catch(e){showToast(e.message,false)}
 }
 
 // ── 交易 ──
