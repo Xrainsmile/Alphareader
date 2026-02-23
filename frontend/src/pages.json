@@ -15,10 +15,19 @@
     {
       "path": "pages/stocks/index",
       "style": {
-        "navigationBarTitleText": "RS Rating",
+        "navigationBarTitleText": "Stocks",
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
         "enablePullDownRefresh": true,
+        "backgroundColor": "#f0f2f5"
+      }
+    },
+    {
+      "path": "pages/stocks/detail",
+      "style": {
+        "navigationBarTitleText": "",
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationBarTextStyle": "black",
         "backgroundColor": "#f0f2f5"
       }
     },

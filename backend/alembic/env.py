@@ -19,6 +19,9 @@ from app.database import Base
 # Import all models so Alembic can detect them for autogenerate
 from app.models.news import News  # noqa: F401
 from app.models.report import Report  # noqa: F401
+from app.models.stock import StockDailyQuote, StockRSRating  # noqa: F401
+from app.models.analytics import AnalyticsDaily, PipelineRun  # noqa: F401
+from app.models.sandbox import SandboxStock, SandboxAnalysis, SandboxTrade, SandboxNav  # noqa: F401
 
 # ── Alembic Config ──
 config = context.config

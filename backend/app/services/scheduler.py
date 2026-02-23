@@ -131,6 +131,42 @@ async def _rs_rating_job():
         raise
 
 
+async def _sandbox_nav_job():
+    """模拟仓 NAV 计算 — 每个交易日 15:35 触发。
+
+    在 A 股收盘（15:00）后 35 分钟执行，确保 stock_daily_quote 数据已更新。
+    复用 sandbox API 中的核心计算函数，避免代码重复。
+    """
+    from datetime import date as date_type
+    from app.database import async_session
+    from app.api.v1.sandbox import _compute_nav_core
+
+    try:
+        logger.info("Sandbox NAV job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        calc_date = date_type.today()
+
+        async with async_session() as db:
+            result = await _compute_nav_core(db, calc_date)
+
+        if result is None:
+            logger.info("Sandbox NAV: No trades yet, skipping")
+            return {"status": "skip", "reason": "no trades"}
+
+        logger.info(
+            "Sandbox NAV computed: date=%s, nav=%.4f, pnl=%.2f%%",
+            calc_date, result["nav"], result["total_pnl"],
+        )
+        return {"status": "ok", "nav": result["nav"], "pnl": result["total_pnl"]}
+
+    except Exception as e:
+        logger.exception("Sandbox NAV job failed: %s", e)
+        await send_alert(
+            "🔴 Sandbox NAV Job Failed",
+            f"{type(e).__name__}: {e}",
+        )
+        raise
+
+
 def start_scheduler():
     """注册 Cron 定时任务并启动调度器。
 
@@ -171,17 +207,49 @@ def start_scheduler():
     )
 
     # ── RS Rating 定时计算（交易日 11:30 和 15:00）──
-    # 周一至周五，每天 11:30 和 15:00 各执行一次
+    # 拆为两个独立 job，避免 hour+minute 组合产生意外触发点
     scheduler.add_job(
         _rs_rating_job,
         trigger=CronTrigger(
             day_of_week="mon-fri",
-            hour="11,15",
-            minute="30,0",
+            hour="11",
+            minute="30",
             timezone=settings.TIMEZONE,
         ),
-        id="rs_rating",
-        name=f"RS Rating (Mon-Fri 11:30 & 15:00 {settings.TIMEZONE})",
+        id="rs_rating_1130",
+        name=f"RS Rating (Mon-Fri 11:30 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    scheduler.add_job(
+        _rs_rating_job,
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="15",
+            minute="0",
+            timezone=settings.TIMEZONE,
+        ),
+        id="rs_rating_1500",
+        name=f"RS Rating (Mon-Fri 15:00 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # ── 模拟仓 NAV 计算（交易日 15:35）──
+    # 周一至周五，收盘后 35 分钟计算净值
+    scheduler.add_job(
+        _sandbox_nav_job,
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="15",
+            minute="35",
+            timezone=settings.TIMEZONE,
+        ),
+        id="sandbox_nav",
+        name=f"Sandbox NAV (Mon-Fri 15:35 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,
@@ -192,14 +260,20 @@ def start_scheduler():
     alert_status = "enabled" if settings.ALERT_WEBHOOK_URL else "disabled"
     job = scheduler.get_job("news_pipeline")
     next_fire = job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if job and job.next_run_time else "N/A"
-    rs_job = scheduler.get_job("rs_rating")
-    rs_next = rs_job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if rs_job and rs_job.next_run_time else "N/A"
+    rs_job1 = scheduler.get_job("rs_rating_1130")
+    rs_next1 = rs_job1.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if rs_job1 and rs_job1.next_run_time else "N/A"
+    rs_job2 = scheduler.get_job("rs_rating_1500")
+    rs_next2 = rs_job2.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if rs_job2 and rs_job2.next_run_time else "N/A"
     logger.info(
         "Scheduler started — pipeline runs every %dmin, %d:00–%d:00 (%s), "
         "misfire_grace_time=%ds, alerts=%s, next run: %s",
         interval, start_h, end_h, settings.TIMEZONE, MISFIRE_GRACE_TIME, alert_status, next_fire,
     )
-    logger.info("RS Rating scheduled Mon-Fri 11:30 & 15:00, next run: %s", rs_next)
+    logger.info("RS Rating scheduled Mon-Fri 11:30 (next: %s) & 15:00 (next: %s)", rs_next1, rs_next2)
+
+    sb_job = scheduler.get_job("sandbox_nav")
+    sb_next = sb_job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if sb_job and sb_job.next_run_time else "N/A"
+    logger.info("Sandbox NAV scheduled Mon-Fri 15:35, next run: %s", sb_next)
 
 
 def stop_scheduler():

@@ -124,6 +124,30 @@ export function searchStocks(params = {}) {
   return request(`/api/v1/stocks/search${query ? '?' + query : ''}`)
 }
 
+// ── Sandbox API（模拟仓）──
+
+/**
+ * 模拟仓概览（净值曲线 + 概览指标）
+ */
+export function fetchSandboxOverview(days = 90) {
+  return request(`/api/v1/sandbox/overview?days=${days}`)
+}
+
+/**
+ * 观察池列表
+ */
+export function fetchSandboxStocks(status = '') {
+  const q = status ? `?status=${status}` : ''
+  return request(`/api/v1/sandbox/stocks${q}`)
+}
+
+/**
+ * 单只股票详情（推演 + 交易记录）
+ */
+export function fetchSandboxStockDetail(stockId) {
+  return request(`/api/v1/sandbox/stocks/${stockId}`)
+}
+
 // ── Analytics API（用户行为上报）──
 
 /**

@@ -76,6 +76,10 @@ app.include_router(v1_router)
 from app.dashboard import router as dashboard_router
 app.include_router(dashboard_router)
 
+# ── 模拟仓后台管理（复用 Dashboard 认证）──
+from app.sandbox_admin import router as sandbox_admin_router
+app.include_router(sandbox_admin_router)
+
 # ── Debug Panel (only in DEBUG mode) ──
 if settings.DEBUG:
     from app.debug_panel import router as debug_router
