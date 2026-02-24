@@ -224,7 +224,7 @@
       <view v-if="holdingsPie.length > 1" class="sb-pie-card">
         <view class="sb-pie-header">
           <text class="sb-pie-title">持仓分布</text>
-          <text class="sb-pie-sub">仓位 {{ sbSummary.position_pct || 0 }}%</text>
+          <text class="sb-pie-sub">仓位 {{ holdingsPositionPct }}%</text>
         </view>
         <view class="sb-pie-body">
           <!-- #ifdef H5 -->
@@ -239,7 +239,6 @@
               stroke-width="28"
               :stroke-dasharray="seg.dash"
               :stroke-dashoffset="seg.offset"
-              stroke-linecap="round"
               style="transition: stroke-dasharray 0.5s, stroke-dashoffset 0.5s"
             />
             <text x="100" y="94" text-anchor="middle" font-size="22" font-weight="800" fill="#1a1a2e">
@@ -507,23 +506,32 @@ let sbLoaded = false
 // 环状图配色
 const pieColors = ['#3b82f6', '#f59e0b', '#22c55e', '#a855f7', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#d0d0d8']
 
+// 仓位百分比（100% - 现金占比）
+const holdingsPositionPct = computed(() => {
+  const data = holdingsPie.value
+  if (!data || data.length === 0) return 0
+  const cashItem = data.find(d => d.ts_code === '')
+  const cashPct = cashItem ? cashItem.pct : 0
+  return (100 - cashPct).toFixed(1)
+})
+
 // 环状图弧段计算（纯 SVG stroke-dasharray 实现）
 const pieSegments = computed(() => {
   const data = holdingsPie.value
   if (!data || data.length === 0) return []
   const circumference = 2 * Math.PI * 70 // r=70
-  const gap = 3 // 间隙
-  let offset = circumference * 0.25 // 从 12 点钟方向开始
-  return data.map((item, i) => {
-    const arc = (item.pct / 100) * circumference - gap
-    const seg = {
+  const segments = []
+  let accumulated = 0
+  for (let i = 0; i < data.length; i++) {
+    const arc = (data[i].pct / 100) * circumference
+    segments.push({
       color: pieColors[i % pieColors.length],
-      dash: `${Math.max(arc, 0)} ${circumference}`,
-      offset: -offset,
-    }
-    offset += (item.pct / 100) * circumference
-    return seg
-  })
+      dash: `${arc} ${circumference - arc}`,
+      offset: -(circumference * 0.25 + accumulated),
+    })
+    accumulated += arc
+  }
+  return segments
 })
 
 const statusLabel = (s) => ({ holding: '持仓', watching: '观察', exited: '退出' }[s] || s)
