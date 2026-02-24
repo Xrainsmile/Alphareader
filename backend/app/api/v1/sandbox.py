@@ -534,7 +534,7 @@ async def admin_add_trade(
 # NAV 计算
 # ════════════════════════════════════════════════════════════
 
-INITIAL_CAPITAL = Decimal("1000000")  # 100 万虚拟初始资金
+INITIAL_CAPITAL = Decimal("61908.99")  # 61,908.99 元虚拟初始资金
 
 
 async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
