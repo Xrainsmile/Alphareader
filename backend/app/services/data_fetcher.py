@@ -387,11 +387,15 @@ async def get_all_stock_data(force_refresh: bool = False) -> pd.DataFrame:
             if not db_list.empty:
                 codes = db_list["代码"].tolist()
                 names = dict(zip(db_list["代码"], db_list["名称"]))
-                tencent_data = await fetch_all_stocks_tencent(codes, names)
-                if not tencent_data.empty:
-                    raw_data = tencent_data
-                    logger.info("腾讯财经 API 获取成功，共 %d 只股票",
-                                tencent_data["股票代码"].nunique())
+                # 分批拉取并写入 DB（内存友好，不返回大 DataFrame）
+                await fetch_all_stocks_tencent(codes, names)
+                # 数据已写入 DB，从数据库加载
+                raw_data = await load_from_db()
+                if not raw_data.empty:
+                    logger.info("腾讯财经 API 数据已写入 DB 并加载，共 %d 只股票",
+                                raw_data["股票代码"].nunique() if "股票代码" in raw_data.columns
+                                else raw_data["ts_code"].nunique() if "ts_code" in raw_data.columns else 0)
+                    return raw_data  # 已经是 clean 过的数据，直接返回
         except Exception as e:
             logger.warning("腾讯财经 API 也失败: %s", e)
 
@@ -588,20 +592,30 @@ def _sync_fetch_tencent_kline(symbol: str, days: int = 320) -> pd.DataFrame | No
 async def fetch_all_stocks_tencent(stock_codes: list[str], stock_names: dict[str, str] | None = None) -> pd.DataFrame:
     """通过腾讯财经 API 批量获取日K线数据（作为 akshare 备选）。
 
+    采用分批拉取 + 分批写入 DB 策略，避免在小内存服务器上 OOM。
+    每 BATCH_SIZE 只股票写入一次 DB 后释放内存。
+
     Args:
         stock_codes: 股票代码列表
         stock_names: 可选，{代码: 名称} 映射
 
     Returns:
-        与 akshare 格式兼容的 DataFrame
+        空 DataFrame（数据已分批写入 DB），调用方应使用 load_from_db() 读取
     """
+    import gc
+
     if stock_names is None:
         stock_names = {}
 
+    BATCH_SIZE = 200  # 每批处理 200 只，约占 ~200MB 内存
     total = len(stock_codes)
-    logger.info("开始通过腾讯财经 API 下载历史行情，共 %d 只股票...", total)
+    total_records = 0
+    total_stocks = 0
 
-    all_dfs: list[pd.DataFrame] = []
+    logger.info("开始通过腾讯财经 API 下载历史行情，共 %d 只股票（每 %d 只分批写入 DB）...",
+                total, BATCH_SIZE)
+
+    batch_dfs: list[pd.DataFrame] = []
     for idx, code in enumerate(stock_codes, 1):
         if idx % 200 == 0:
             logger.info("腾讯K线下载进度: %d/%d (%.1f%%)", idx, total, idx / total * 100)
@@ -609,22 +623,46 @@ async def fetch_all_stocks_tencent(stock_codes: list[str], stock_names: dict[str
         df = await asyncio.to_thread(_sync_fetch_tencent_kline, code, 320)
         if df is not None:
             df["名称"] = stock_names.get(code, "")
-            all_dfs.append(df)
+            batch_dfs.append(df)
+
+        # 每 BATCH_SIZE 只写入一次 DB 并释放内存
+        if len(batch_dfs) >= BATCH_SIZE:
+            batch_combined = pd.concat(batch_dfs, ignore_index=True)
+            batch_clean = clean_data(batch_combined)
+            if not batch_clean.empty:
+                await save_to_db(batch_clean)
+                total_records += len(batch_clean)
+                total_stocks += batch_clean["股票代码"].nunique()
+                logger.info("腾讯K线批次写入 DB: +%d 条（累计 %d 条，%d 只）",
+                            len(batch_clean), total_records, total_stocks)
+            # 释放内存
+            del batch_dfs, batch_combined, batch_clean
+            batch_dfs = []
+            gc.collect()
 
         # 腾讯 API 较宽松，间隔可短一些
         await asyncio.sleep(0.3 + random.uniform(0, 0.2))
 
-    if not all_dfs:
+    # 处理最后一批
+    if batch_dfs:
+        batch_combined = pd.concat(batch_dfs, ignore_index=True)
+        batch_clean = clean_data(batch_combined)
+        if not batch_clean.empty:
+            await save_to_db(batch_clean)
+            total_records += len(batch_clean)
+            total_stocks += batch_clean["股票代码"].nunique()
+        del batch_dfs, batch_combined, batch_clean
+        gc.collect()
+
+    if total_records == 0:
         logger.error("腾讯财经 API 未获取到任何股票数据")
         return pd.DataFrame()
 
-    combined = pd.concat(all_dfs, ignore_index=True)
-    logger.info(
-        "腾讯K线合并完成，共 %d 条记录，涉及 %d 只股票",
-        len(combined),
-        combined["股票代码"].nunique(),
-    )
-    return combined
+    logger.info("腾讯K线全部完成，共 %d 条记录，涉及 %d 只股票（已分批写入 DB）",
+                total_records, total_stocks)
+
+    # 返回空 DataFrame — 数据已在 DB 中，调用方会 load_from_db()
+    return pd.DataFrame(columns=["股票代码"])
 
 
 def _sync_fetch_stock_list_tencent() -> pd.DataFrame:
