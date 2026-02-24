@@ -234,8 +234,13 @@ tr:hover td{background:#f8f8fc}
     <h3>触发 NAV 计算</h3>
     <div class="form-row">
       <div class="form-group"><label>计算日期 (默认今天)</label><input id="nav-date" type="date"></div>
+      <div class="form-group"><label>实际现金余额 (可选，补偿手续费)</label><input id="nav-cash" type="number" step="0.01" placeholder="留空则从交易推算"></div>
       <button class="btn btn-primary" onclick="computeNav()">计算净值</button>
     </div>
+    <p style="font-size:12px;color:var(--muted);margin-top:8px">
+      💡 填写券商账户的实际可用资金，系统将用此值替代从交易推算的现金（自动补偿佣金、印花税等差异）。留空则按交易记录推算。<br>
+      💡 持仓市值使用<b>实时不复权行情</b>计算（优先级：实时行情 → 行情表 → 交易价格回退）。
+    </p>
     <div id="nav-result" style="margin-top:16px"></div>
   </div>
 </div>
@@ -482,16 +487,21 @@ async function deleteTrade(id,code){
 
 async function computeNav(){
   const dateVal=document.getElementById('nav-date').value;
+  const cashVal=document.getElementById('nav-cash').value;
   const div=document.getElementById('nav-result');
-  div.innerHTML='<span style="color:var(--muted)">计算中...</span>';
+  div.innerHTML='<span style="color:var(--muted)">计算中（获取实时行情可能需要几秒）...</span>';
   try{
-    const params=dateVal?`?target_date=${dateVal}`:'';
-    const r=await api(`/nav/compute${params}`,{method:'POST'});
+    const params=new URLSearchParams();
+    if(dateVal) params.set('target_date',dateVal);
+    if(cashVal) params.set('cash_balance',cashVal);
+    const qs=params.toString()?`?${params.toString()}`:'';
+    const r=await api(`/nav/compute${qs}`,{method:'POST'});
     div.innerHTML=`<div style="font-size:16px;font-weight:700">
       日期: ${r.date} &nbsp;|&nbsp; NAV: <span style="color:var(--blue)">${r.nav}</span>
       &nbsp;|&nbsp; 收益: <span style="color:${r.total_pnl>=0?'var(--green)':'var(--red)'}">${r.total_pnl}%</span>
       &nbsp;|&nbsp; 市值: ¥${Number(r.market_value).toLocaleString()}
       &nbsp;|&nbsp; 现金: ¥${Number(r.cash).toLocaleString()}
+      &nbsp;|&nbsp; 总资产: ¥${Number(r.total_assets).toLocaleString()}
     </div>`;
     showToast('NAV计算完成');
   }catch(e){div.innerHTML=`<span style="color:var(--red)">${e.message}</span>`;showToast(e.message,false)}

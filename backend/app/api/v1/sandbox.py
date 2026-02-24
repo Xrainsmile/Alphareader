@@ -223,6 +223,7 @@ async def sandbox_stock_list(
 ):
     """观察池列表，附最新一条推演摘要。支持按 discipline_action 筛选。"""
     from app.models.stock import StockDailyQuote
+    from app.services.data_fetcher import get_realtime_prices
 
     query = select(SandboxStock).order_by(desc(SandboxStock.updated_at))
     if status:
@@ -234,13 +235,21 @@ async def sandbox_stock_list(
     nav_data = await _compute_nav_core(db, date.today())
     total_assets = nav_data["total_assets"] if nav_data else float(INITIAL_CAPITAL)
 
+    # 预取所有持仓代码的实时行情
+    all_codes = [s.ts_code for s in stocks]
+    realtime_prices: dict[str, float] = {}
+    try:
+        realtime_prices = await get_realtime_prices(all_codes)
+    except Exception:
+        pass
+
     items = []
     for s in stocks:
-        # 最新推演
+        # 最新推演（按 ID 倒序，比 created_at 更可靠）
         latest_analysis = await db.execute(
             select(SandboxAnalysis)
             .where(SandboxAnalysis.stock_id == s.id)
-            .order_by(desc(SandboxAnalysis.created_at))
+            .order_by(desc(SandboxAnalysis.id))
             .limit(1)
         )
         la = latest_analysis.scalar_one_or_none()
@@ -267,16 +276,19 @@ async def sandbox_stock_list(
         # 计算持仓比例（持仓市值 / 总资产）
         position_pct = 0.0
         if int(net_shares) > 0:
-            # 优先行情表收盘价
-            price_result = await db.execute(
-                select(StockDailyQuote.close)
-                .where(StockDailyQuote.ts_code == s.ts_code)
-                .order_by(desc(StockDailyQuote.trade_date))
-                .limit(1)
-            )
-            close_price = price_result.scalar()
-            # 回退到最近交易价格（ETF 等无行情数据的标的）
+            # 优先实时不复权行情
+            close_price = realtime_prices.get(s.ts_code)
             if close_price is None:
+                # 回退：行情表收盘价
+                price_result = await db.execute(
+                    select(StockDailyQuote.close)
+                    .where(StockDailyQuote.ts_code == s.ts_code)
+                    .order_by(desc(StockDailyQuote.trade_date))
+                    .limit(1)
+                )
+                close_price = price_result.scalar()
+            if close_price is None:
+                # 回退：最近交易价格
                 fb = await db.execute(
                     select(SandboxTrade.price)
                     .where(SandboxTrade.ts_code == s.ts_code)
@@ -613,21 +625,27 @@ async def admin_delete_trade(
 INITIAL_CAPITAL = Decimal("104152.59")  # 104,152.59 元初始总资产（NAV=1 的基准）
 
 
-async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
+async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: float | None = None) -> dict | None:
     """NAV 核心计算逻辑（供 API 端点和 scheduler 共用）。
 
     计算公式（标准基金净值算法）：
       初始总资产 = INITIAL_CAPITAL = 104,152.59（NAV=1 的基准）
-      当前现金 = INITIAL_CAPITAL - Σ(买入金额) + Σ(卖出金额)
-      持仓市值 = Σ(净持仓 × 当天收盘价)
+      当前现金 = cash_balance（手动传入）或 INITIAL_CAPITAL - Σ(买入金额) + Σ(卖出金额)
+      持仓市值 = Σ(净持仓 × 不复权最新价)
       当天总资产 = 当前现金 + 持仓市值
       NAV = 当天总资产 / 初始总资产
       收益率 = (NAV - 1) × 100%
+
+    Args:
+        db: 数据库 session
+        calc_date: 计算日期
+        cash_balance: 可选，手动传入的实际现金余额（覆盖从交易推算的值，用于补偿手续费等差异）
 
     返回 dict 包含 nav/total_pnl/market_value/cash/total_assets，若无交易返回 None。
     """
     from app.models.stock import StockDailyQuote
     from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.services.data_fetcher import get_realtime_prices, is_etf
 
     # 所有交易
     trades_result = await db.execute(
@@ -650,40 +668,64 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
             positions[code] = positions.get(code, 0) - t.shares
             cash_flow -= t.price * t.shares  # 卖出回款
 
-    cash = INITIAL_CAPITAL - cash_flow  # 当前现金 = 初始资金 - 买入 + 卖出
+    # 当前现金：优先使用手动传入值（含手续费补偿），否则从交易推算
+    if cash_balance is not None:
+        cash = Decimal(str(cash_balance))
+    else:
+        cash = INITIAL_CAPITAL - cash_flow
 
-    # 取收盘价（优先 stock_daily_quote → 回退到最近交易价格）
+    # 获取持仓代码列表
+    holding_codes = [code for code, shares in positions.items() if shares > 0]
+
+    # 优先使用实时不复权行情（当天或盘中）
+    realtime_prices: dict[str, float] = {}
+    if holding_codes and calc_date >= date.today():
+        try:
+            realtime_prices = await get_realtime_prices(holding_codes)
+            if realtime_prices:
+                logger.info("NAV: 已获取 %d/%d 只持仓的实时行情", len(realtime_prices), len(holding_codes))
+        except Exception as e:
+            logger.warning("NAV: 实时行情获取失败，回退到行情表: %s", e)
+
+    # 计算持仓市值
     total_market_value = Decimal("0")
     for code, shares in positions.items():
         if shares <= 0:
             continue
-        # 1. 优先从行情表取收盘价
-        price_result = await db.execute(
-            select(StockDailyQuote.close)
-            .where(
-                StockDailyQuote.ts_code == code,
-                StockDailyQuote.trade_date <= calc_date,
-            )
-            .order_by(desc(StockDailyQuote.trade_date))
-            .limit(1)
-        )
-        close_price = price_result.scalar()
 
-        # 2. 行情表无数据（如 ETF），回退用最近一笔交易价格
-        if close_price is None:
-            fallback_result = await db.execute(
-                select(SandboxTrade.price)
+        close_price = None
+
+        # 优先级 1: 实时不复权价格
+        if code in realtime_prices:
+            close_price = realtime_prices[code]
+        else:
+            # 优先级 2: 行情表收盘价（注意：前复权，历史日期回退用）
+            price_result = await db.execute(
+                select(StockDailyQuote.close)
                 .where(
-                    SandboxTrade.ts_code == code,
-                    SandboxTrade.trade_date <= calc_date,
+                    StockDailyQuote.ts_code == code,
+                    StockDailyQuote.trade_date <= calc_date,
                 )
-                .order_by(desc(SandboxTrade.trade_date), desc(SandboxTrade.id))
+                .order_by(desc(StockDailyQuote.trade_date))
                 .limit(1)
             )
-            fallback_price = fallback_result.scalar()
-            if fallback_price:
-                close_price = float(fallback_price)
-                logger.info("NAV: %s no quote data, using trade price %.2f", code, close_price)
+            close_price = price_result.scalar()
+
+            # 优先级 3: 最近一笔交易价格
+            if close_price is None:
+                fallback_result = await db.execute(
+                    select(SandboxTrade.price)
+                    .where(
+                        SandboxTrade.ts_code == code,
+                        SandboxTrade.trade_date <= calc_date,
+                    )
+                    .order_by(desc(SandboxTrade.trade_date), desc(SandboxTrade.id))
+                    .limit(1)
+                )
+                fallback_price = fallback_result.scalar()
+                if fallback_price:
+                    close_price = float(fallback_price)
+                    logger.info("NAV: %s no quote data, using trade price %.4f", code, close_price)
 
         if close_price:
             total_market_value += Decimal(str(close_price)) * shares
@@ -713,8 +755,9 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
     await db.commit()
 
     logger.info(
-        "NAV computed for %s: nav=%.4f, pnl=%.2f%%, mv=%.2f, cash=%.2f",
+        "NAV computed for %s: nav=%.4f, pnl=%.2f%%, mv=%.2f, cash=%.2f%s",
         calc_date, nav_value, total_pnl, total_market_value, cash,
+        " (manual cash)" if cash_balance is not None else "",
     )
     return {
         "date": str(calc_date),
@@ -729,17 +772,22 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
 @router.post("/nav/compute")
 async def compute_nav(
     target_date: date | None = None,
+    cash_balance: float | None = None,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(_require_admin),
 ):
     """计算指定日期（默认今天）的净值。
 
+    Args:
+        target_date: 计算日期（默认今天）
+        cash_balance: 可选，实际现金余额（券商账户中的可用资金，
+                      传入后将覆盖从交易推算的值，用于补偿手续费等差异）
+
     逻辑：
     1. 汇总所有交易记录，计算各股票净持仓
-    2. 初始总资产 = 现金(61908.99) + Σ(买入价 × 买入股数)
-    3. 持仓市值 = Σ(净持仓 × 当天收盘价)
-    4. 当天总资产 = 现金 + 持仓市值
-    5. NAV = 当天总资产 / 初始总资产
+    2. 获取实时不复权行情计算持仓市值
+    3. 当天总资产 = 现金 + 持仓市值
+    4. NAV = 当天总资产 / 初始总资产 (104,152.59)
     """
     calc_date = target_date or date.today()
 
@@ -752,7 +800,7 @@ async def compute_nav(
     except Exception as etf_err:
         logger.warning("NAV compute: ETF 行情更新失败（不影响计算）: %s", etf_err)
 
-    result = await _compute_nav_core(db, calc_date)
+    result = await _compute_nav_core(db, calc_date, cash_balance=cash_balance)
     if result is None:
         return {
             "date": str(calc_date),

@@ -446,6 +446,74 @@ async def fetch_sandbox_etf_quotes() -> int:
 
 
 # ============================================================
+# 8. 实时行情（不复权）— 供 NAV 计算使用
+# ============================================================
+
+_spot_cache: dict[str, float] = {}   # 短期缓存：{ts_code: latest_price}
+_spot_cache_ts: float = 0.0          # 缓存时间戳
+
+
+def _sync_fetch_spot_prices() -> dict[str, float]:
+    """同步获取 A 股 + ETF 实时行情（不复权最新价），返回 {代码: 最新价}。"""
+    import time
+
+    prices: dict[str, float] = {}
+
+    # A 股实时行情
+    try:
+        df = ak.stock_zh_a_spot_em()
+        if df is not None and not df.empty:
+            for _, row in df.iterrows():
+                code = str(row.get("代码", ""))
+                price = row.get("最新价")
+                if code and price is not None and float(price) > 0:
+                    prices[code] = float(price)
+    except Exception as e:
+        logger.warning("获取 A 股实时行情失败: %s", e)
+
+    time.sleep(0.2)
+
+    # ETF 实时行情
+    try:
+        df = ak.fund_etf_spot_em()
+        if df is not None and not df.empty:
+            for _, row in df.iterrows():
+                code = str(row.get("代码", ""))
+                price = row.get("最新价")
+                if code and price is not None and float(price) > 0:
+                    prices[code] = float(price)
+    except Exception as e:
+        logger.warning("获取 ETF 实时行情失败: %s", e)
+
+    return prices
+
+
+async def get_realtime_prices(codes: list[str]) -> dict[str, float]:
+    """获取指定代码列表的实时不复权价格。
+
+    使用短期缓存（5 分钟），避免频繁调用 akshare。
+    Returns: {ts_code: latest_price}
+    """
+    import time
+
+    global _spot_cache, _spot_cache_ts
+
+    now = time.time()
+    # 缓存有效期 5 分钟
+    if _spot_cache and (now - _spot_cache_ts) < 300:
+        result = {c: _spot_cache[c] for c in codes if c in _spot_cache}
+        if len(result) == len(codes):
+            return result
+
+    # 重新获取
+    _spot_cache = await asyncio.to_thread(_sync_fetch_spot_prices)
+    _spot_cache_ts = now
+    logger.info("实时行情已刷新，共 %d 只标的", len(_spot_cache))
+
+    return {c: _spot_cache[c] for c in codes if c in _spot_cache}
+
+
+# ============================================================
 # 直接运行入口（开发调试用）
 # ============================================================
 
