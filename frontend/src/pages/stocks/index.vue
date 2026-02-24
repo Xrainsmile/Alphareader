@@ -502,6 +502,7 @@ const sbFilter = ref('')
 const sbHoldingOnly = ref(false)
 const sbSearchQuery = ref('')
 let sbLoaded = false
+const sbUnlocked = ref(false)  // 模拟仓访问密码验证状态
 
 // 环状图配色
 const pieColors = ['#3b82f6', '#f59e0b', '#22c55e', '#a855f7', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#d0d0d8']
@@ -585,11 +586,47 @@ const onSbSearchConfirm = () => { loadSandboxStocks() }
 const onSbClearSearch = () => { sbSearchQuery.value = ''; loadSandboxStocks() }
 
 const switchToSandbox = () => {
-  activeTab.value = 'sandbox'
-  if (!sbLoaded) {
-    sbLoaded = true
-    loadSandboxData()
+  // 检查本地缓存是否已验证
+  if (!sbUnlocked.value) {
+    try {
+      const cached = uni.getStorageSync('sb_unlocked')
+      if (cached === 'true') {
+        sbUnlocked.value = true
+      }
+    } catch (_) {}
   }
+
+  if (sbUnlocked.value) {
+    activeTab.value = 'sandbox'
+    if (!sbLoaded) {
+      sbLoaded = true
+      loadSandboxData()
+    }
+    return
+  }
+
+  // 弹出密码输入框
+  uni.showModal({
+    title: '访问验证',
+    content: '',
+    editable: true,
+    placeholderText: '请输入访问密码',
+    success: (res) => {
+      if (res.confirm) {
+        if (res.content === '2333') {
+          sbUnlocked.value = true
+          try { uni.setStorageSync('sb_unlocked', 'true') } catch (_) {}
+          activeTab.value = 'sandbox'
+          if (!sbLoaded) {
+            sbLoaded = true
+            loadSandboxData()
+          }
+        } else {
+          uni.showToast({ title: '密码错误', icon: 'none' })
+        }
+      }
+    }
+  })
 }
 
 const loadSandboxData = async () => {
