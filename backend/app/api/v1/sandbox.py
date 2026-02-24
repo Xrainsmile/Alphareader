@@ -770,27 +770,29 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
     # 获取持仓代码列表
     holding_codes = [code for code, shares in positions.items() if shares > 0]
 
-    # 优先使用实时不复权行情（当天或盘中，且 use_realtime=True）
+    # 优先使用不复权价格（当天或盘中，且 use_realtime=True）
     realtime_prices: dict[str, float] = {}
     if use_realtime and holding_codes and calc_date >= date.today():
+        # 直接逐只获取不复权收盘价（最可靠，持仓少量股票时很快）
         try:
-            realtime_prices = await get_realtime_prices(holding_codes)
+            realtime_prices = await get_unadjusted_close(holding_codes)
             if realtime_prices:
-                logger.info("NAV: 已获取 %d/%d 只持仓的实时行情", len(realtime_prices), len(holding_codes))
+                logger.info("NAV: 已获取 %d/%d 只持仓的不复权收盘价: %s",
+                            len(realtime_prices), len(holding_codes), realtime_prices)
         except Exception as e:
-            logger.warning("NAV: 实时行情获取失败: %s", e)
+            logger.warning("NAV: 不复权收盘价获取失败: %s", e)
 
-        # 对于实时行情未覆盖的股票，用 akshare 逐只获取不复权收盘价补全
+        # 对仍未覆盖的股票，尝试全市场实时行情作为补充
         missing_codes = [c for c in holding_codes if c not in realtime_prices]
         if missing_codes:
-            logger.info("NAV: %d 只持仓缺少实时行情，尝试获取不复权收盘价: %s", len(missing_codes), missing_codes)
+            logger.info("NAV: %d 只持仓缺少不复权收盘价，尝试实时行情: %s", len(missing_codes), missing_codes)
             try:
-                unadj_prices = await get_unadjusted_close(missing_codes)
-                if unadj_prices:
-                    realtime_prices.update(unadj_prices)
-                    logger.info("NAV: 不复权收盘价补全 %d 只: %s", len(unadj_prices), unadj_prices)
+                spot_prices = await get_realtime_prices(missing_codes)
+                if spot_prices:
+                    realtime_prices.update(spot_prices)
+                    logger.info("NAV: 实时行情补全 %d 只: %s", len(spot_prices), spot_prices)
             except Exception as e:
-                logger.warning("NAV: 不复权收盘价获取失败: %s", e)
+                logger.warning("NAV: 实时行情获取失败: %s", e)
 
     # 计算持仓市值
     total_market_value = Decimal("0")
@@ -802,10 +804,10 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
         close_price = None
         price_source = ""
 
-        # 优先级 1: 实时不复权价格
+        # 优先级 1: 不复权价格（逐只获取 or 实时行情）
         if code in realtime_prices:
             close_price = realtime_prices[code]
-            price_source = "realtime"
+            price_source = "unadjusted"
         else:
             # 优先级 2: 行情表收盘价（注意：前复权，历史日期回退用）
             price_result = await db.execute(
