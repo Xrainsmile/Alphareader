@@ -718,7 +718,7 @@ async def admin_delete_trade(
 INITIAL_CAPITAL = Decimal("104152.59")  # 104,152.59 元初始总资产（NAV=1 的基准）
 
 
-async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: float | None = None, use_realtime: bool = True) -> dict | None:
+async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: float | None = None, use_realtime: bool = True, market_value_override: float | None = None) -> dict | None:
     """NAV 核心计算逻辑（供 API 端点和 scheduler 共用）。
 
     计算公式（标准基金净值算法）：
@@ -739,8 +739,7 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
     """
     from app.models.stock import StockDailyQuote
     from sqlalchemy.dialects.postgresql import insert as pg_insert
-    from app.services.data_fetcher import get_realtime_prices, get_unadjusted_close, is_etf
-    import akshare as ak
+    from app.services.data_fetcher import get_sina_prices, is_etf
 
     # 所有交易
     trades_result = await db.execute(
@@ -772,39 +771,29 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
     # 获取持仓代码列表
     holding_codes = [code for code, shares in positions.items() if shares > 0]
 
-    # 优先使用不复权价格（当天或盘中，且 use_realtime=True）
+    # 获取持仓最新价格（不复权）
     realtime_prices: dict[str, float] = {}
     if use_realtime and holding_codes and calc_date >= date.today():
-        # 逐只获取不复权收盘价 — 最可靠的方式
-        for code in holding_codes:
-            try:
-                end_d = calc_date.strftime("%Y%m%d")
-                start_d = (calc_date - timedelta(days=10)).strftime("%Y%m%d")
-                if is_etf(code):
-                    df = await asyncio.to_thread(
-                        lambda c=code, s=start_d, e=end_d: ak.fund_etf_hist_em(
-                            symbol=c, period="daily", start_date=s, end_date=e, adjust=""
-                        )
-                    )
-                else:
-                    df = await asyncio.to_thread(
-                        lambda c=code, s=start_d, e=end_d: ak.stock_zh_a_hist(
-                            symbol=c, period="daily", start_date=s, end_date=e, adjust=""
-                        )
-                    )
-                if df is not None and not df.empty:
-                    close_val = df.iloc[-1].get("收盘")
-                    if close_val is not None and float(close_val) > 0:
-                        realtime_prices[code] = float(close_val)
-                        logger.info("NAV: %s 不复权收盘价=%.4f (日期=%s)", code, float(close_val), df.iloc[-1].get("日期", "?"))
-                    else:
-                        logger.warning("NAV: %s 不复权数据收盘价异常: %s", code, close_val)
-                else:
-                    logger.warning("NAV: %s 不复权数据为空", code)
-            except Exception as e:
-                logger.warning("NAV: %s 获取不复权收盘价失败: %s", code, e)
+        # 方式 1: 新浪财经 HTTP 接口（最可靠，不依赖 akshare）
+        try:
+            realtime_prices = await get_sina_prices(holding_codes)
+            if realtime_prices:
+                logger.info("NAV: 新浪行情获取成功 %d/%d: %s", len(realtime_prices), len(holding_codes), realtime_prices)
+        except Exception as e:
+            logger.warning("NAV: 新浪行情获取失败: %s", e)
 
-        logger.info("NAV: 不复权收盘价获取完成 %d/%d: %s", len(realtime_prices), len(holding_codes), realtime_prices)
+        # 方式 2: 如果新浪接口也有缺失，尝试 akshare 逐只获取
+        missing_codes = [c for c in holding_codes if c not in realtime_prices]
+        if missing_codes:
+            logger.info("NAV: 新浪行情缺少 %d 只，尝试 akshare: %s", len(missing_codes), missing_codes)
+            try:
+                from app.services.data_fetcher import get_unadjusted_close
+                ak_prices = await get_unadjusted_close(missing_codes)
+                if ak_prices:
+                    realtime_prices.update(ak_prices)
+                    logger.info("NAV: akshare 补全 %d 只: %s", len(ak_prices), ak_prices)
+            except Exception as e:
+                logger.warning("NAV: akshare 补全失败: %s", e)
 
     # 计算持仓市值
     total_market_value = Decimal("0")
@@ -863,6 +852,11 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
     if holdings_detail:
         logger.info("NAV holdings detail:\n  %s", "\n  ".join(holdings_detail))
 
+    # 如果手动传入了市值，直接覆盖计算结果
+    if market_value_override is not None:
+        total_market_value = Decimal(str(market_value_override))
+        logger.info("NAV: 使用手动输入市值 ¥%.2f（覆盖计算值）", market_value_override)
+
     total_assets = total_market_value + cash
     nav_value = float(total_assets / INITIAL_CAPITAL) if INITIAL_CAPITAL > 0 else 1.0
     total_pnl = round((nav_value - 1.0) * 100, 2)
@@ -907,6 +901,7 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
 async def compute_nav(
     target_date: date | None = None,
     cash_balance: float | None = None,
+    market_value: float | None = None,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(_require_admin),
 ):
@@ -916,6 +911,7 @@ async def compute_nav(
         target_date: 计算日期（默认今天）
         cash_balance: 可选，实际现金余额（券商账户中的可用资金，
                       传入后将覆盖从交易推算的值，用于补偿手续费等差异）
+        market_value: 可选，手动输入的持仓市值（当行情获取失败时使用）
 
     逻辑：
     1. 汇总所有交易记录，计算各股票净持仓
@@ -934,7 +930,7 @@ async def compute_nav(
     except Exception as etf_err:
         logger.warning("NAV compute: ETF 行情更新失败（不影响计算）: %s", etf_err)
 
-    result = await _compute_nav_core(db, calc_date, cash_balance=cash_balance)
+    result = await _compute_nav_core(db, calc_date, cash_balance=cash_balance, market_value_override=market_value)
     if result is None:
         return {
             "date": str(calc_date),
@@ -953,7 +949,7 @@ async def debug_prices(
 ):
     """调试端点：展示每只持仓股票通过各种来源获取的价格，不写入数据库。"""
     from app.models.stock import StockDailyQuote
-    from app.services.data_fetcher import get_unadjusted_close, get_realtime_prices
+    from app.services.data_fetcher import get_unadjusted_close, get_realtime_prices, get_sina_prices
 
     # 汇总持仓
     trades_result = await db.execute(select(SandboxTrade))
@@ -968,14 +964,21 @@ async def debug_prices(
 
     holding_codes = [code for code, shares in positions.items() if shares > 0]
 
-    # 1) 逐只不复权收盘价
+    # 0) 新浪财经 HTTP 接口（不依赖 akshare）
+    sina = {}
+    try:
+        sina = await get_sina_prices(holding_codes)
+    except Exception as e:
+        sina = {"error": str(e)}
+
+    # 1) 逐只不复权收盘价 (akshare)
     unadj = {}
     try:
         unadj = await get_unadjusted_close(holding_codes)
     except Exception as e:
         unadj = {"error": str(e)}
 
-    # 2) 全市场实时行情
+    # 2) 全市场实时行情 (akshare)
     spot = {}
     try:
         spot = await get_realtime_prices(holding_codes)
@@ -1002,25 +1005,29 @@ async def debug_prices(
         entry = {
             "code": code,
             "shares": shares,
-            "unadjusted_close": unadj.get(code),
-            "spot_realtime": spot.get(code),
+            "sina_price": sina.get(code) if isinstance(sina, dict) else None,
+            "unadjusted_close": unadj.get(code) if isinstance(unadj, dict) else None,
+            "spot_realtime": spot.get(code) if isinstance(spot, dict) else None,
             "db_qfq": db_qfq.get(code),
         }
-        # 计算市值差异
-        if unadj.get(code):
+        if isinstance(sina, dict) and sina.get(code):
+            entry["mv_sina"] = round(sina[code] * shares, 2)
+        if isinstance(unadj, dict) and unadj.get(code):
             entry["mv_unadjusted"] = round(unadj[code] * shares, 2)
-        if spot.get(code):
+        if isinstance(spot, dict) and spot.get(code):
             entry["mv_spot"] = round(spot[code] * shares, 2)
         if db_qfq.get(code) and isinstance(db_qfq[code], dict):
             entry["mv_db_qfq"] = round(db_qfq[code]["price"] * shares, 2)
         result.append(entry)
 
+    total_mv_sina = sum(e.get("mv_sina", 0) for e in result)
     total_mv_unadj = sum(e.get("mv_unadjusted", 0) for e in result)
     total_mv_spot = sum(e.get("mv_spot", 0) for e in result)
     total_mv_qfq = sum(e.get("mv_db_qfq", 0) for e in result)
 
     return {
         "holdings": result,
+        "total_mv_sina": round(total_mv_sina, 2),
         "total_mv_unadjusted": round(total_mv_unadj, 2),
         "total_mv_spot": round(total_mv_spot, 2),
         "total_mv_db_qfq": round(total_mv_qfq, 2),

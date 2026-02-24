@@ -446,6 +446,74 @@ async def fetch_sandbox_etf_quotes() -> int:
 
 
 # ============================================================
+# 7.5 新浪财经 HTTP 行情（不依赖 akshare，作为 NAV 计算的可靠备选）
+# ============================================================
+
+def _sina_code(code: str) -> str:
+    """将纯数字代码转为新浪财经格式：sh600000 / sz000001 / sh510300。"""
+    if code.startswith(("6", "5")):
+        return f"sh{code}"
+    return f"sz{code}"
+
+
+def _sync_fetch_sina_prices(codes: list[str]) -> dict[str, float]:
+    """通过新浪财经 HTTP 接口获取最新价格（不复权），返回 {代码: 价格}。
+
+    接口: https://hq.sinajs.cn/list=sh600000,sz000001,...
+    返回格式: var hq_str_sh600000="...,当前价,...";
+    """
+    import re
+    import urllib.request
+
+    if not codes:
+        return {}
+
+    sina_codes = [_sina_code(c) for c in codes]
+    url = f"https://hq.sinajs.cn/list={','.join(sina_codes)}"
+
+    req = urllib.request.Request(url, headers={
+        "Referer": "https://finance.sina.com.cn",
+        "User-Agent": "Mozilla/5.0",
+    })
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            text = resp.read().decode("gbk")
+    except Exception as e:
+        logger.warning("新浪行情 HTTP 请求失败: %s", e)
+        return {}
+
+    prices: dict[str, float] = {}
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if not line or '="' not in line:
+            continue
+        # var hq_str_sh600000="name,open,昨收,当前价,..."
+        m = re.match(r'var hq_str_(s[hz]\d{6})="(.+)"', line)
+        if not m:
+            continue
+        sina_sym = m.group(1)
+        fields = m.group(2).split(",")
+        # 字段索引：[0]名称 [1]今开 [2]昨收 [3]当前价 ...
+        if len(fields) >= 4:
+            try:
+                current_price = float(fields[3])
+                if current_price > 0:
+                    # 反查原始代码
+                    raw_code = sina_sym[2:]  # 去掉 sh/sz 前缀
+                    prices[raw_code] = current_price
+            except (ValueError, IndexError):
+                pass
+
+    return prices
+
+
+async def get_sina_prices(codes: list[str]) -> dict[str, float]:
+    """异步获取新浪财经实时价格。"""
+    return await asyncio.to_thread(_sync_fetch_sina_prices, codes)
+
+
+# ============================================================
 # 8. 实时行情（不复权）— 供 NAV 计算使用
 # ============================================================
 
