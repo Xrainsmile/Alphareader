@@ -350,7 +350,7 @@ async function searchForPicker(pickerId,q){
     if(source==='sandbox'){
       // 从观察池搜索（已有的 allStocks）
       const kw=q.toUpperCase();
-      items=allStocks.filter(s=>s.status!=='exited'&&(s.ts_code.includes(kw)||s.name.toUpperCase().includes(kw)))
+      items=allStocks.filter(s=>(s.ts_code.includes(kw)||s.name.toUpperCase().includes(kw)))
         .map(s=>({ts_code:s.ts_code,name:s.name,stock_id:s.id}));
     } else {
       // 从全市场搜索
