@@ -887,6 +887,7 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
         "market_value": float(total_market_value),
         "cash": float(cash),
         "total_assets": round(float(total_market_value + cash), 2),
+        "holdings_detail": holdings_detail,
     }
 
 
@@ -932,3 +933,84 @@ async def compute_nav(
             "message": "No trades yet",
         }
     return result
+
+
+@router.get("/nav/debug-prices")
+async def debug_prices(
+    db: AsyncSession = Depends(get_db),
+):
+    """调试端点：展示每只持仓股票通过各种来源获取的价格，不写入数据库。"""
+    from app.models.stock import StockDailyQuote
+    from app.services.data_fetcher import get_unadjusted_close, get_realtime_prices
+
+    # 汇总持仓
+    trades_result = await db.execute(select(SandboxTrade))
+    all_trades = trades_result.scalars().all()
+    positions: dict[str, int] = {}
+    for t in all_trades:
+        code = t.ts_code
+        if t.action == "buy":
+            positions[code] = positions.get(code, 0) + t.shares
+        else:
+            positions[code] = positions.get(code, 0) - t.shares
+
+    holding_codes = [code for code, shares in positions.items() if shares > 0]
+
+    # 1) 逐只不复权收盘价
+    unadj = {}
+    try:
+        unadj = await get_unadjusted_close(holding_codes)
+    except Exception as e:
+        unadj = {"error": str(e)}
+
+    # 2) 全市场实时行情
+    spot = {}
+    try:
+        spot = await get_realtime_prices(holding_codes)
+    except Exception as e:
+        spot = {"error": str(e)}
+
+    # 3) 行情表前复权价
+    db_qfq = {}
+    for code in holding_codes:
+        r = await db.execute(
+            select(StockDailyQuote.close, StockDailyQuote.trade_date)
+            .where(StockDailyQuote.ts_code == code)
+            .order_by(desc(StockDailyQuote.trade_date))
+            .limit(1)
+        )
+        row = r.first()
+        if row:
+            db_qfq[code] = {"price": float(row[0]), "date": str(row[1])}
+
+    # 汇总
+    result = []
+    for code in holding_codes:
+        shares = positions[code]
+        entry = {
+            "code": code,
+            "shares": shares,
+            "unadjusted_close": unadj.get(code),
+            "spot_realtime": spot.get(code),
+            "db_qfq": db_qfq.get(code),
+        }
+        # 计算市值差异
+        if unadj.get(code):
+            entry["mv_unadjusted"] = round(unadj[code] * shares, 2)
+        if spot.get(code):
+            entry["mv_spot"] = round(spot[code] * shares, 2)
+        if db_qfq.get(code) and isinstance(db_qfq[code], dict):
+            entry["mv_db_qfq"] = round(db_qfq[code]["price"] * shares, 2)
+        result.append(entry)
+
+    total_mv_unadj = sum(e.get("mv_unadjusted", 0) for e in result)
+    total_mv_spot = sum(e.get("mv_spot", 0) for e in result)
+    total_mv_qfq = sum(e.get("mv_db_qfq", 0) for e in result)
+
+    return {
+        "holdings": result,
+        "total_mv_unadjusted": round(total_mv_unadj, 2),
+        "total_mv_spot": round(total_mv_spot, 2),
+        "total_mv_db_qfq": round(total_mv_qfq, 2),
+    }
+
