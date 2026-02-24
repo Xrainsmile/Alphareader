@@ -405,38 +405,6 @@ document.addEventListener('click',function(e){
   }
 });
 
-function switchTab(name){
-  const tabs=['stocks','analysis','trade','nav'];
-  document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',tabs[i]===name)});
-  document.querySelectorAll('.section').forEach((s,i)=>{s.classList.toggle('active',tabs[i]===name)});
-}
-
-function showToast(msg,ok=true){
-  const t=document.getElementById('toast');
-  t.textContent=msg;
-  t.className='toast show '+(ok?'toast-ok':'toast-err');
-  setTimeout(()=>{t.className='toast'},3000);
-}
-
-function fmtDate(iso){
-  if(!iso) return '-';
-  return new Date(iso).toLocaleDateString('zh-CN');
-}
-
-async function api(path,opts={}){
-  const r=await fetch(API+path,{
-    method:opts.method||'GET',
-    headers:opts.body?{'Content-Type':'application/json'}:{},
-    body:opts.body?JSON.stringify(opts.body):undefined,
-    credentials:'same-origin',
-  });
-  if(!r.ok){
-    const e=await r.json().catch(()=>({}));
-    throw new Error(e.detail||r.status);
-  }
-  return r.json();
-}
-
 // ── 观察池 ──
 
 async function loadStocks(){
