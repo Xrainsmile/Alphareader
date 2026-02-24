@@ -158,7 +158,7 @@ async def _sandbox_nav_job():
         calc_date = date_type.today()
 
         async with async_session() as db:
-            result = await _compute_nav_core(db, calc_date, use_realtime=False)
+            result = await _compute_nav_core(db, calc_date, use_realtime=True)
 
         if result is None:
             logger.info("Sandbox NAV: No trades yet, skipping")

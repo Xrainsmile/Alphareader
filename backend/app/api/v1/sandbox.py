@@ -782,15 +782,18 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
 
     # 计算持仓市值
     total_market_value = Decimal("0")
+    holdings_detail = []  # 用于日志输出每只股票的明细
     for code, shares in positions.items():
         if shares <= 0:
             continue
 
         close_price = None
+        price_source = ""
 
         # 优先级 1: 实时不复权价格
         if code in realtime_prices:
             close_price = realtime_prices[code]
+            price_source = "realtime"
         else:
             # 优先级 2: 行情表收盘价（注意：前复权，历史日期回退用）
             price_result = await db.execute(
@@ -803,6 +806,8 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
                 .limit(1)
             )
             close_price = price_result.scalar()
+            if close_price is not None:
+                price_source = "db_qfq"
 
             # 优先级 3: 最近一笔交易价格
             if close_price is None:
@@ -818,10 +823,19 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
                 fallback_price = fallback_result.scalar()
                 if fallback_price:
                     close_price = float(fallback_price)
+                    price_source = "trade_fallback"
                     logger.info("NAV: %s no quote data, using trade price %.4f", code, close_price)
 
         if close_price:
-            total_market_value += Decimal(str(close_price)) * shares
+            mv = Decimal(str(close_price)) * shares
+            total_market_value += mv
+            holdings_detail.append(
+                f"{code}: price={close_price}({price_source}) × {shares}shares = ¥{float(mv):.2f}"
+            )
+
+    # 输出每只持仓的价格明细
+    if holdings_detail:
+        logger.info("NAV holdings detail:\n  %s", "\n  ".join(holdings_detail))
 
     total_assets = total_market_value + cash
     nav_value = float(total_assets / INITIAL_CAPITAL) if INITIAL_CAPITAL > 0 else 1.0
