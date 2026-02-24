@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -739,6 +740,7 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
     from app.models.stock import StockDailyQuote
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.services.data_fetcher import get_realtime_prices, get_unadjusted_close, is_etf
+    import akshare as ak
 
     # 所有交易
     trades_result = await db.execute(
@@ -773,26 +775,36 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
     # 优先使用不复权价格（当天或盘中，且 use_realtime=True）
     realtime_prices: dict[str, float] = {}
     if use_realtime and holding_codes and calc_date >= date.today():
-        # 直接逐只获取不复权收盘价（最可靠，持仓少量股票时很快）
-        try:
-            realtime_prices = await get_unadjusted_close(holding_codes)
-            if realtime_prices:
-                logger.info("NAV: 已获取 %d/%d 只持仓的不复权收盘价: %s",
-                            len(realtime_prices), len(holding_codes), realtime_prices)
-        except Exception as e:
-            logger.warning("NAV: 不复权收盘价获取失败: %s", e)
-
-        # 对仍未覆盖的股票，尝试全市场实时行情作为补充
-        missing_codes = [c for c in holding_codes if c not in realtime_prices]
-        if missing_codes:
-            logger.info("NAV: %d 只持仓缺少不复权收盘价，尝试实时行情: %s", len(missing_codes), missing_codes)
+        # 逐只获取不复权收盘价 — 最可靠的方式
+        for code in holding_codes:
             try:
-                spot_prices = await get_realtime_prices(missing_codes)
-                if spot_prices:
-                    realtime_prices.update(spot_prices)
-                    logger.info("NAV: 实时行情补全 %d 只: %s", len(spot_prices), spot_prices)
+                end_d = calc_date.strftime("%Y%m%d")
+                start_d = (calc_date - timedelta(days=10)).strftime("%Y%m%d")
+                if is_etf(code):
+                    df = await asyncio.to_thread(
+                        lambda c=code, s=start_d, e=end_d: ak.fund_etf_hist_em(
+                            symbol=c, period="daily", start_date=s, end_date=e, adjust=""
+                        )
+                    )
+                else:
+                    df = await asyncio.to_thread(
+                        lambda c=code, s=start_d, e=end_d: ak.stock_zh_a_hist(
+                            symbol=c, period="daily", start_date=s, end_date=e, adjust=""
+                        )
+                    )
+                if df is not None and not df.empty:
+                    close_val = df.iloc[-1].get("收盘")
+                    if close_val is not None and float(close_val) > 0:
+                        realtime_prices[code] = float(close_val)
+                        logger.info("NAV: %s 不复权收盘价=%.4f (日期=%s)", code, float(close_val), df.iloc[-1].get("日期", "?"))
+                    else:
+                        logger.warning("NAV: %s 不复权数据收盘价异常: %s", code, close_val)
+                else:
+                    logger.warning("NAV: %s 不复权数据为空", code)
             except Exception as e:
-                logger.warning("NAV: 实时行情获取失败: %s", e)
+                logger.warning("NAV: %s 获取不复权收盘价失败: %s", code, e)
+
+        logger.info("NAV: 不复权收盘价获取完成 %d/%d: %s", len(realtime_prices), len(holding_codes), realtime_prices)
 
     # 计算持仓市值
     total_market_value = Decimal("0")
