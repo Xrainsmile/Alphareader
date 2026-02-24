@@ -72,6 +72,26 @@ tr:hover td{background:#f8f8fc}
 .toast-ok{background:var(--green)}
 .toast-err{background:var(--red)}
 .empty{color:var(--muted);text-align:center;padding:40px;font-size:14px}
+/* ── 搜索选择组件 ── */
+.stock-picker{position:relative;flex:1;min-width:200px}
+.stock-picker input{width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;
+  font-size:14px;outline:none;transition:border .2s;background:#fff;font-family:inherit;box-sizing:border-box}
+.stock-picker input:focus{border-color:var(--blue)}
+.stock-picker .sp-dropdown{position:absolute;top:100%;left:0;right:0;max-height:240px;overflow-y:auto;
+  background:#fff;border:1.5px solid var(--border);border-top:none;border-radius:0 0 8px 8px;
+  box-shadow:0 4px 16px rgba(0,0,0,.1);z-index:100;display:none}
+.stock-picker .sp-dropdown.show{display:block}
+.stock-picker .sp-item{padding:10px 14px;cursor:pointer;font-size:14px;display:flex;justify-content:space-between;
+  border-bottom:1px solid #f5f5f5;transition:background .15s}
+.stock-picker .sp-item:hover,.stock-picker .sp-item.active{background:#f0f5ff}
+.stock-picker .sp-item .sp-code{font-weight:700;color:var(--text)}
+.stock-picker .sp-item .sp-name{color:var(--muted);font-size:13px}
+.stock-picker .sp-empty{padding:16px;text-align:center;color:var(--muted);font-size:13px}
+.stock-picker .sp-selected{display:flex;align-items:center;gap:8px;margin-top:6px}
+.stock-picker .sp-tag{display:inline-flex;align-items:center;gap:4px;background:#e8f0fe;color:var(--blue);
+  padding:4px 12px;border-radius:6px;font-size:13px;font-weight:600}
+.stock-picker .sp-clear{cursor:pointer;color:var(--muted);font-size:16px;line-height:1}
+.stock-picker .sp-clear:hover{color:var(--red)}
 @media(max-width:600px){body{padding:16px}.form-row{flex-direction:column}}
 </style>
 </head>
@@ -96,8 +116,14 @@ tr:hover td{background:#f8f8fc}
   <div class="card">
     <h3>添加股票到观察池</h3>
     <div class="form-row">
-      <div class="form-group"><label>股票代码</label><input id="add-code" placeholder="如 000001"></div>
-      <div class="form-group"><label>名称</label><input id="add-name" placeholder="如 平安银行"></div>
+      <div class="form-group">
+        <label>搜索股票</label>
+        <div class="stock-picker" id="picker-add">
+          <input placeholder="输入代码或名称搜索..." oninput="onPickerInput(this,'picker-add')" onfocus="onPickerFocus('picker-add')">
+          <div class="sp-dropdown"></div>
+          <div class="sp-selected"></div>
+        </div>
+      </div>
       <div class="form-group" style="flex:2"><label>加入理由</label><input id="add-reason" placeholder="可选"></div>
       <button class="btn btn-primary" onclick="addStock()">添加</button>
     </div>
@@ -116,7 +142,14 @@ tr:hover td{background:#f8f8fc}
   <div class="card">
     <h3>新增推演记录</h3>
     <div class="form-row">
-      <div class="form-group"><label>选择股票</label><select id="a-stock"></select></div>
+      <div class="form-group">
+        <label>选择股票</label>
+        <div class="stock-picker" id="picker-analysis" data-source="sandbox">
+          <input placeholder="输入代码或名称搜索..." oninput="onPickerInput(this,'picker-analysis')" onfocus="onPickerFocus('picker-analysis')">
+          <div class="sp-dropdown"></div>
+          <div class="sp-selected"></div>
+        </div>
+      </div>
       <div class="form-group" style="max-width:160px"><label>综合评分 (0-5)</label>
         <input id="a-score" type="number" step="0.1" min="0" max="5" placeholder="如 3.5">
       </div>
@@ -201,7 +234,14 @@ tr:hover td{background:#f8f8fc}
   <div class="card">
     <h3>新增交易</h3>
     <div class="form-row">
-      <div class="form-group"><label>选择股票</label><select id="t-stock"></select></div>
+      <div class="form-group">
+        <label>选择股票</label>
+        <div class="stock-picker" id="picker-trade" data-source="sandbox">
+          <input placeholder="输入代码或名称搜索..." oninput="onPickerInput(this,'picker-trade')" onfocus="onPickerFocus('picker-trade')">
+          <div class="sp-dropdown"></div>
+          <div class="sp-selected"></div>
+        </div>
+      </div>
       <div class="form-group"><label>操作</label>
         <select id="t-action">
           <option value="buy">买入</option>
@@ -248,6 +288,122 @@ tr:hover td{background:#f8f8fc}
 <script>
 const API='/api/v1/sandbox';
 let allStocks=[];
+const pickerState={};  // {pickerId: {ts_code, name, stock_id}}
+
+function switchTab(name){
+  const tabs=['stocks','analysis','trade','nav'];
+  document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',tabs[i]===name)});
+  document.querySelectorAll('.section').forEach((s,i)=>{s.classList.toggle('active',tabs[i]===name)});
+}
+
+function showToast(msg,ok=true){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.className='toast show '+(ok?'toast-ok':'toast-err');
+  setTimeout(()=>{t.className='toast'},3000);
+}
+
+function fmtDate(iso){
+  if(!iso) return '-';
+  return new Date(iso).toLocaleDateString('zh-CN');
+}
+
+async function apiCall(path,opts={}){
+  const r=await fetch(API+path,{
+    method:opts.method||'GET',
+    headers:opts.body?{'Content-Type':'application/json'}:{},
+    body:opts.body?JSON.stringify(opts.body):undefined,
+    credentials:'same-origin',
+  });
+  if(!r.ok){
+    const e=await r.json().catch(()=>({}));
+    throw new Error(e.detail||r.status);
+  }
+  return r.json();
+}
+// keep old name for compatibility
+const api=apiCall;
+
+// ── Stock Picker 通用搜索选择组件 ──
+
+let _pickerTimer=null;
+
+function onPickerInput(input,pickerId){
+  clearTimeout(_pickerTimer);
+  const q=input.value.trim();
+  if(q.length<1){hideDropdown(pickerId);return;}
+  _pickerTimer=setTimeout(()=>searchForPicker(pickerId,q),300);
+}
+
+function onPickerFocus(pickerId){
+  const input=document.querySelector('#'+pickerId+' input');
+  if(input.value.trim().length>=1) searchForPicker(pickerId,input.value.trim());
+}
+
+async function searchForPicker(pickerId,q){
+  const picker=document.getElementById(pickerId);
+  const dropdown=picker.querySelector('.sp-dropdown');
+  const source=picker.dataset.source;
+
+  try{
+    let items=[];
+    if(source==='sandbox'){
+      // 从观察池搜索（已有的 allStocks）
+      const kw=q.toUpperCase();
+      items=allStocks.filter(s=>s.status!=='exited'&&(s.ts_code.includes(kw)||s.name.toUpperCase().includes(kw)))
+        .map(s=>({ts_code:s.ts_code,name:s.name,stock_id:s.id}));
+    } else {
+      // 从全市场搜索
+      const d=await api('/stock-search?q='+encodeURIComponent(q));
+      items=(d.items||[]).map(s=>({ts_code:s.ts_code,name:s.name}));
+    }
+
+    if(!items.length){
+      dropdown.innerHTML='<div class="sp-empty">未找到匹配股票</div>';
+    } else {
+      dropdown.innerHTML=items.map((s,i)=>`<div class="sp-item" data-code="${s.ts_code}" data-name="${s.name}" ${s.stock_id?'data-id="'+s.stock_id+'"':''} onclick="selectPicker('${pickerId}',this)">
+        <span class="sp-code">${s.ts_code}</span><span class="sp-name">${s.name}</span>
+      </div>`).join('');
+    }
+    dropdown.classList.add('show');
+  }catch(e){
+    dropdown.innerHTML='<div class="sp-empty">搜索失败</div>';
+    dropdown.classList.add('show');
+  }
+}
+
+function selectPicker(pickerId,el){
+  const code=el.dataset.code;
+  const name=el.dataset.name;
+  const stockId=el.dataset.id||null;
+  pickerState[pickerId]={ts_code:code,name:name,stock_id:stockId?parseInt(stockId):null};
+
+  const picker=document.getElementById(pickerId);
+  const input=picker.querySelector('input');
+  input.value='';
+  hideDropdown(pickerId);
+
+  const sel=picker.querySelector('.sp-selected');
+  sel.innerHTML=`<span class="sp-tag">${code} ${name}</span><span class="sp-clear" onclick="clearPicker('${pickerId}')">&times;</span>`;
+}
+
+function clearPicker(pickerId){
+  delete pickerState[pickerId];
+  const picker=document.getElementById(pickerId);
+  picker.querySelector('.sp-selected').innerHTML='';
+  picker.querySelector('input').value='';
+}
+
+function hideDropdown(pickerId){
+  document.querySelector('#'+pickerId+' .sp-dropdown').classList.remove('show');
+}
+
+// 全局点击关闭下拉
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.stock-picker')){
+    document.querySelectorAll('.sp-dropdown.show').forEach(d=>d.classList.remove('show'));
+  }
+});
 
 function switchTab(name){
   const tabs=['stocks','analysis','trade','nav'];
@@ -310,11 +466,6 @@ function renderStocks(){
 }
 
 function populateStockSelects(){
-  const active=allStocks.filter(s=>s.status!=='exited');
-  ['a-stock','t-stock'].forEach(id=>{
-    const sel=document.getElementById(id);
-    sel.innerHTML=active.map(s=>`<option value="${s.id}" data-code="${s.ts_code}">${s.ts_code} ${s.name}</option>`).join('');
-  });
   // 推演筛选下拉框（含全部股票，不只活跃的）
   const ahFilter=document.getElementById('ah-filter');
   const current=ahFilter.value;
@@ -323,15 +474,13 @@ function populateStockSelects(){
 }
 
 async function addStock(){
-  const code=document.getElementById('add-code').value.trim();
-  const name=document.getElementById('add-name').value.trim();
+  const picked=pickerState['picker-add'];
+  if(!picked){showToast('请先搜索并选择股票',false);return;}
   const reason=document.getElementById('add-reason').value.trim();
-  if(!code){showToast('请填写股票代码',false);return;}
   try{
-    await api('/admin/stocks',{method:'POST',body:{ts_code:code,name:name,reason:reason||null}});
-    showToast(`${code} 已添加`);
-    document.getElementById('add-code').value='';
-    document.getElementById('add-name').value='';
+    await api('/admin/stocks',{method:'POST',body:{ts_code:picked.ts_code,name:picked.name,reason:reason||null}});
+    showToast(`${picked.ts_code} ${picked.name} 已添加`);
+    clearPicker('picker-add');
     document.getElementById('add-reason').value='';
     loadStocks();
   }catch(e){showToast(e.message,false)}
@@ -358,8 +507,8 @@ const DISCIPLINE_LABELS={retain:'留存',gray:'灰度',research:'用研',churn:'
 const RISK_LABELS={top:'Top',bottom:'Bottom'};
 
 async function addAnalysis(){
-  const sel=document.getElementById('a-stock');
-  if(!sel.value){showToast('请先添加股票',false);return;}
+  const picked=pickerState['picker-analysis'];
+  if(!picked||!picked.stock_id){showToast('请先搜索并选择观察池中的股票',false);return;}
   const score=parseFloat(document.getElementById('a-score').value);
   if(isNaN(score)||score<0||score>5){showToast('评分须为 0-5',false);return;}
   const trend=document.getElementById('a-trend').value.trim();
@@ -370,8 +519,8 @@ async function addAnalysis(){
   if(!trend||!pattern||!volprice||!pnl||!verdict){showToast('趋势/形态/量价/亏盈/哨子均为必填',false);return;}
   const riskType=document.getElementById('a-risktype').value||null;
   const body={
-    stock_id:parseInt(sel.value),
-    ts_code:sel.options[sel.selectedIndex].dataset.code,
+    stock_id:picked.stock_id,
+    ts_code:picked.ts_code,
     score:Math.round(score*10)/10,
     trend,pattern,volume_price:volprice,
     discipline_action:document.getElementById('a-discipline').value,
@@ -428,11 +577,11 @@ async function deleteAnalysis(id,code){
 // ── 交易 ──
 
 async function addTrade(){
-  const sel=document.getElementById('t-stock');
-  if(!sel.value){showToast('请先添加股票',false);return;}
+  const picked=pickerState['picker-trade'];
+  if(!picked||!picked.stock_id){showToast('请先搜索并选择观察池中的股票',false);return;}
   const body={
-    stock_id:parseInt(sel.value),
-    ts_code:sel.options[sel.selectedIndex].dataset.code,
+    stock_id:picked.stock_id,
+    ts_code:picked.ts_code,
     action:document.getElementById('t-action').value,
     price:parseFloat(document.getElementById('t-price').value),
     shares:parseInt(document.getElementById('t-shares').value),
@@ -445,7 +594,7 @@ async function addTrade(){
     showToast(`交易已提交 (净持仓:${r.net_shares})`);
     ['t-price','t-shares','t-note'].forEach(id=>document.getElementById(id).value='');
     loadTrades();
-    loadStocks(); // 刷新状态
+    loadStocks();
   }catch(e){showToast(e.message,false)}
 }
 

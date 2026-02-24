@@ -286,6 +286,29 @@ async def sandbox_overview(
     }
 
 
+@router.get("/stock-search")
+async def sandbox_stock_search(
+    q: str = Query(..., min_length=1, max_length=20, description="搜索关键词（代码或名称）"),
+    db: AsyncSession = Depends(get_db),
+):
+    """轻量级股票搜索 — 从行情表去重搜索代码/名称，供 admin 页面选股使用。"""
+    from app.models.stock import StockDailyQuote
+
+    keyword = f"%{q.strip()}%"
+    # 从行情表查找不重复的 (ts_code, name)，按代码排序，最多返回 20 条
+    result = await db.execute(
+        select(StockDailyQuote.ts_code, StockDailyQuote.name)
+        .where(
+            (StockDailyQuote.ts_code.ilike(keyword)) | (StockDailyQuote.name.ilike(keyword))
+        )
+        .group_by(StockDailyQuote.ts_code, StockDailyQuote.name)
+        .order_by(StockDailyQuote.ts_code)
+        .limit(20)
+    )
+    rows = result.all()
+    return {"items": [{"ts_code": r.ts_code, "name": r.name} for r in rows]}
+
+
 @router.get("/stocks")
 async def sandbox_stock_list(
     status: str | None = Query(None, pattern=r"^(watching|holding|exited)$"),
