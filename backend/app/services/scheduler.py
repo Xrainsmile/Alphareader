@@ -136,14 +136,25 @@ async def _sandbox_nav_job():
 
     11:35：午盘收盘（11:30）后计算，反映半日行情变化。
     15:35：尾盘收盘（15:00）后计算，确保当日最终净值。
+    执行前先更新观察池中 ETF 标的的行情数据。
     复用 sandbox API 中的核心计算函数，避免代码重复。
     """
     from datetime import date as date_type
     from app.database import async_session
     from app.api.v1.sandbox import _compute_nav_core
+    from app.services.data_fetcher import fetch_sandbox_etf_quotes
 
     try:
         logger.info("Sandbox NAV job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        # 先更新 ETF 行情，确保 NAV 计算有最新数据
+        try:
+            etf_count = await fetch_sandbox_etf_quotes()
+            if etf_count > 0:
+                logger.info("ETF 行情已更新，共 %d 条记录", etf_count)
+        except Exception as etf_err:
+            logger.warning("ETF 行情更新失败（不影响 NAV 计算）: %s", etf_err)
+
         calc_date = date_type.today()
 
         async with async_session() as db:

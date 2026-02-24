@@ -37,6 +37,10 @@ LOOKBACK_DAYS = 365             # 回溯天数（约 250 个交易日）
 MAX_RETRIES = 3                 # 单只股票最大重试次数
 RETRY_DELAY = 2                 # 重试间隔（秒）
 
+# ETF 代码前缀规则（沪深两市场内 ETF）
+# 上交所: 51xxxx / 56xxxx / 58xxxx  深交所: 15xxxx / 16xxxx
+ETF_PREFIXES = ("51", "56", "58", "15", "16")
+
 
 # ============================================================
 # 1. 获取 A 股股票列表（同步，在线程池中执行）
@@ -327,6 +331,118 @@ async def get_all_stock_data(force_refresh: bool = False) -> pd.DataFrame:
         await save_to_db(clean)
 
     return clean
+
+
+# ============================================================
+# 7. ETF 行情获取（补充 stock_daily_quote 中 ETF 数据）
+# ============================================================
+
+def is_etf(ts_code: str) -> bool:
+    """判断代码是否为场内 ETF。"""
+    return ts_code[:2] in ETF_PREFIXES
+
+
+def _sync_fetch_single_etf_hist(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame | None:
+    """获取单只 ETF 的前复权日线数据，自带重试机制。"""
+    import time
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            df = ak.fund_etf_hist_em(
+                symbol=symbol,
+                period="daily",
+                start_date=start_date,
+                end_date=end_date,
+                adjust="qfq",
+            )
+            if df is not None and not df.empty:
+                df["股票代码"] = symbol
+                return df
+            return None
+        except KeyError:
+            return None
+        except Exception as e:
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY)
+            else:
+                logger.warning("ETF %s 经 %d 次重试仍失败: %s", symbol, MAX_RETRIES, e)
+                return None
+    return None
+
+
+async def fetch_etf_hist(
+    etf_codes: list[str],
+    lookback_days: int = 30,
+) -> pd.DataFrame:
+    """批量获取 ETF 历史行情并写入 stock_daily_quote 表。
+
+    Args:
+        etf_codes: ETF 代码列表（如 ['512170', '159915']）
+        lookback_days: 回溯天数，默认 30 天（ETF 只需近期数据即可）
+
+    Returns:
+        合并后的 DataFrame（已写入 DB）
+    """
+    if not etf_codes:
+        return pd.DataFrame()
+
+    end_date = datetime.now().strftime("%Y%m%d")
+    start_date = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y%m%d")
+
+    logger.info("开始下载 ETF 行情 (%s ~ %s)，共 %d 只: %s", start_date, end_date, len(etf_codes), etf_codes)
+
+    all_dfs: list[pd.DataFrame] = []
+    for code in etf_codes:
+        df = await asyncio.to_thread(
+            _sync_fetch_single_etf_hist, code, start_date, end_date
+        )
+        if df is not None:
+            # fund_etf_hist_em 列名与 stock_zh_a_hist 一致，直接复用 _df_to_records
+            all_dfs.append(df)
+        await asyncio.sleep(REQUEST_INTERVAL)
+
+    if not all_dfs:
+        logger.warning("未获取到任何 ETF 数据")
+        return pd.DataFrame()
+
+    combined = pd.concat(all_dfs, ignore_index=True)
+    combined = clean_data(combined)
+
+    if not combined.empty:
+        await save_to_db(combined)
+        logger.info("ETF 行情已写入 DB，共 %d 条记录", len(combined))
+
+    return combined
+
+
+async def fetch_sandbox_etf_quotes() -> int:
+    """从观察池中找出所有 ETF 标的，获取其最新行情并写入 DB。
+
+    Returns:
+        更新的 ETF 行情记录数
+    """
+    from app.models.sandbox import SandboxStock
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(SandboxStock.ts_code).where(
+                SandboxStock.status.in_(["watching", "holding"])
+            )
+        )
+        all_codes = [row[0] for row in result.all()]
+
+    etf_codes = [c for c in all_codes if is_etf(c)]
+
+    if not etf_codes:
+        logger.info("观察池中无 ETF 标的，跳过")
+        return 0
+
+    df = await fetch_etf_hist(etf_codes, lookback_days=30)
+    return len(df)
 
 
 # ============================================================

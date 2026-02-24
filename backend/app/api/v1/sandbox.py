@@ -267,6 +267,7 @@ async def sandbox_stock_list(
         # 计算持仓比例（持仓市值 / 总资产）
         position_pct = 0.0
         if int(net_shares) > 0:
+            # 优先行情表收盘价
             price_result = await db.execute(
                 select(StockDailyQuote.close)
                 .where(StockDailyQuote.ts_code == s.ts_code)
@@ -274,6 +275,17 @@ async def sandbox_stock_list(
                 .limit(1)
             )
             close_price = price_result.scalar()
+            # 回退到最近交易价格（ETF 等无行情数据的标的）
+            if close_price is None:
+                fb = await db.execute(
+                    select(SandboxTrade.price)
+                    .where(SandboxTrade.ts_code == s.ts_code)
+                    .order_by(desc(SandboxTrade.trade_date), desc(SandboxTrade.id))
+                    .limit(1)
+                )
+                close_price = fb.scalar()
+                if close_price:
+                    close_price = float(close_price)
             if close_price and total_assets > 0:
                 market_val = float(close_price) * int(net_shares)
                 position_pct = round(market_val / total_assets * 100, 1)
@@ -640,11 +652,12 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
 
     cash = INITIAL_CAPITAL - cash_flow  # 当前现金 = 初始资金 - 买入 + 卖出
 
-    # 取收盘价（优先取 calc_date，若无则取最近交易日）
+    # 取收盘价（优先 stock_daily_quote → 回退到最近交易价格）
     total_market_value = Decimal("0")
     for code, shares in positions.items():
         if shares <= 0:
             continue
+        # 1. 优先从行情表取收盘价
         price_result = await db.execute(
             select(StockDailyQuote.close)
             .where(
@@ -655,6 +668,23 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
             .limit(1)
         )
         close_price = price_result.scalar()
+
+        # 2. 行情表无数据（如 ETF），回退用最近一笔交易价格
+        if close_price is None:
+            fallback_result = await db.execute(
+                select(SandboxTrade.price)
+                .where(
+                    SandboxTrade.ts_code == code,
+                    SandboxTrade.trade_date <= calc_date,
+                )
+                .order_by(desc(SandboxTrade.trade_date), desc(SandboxTrade.id))
+                .limit(1)
+            )
+            fallback_price = fallback_result.scalar()
+            if fallback_price:
+                close_price = float(fallback_price)
+                logger.info("NAV: %s no quote data, using trade price %.2f", code, close_price)
+
         if close_price:
             total_market_value += Decimal(str(close_price)) * shares
 
@@ -712,6 +742,16 @@ async def compute_nav(
     5. NAV = 当天总资产 / 初始总资产
     """
     calc_date = target_date or date.today()
+
+    # 先更新 ETF 行情，确保计算使用最新数据
+    try:
+        from app.services.data_fetcher import fetch_sandbox_etf_quotes
+        etf_count = await fetch_sandbox_etf_quotes()
+        if etf_count > 0:
+            logger.info("NAV compute: ETF 行情已更新 %d 条", etf_count)
+    except Exception as etf_err:
+        logger.warning("NAV compute: ETF 行情更新失败（不影响计算）: %s", etf_err)
+
     result = await _compute_nav_core(db, calc_date)
     if result is None:
         return {
