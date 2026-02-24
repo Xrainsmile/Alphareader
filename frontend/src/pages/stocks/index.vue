@@ -276,8 +276,15 @@
           v-for="item in sbStocks"
           :key="item.id"
           class="sb-stock-card"
+          :class="{ 'sb-card-highlight': isHoldingRetain(item) }"
           @click="goToDetail(item.id)"
         >
+          <!-- 持仓+留存 特殊标识条 -->
+          <view v-if="isHoldingRetain(item)" class="sb-highlight-bar">
+            <text class="sb-highlight-icon">●</text>
+            <text class="sb-highlight-text">持仓中</text>
+          </view>
+
           <!-- 头部: 名称 + 状态 -->
           <view class="sb-card-top">
             <view class="sb-card-name-row">
@@ -311,7 +318,10 @@
           </template>
 
           <view v-if="item.position_pct > 0" class="sb-card-bottom">
-            <text class="sb-shares">持仓比例 {{ item.position_pct }}%</text>
+            <view class="sb-position-bar-wrap">
+              <view class="sb-position-bar" :style="{ width: item.position_pct + '%' }"></view>
+            </view>
+            <text class="sb-shares">持仓 {{ item.position_pct }}%</text>
           </view>
 
           <view class="sb-card-arrow">
@@ -429,6 +439,11 @@ let sbLoaded = false
 const statusLabel = (s) => ({ holding: '持仓', watching: '观察', exited: '退出' }[s] || s)
 
 const disciplineLabel = (d) => ({ retain: '留存', gray: '灰度', research: '用研', churn: '流失' }[d] || d)
+
+const isHoldingRetain = (item) => {
+  const action = item.latest_analysis ? item.latest_analysis.discipline_action : 'retain'
+  return item.status === 'holding' && action === 'retain'
+}
 
 const scoreClass = (score) => {
   if (score >= 4) return 'sb-score-high'
@@ -971,6 +986,47 @@ const onOpenIcp = () => {
 .sb-card-bottom { margin-top: 10rpx; }
 .sb-shares { font-size: 22rpx; color: #8c8c9a; }
 
+/* 持仓比例进度条 */
+.sb-position-bar-wrap {
+  height: 6rpx;
+  background: #f0f0f2;
+  border-radius: 3rpx;
+  overflow: hidden;
+  margin-bottom: 8rpx;
+}
+.sb-position-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  border-radius: 3rpx;
+  min-width: 4rpx;
+  transition: width 0.3s ease;
+}
+
+/* 持仓+留存 高亮卡片 */
+.sb-card-highlight {
+  border: 2rpx solid #3b82f6;
+  background: linear-gradient(180deg, #f0f7ff 0%, #ffffff 40%);
+  box-shadow: 0 2rpx 16rpx rgba(59, 130, 246, 0.12);
+}
+.sb-highlight-bar {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-bottom: 12rpx;
+  padding-bottom: 10rpx;
+}
+.sb-highlight-icon {
+  font-size: 16rpx;
+  color: #3b82f6;
+  animation: pulse 1.5s infinite;
+}
+.sb-highlight-text {
+  font-size: 22rpx;
+  color: #3b82f6;
+  font-weight: 600;
+  letter-spacing: 1rpx;
+}
+
 .sb-card-arrow {
   position: absolute;
   right: 24rpx;
@@ -1093,6 +1149,11 @@ const onOpenIcp = () => {
   .sb-disc-text { font-size: 12px; }
   .sb-analysis-date { font-size: 12px; }
   .sb-shares { font-size: 12px; }
+  .sb-position-bar-wrap { height: 4px; margin-bottom: 6px; }
+  .sb-card-highlight { border-width: 1px; }
+  .sb-highlight-bar { margin-bottom: 8px; padding-bottom: 8px; gap: 5px; }
+  .sb-highlight-icon { font-size: 9px; }
+  .sb-highlight-text { font-size: 12px; }
   .arrow-icon { font-size: 22px; }
 
   .site-footer { padding: 32px 0 48px; gap: 6px; }

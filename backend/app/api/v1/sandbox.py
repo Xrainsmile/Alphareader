@@ -230,15 +230,9 @@ async def sandbox_stock_list(
     result = await db.execute(query)
     stocks = result.scalars().all()
 
-    # 获取最新总资产用于计算持仓比例
-    latest_nav_result = await db.execute(
-        select(SandboxNav).order_by(desc(SandboxNav.trade_date)).limit(1)
-    )
-    latest_nav_row = latest_nav_result.scalar_one_or_none()
-    total_assets = (
-        float(latest_nav_row.total_market_value) + float(latest_nav_row.cash)
-        if latest_nav_row else float(INITIAL_CAPITAL)
-    )
+    # 实时计算总资产（避免依赖可能过时的 SandboxNav 快照）
+    nav_data = await _compute_nav_core(db, date.today())
+    total_assets = nav_data["total_assets"] if nav_data else float(INITIAL_CAPITAL)
 
     items = []
     for s in stocks:
