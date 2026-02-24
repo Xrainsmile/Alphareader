@@ -314,6 +314,7 @@ Prompt 输出结构要求：
 | DELETE | `/api/v1/sandbox/admin/stocks/{id}` | 移除观察池股票（管理端） |
 | POST | `/api/v1/sandbox/admin/analyses` | 新增推演记录（管理端） |
 | POST | `/api/v1/sandbox/admin/trades` | 新增交易记录（管理端） |
+| DELETE | `/api/v1/sandbox/admin/trades/{id}` | 撤回交易记录（管理端，重算持仓状态） |
 | POST | `/api/v1/sandbox/nav/compute` | 计算净值（管理端/定时） |
 
 ### GET /api/v1/news/ 参数

@@ -339,6 +339,7 @@ async def sandbox_stock_detail(
         "trades": [
             {
                 "id": t.id,
+                "ts_code": t.ts_code,
                 "action": t.action,
                 "price": float(t.price),
                 "shares": t.shares,
@@ -531,6 +532,46 @@ async def admin_add_trade(
         trade.id, body.action, body.ts_code, body.shares, body.price, body.trade_date, net,
     )
     return {"id": trade.id, "net_shares": net, "stock_status": stock.status}
+
+
+@router.delete("/admin/trades/{trade_id}")
+async def admin_delete_trade(
+    trade_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_admin),
+):
+    """撤回（删除）交易记录，重新计算持仓状态。"""
+    trade = await db.get(SandboxTrade, trade_id)
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+
+    stock_id = trade.stock_id
+    ts_code = trade.ts_code
+
+    # 删除该交易
+    await db.delete(trade)
+    await db.flush()
+
+    # 重新计算该股票净持仓
+    remaining_result = await db.execute(
+        select(SandboxTrade).where(SandboxTrade.stock_id == stock_id)
+    )
+    remaining = remaining_result.scalars().all()
+    net = sum(t.shares if t.action == "buy" else -t.shares for t in remaining)
+
+    # 更新股票状态
+    stock = await db.get(SandboxStock, stock_id)
+    if stock:
+        if net > 0:
+            stock.status = "holding"
+        elif net == 0 and remaining:
+            stock.status = "exited"
+        elif net == 0 and not remaining:
+            stock.status = "watching"
+
+    await db.commit()
+    logger.info("Deleted trade #%d (%s), net_shares=%d", trade_id, ts_code, net)
+    return {"ok": True, "net_shares": net, "stock_status": stock.status if stock else None}
 
 
 # ════════════════════════════════════════════════════════════

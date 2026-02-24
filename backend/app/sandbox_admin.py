@@ -222,8 +222,8 @@ tr:hover td{background:#f8f8fc}
   <div class="card">
     <h3>最近交易记录</h3>
     <table>
-      <thead><tr><th>日期</th><th>代码</th><th>操作</th><th>价格</th><th>股数</th><th>备注</th></tr></thead>
-      <tbody id="tradesBody"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+      <thead><tr><th>日期</th><th>代码</th><th>名称</th><th>操作</th><th>价格</th><th>股数</th><th>备注</th><th>撤回</th></tr></thead>
+      <tbody id="tradesBody"><tr><td colspan="8" class="empty">加载中...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -445,22 +445,37 @@ async function addTrade(){
 }
 
 async function loadTrades(){
-  // 展示所有持仓/观察股票的最近交易
   const body=document.getElementById('tradesBody');
   try{
+    // 构建名称映射
+    const nameMap={};
+    allStocks.forEach(s=>{nameMap[s.ts_code]=s.name});
     let allTrades=[];
     for(const s of allStocks){
-      const d=await api(`/stocks/${s.id}`);
-      if(d.trades) allTrades=allTrades.concat(d.trades.map(t=>({...t,name:s.name})));
+      try{
+        const d=await api(`/stocks/${s.id}`);
+        if(d.trades) allTrades=allTrades.concat(d.trades.map(t=>({...t,name:s.name})));
+      }catch(e){console.warn('loadTrades skip',s.ts_code,e)}
     }
     allTrades.sort((a,b)=>b.trade_date.localeCompare(a.trade_date));
-    if(!allTrades.length){body.innerHTML='<tr><td colspan="6" class="empty">暂无交易</td></tr>';return;}
+    if(!allTrades.length){body.innerHTML='<tr><td colspan="8" class="empty">暂无交易</td></tr>';return;}
     body.innerHTML=allTrades.slice(0,20).map(t=>`<tr>
-      <td>${t.trade_date}</td><td>${t.ts_code||''}</td>
+      <td>${t.trade_date}</td><td>${t.ts_code||''}</td><td>${t.name||nameMap[t.ts_code]||''}</td>
       <td><span class="badge badge-${t.action}">${t.action==='buy'?'买入':'卖出'}</span></td>
       <td>${t.price}</td><td>${t.shares}</td><td>${t.note||'-'}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteTrade(${t.id},'${t.ts_code}')">撤回</button></td>
     </tr>`).join('');
-  }catch(e){body.innerHTML='<tr><td colspan="6" class="empty">加载失败</td></tr>'}
+  }catch(e){body.innerHTML='<tr><td colspan="8" class="empty">加载失败</td></tr>'}
+}
+
+async function deleteTrade(id,code){
+  if(!confirm(`确认撤回 ${code} 的交易记录 #${id}？撤回后持仓和净值将重新计算。`)) return;
+  try{
+    await api(`/admin/trades/${id}`,{method:'DELETE'});
+    showToast('交易已撤回');
+    loadTrades();
+    loadStocks();
+  }catch(e){showToast(e.message,false)}
 }
 
 // ── NAV ──
