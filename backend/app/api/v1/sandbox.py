@@ -738,7 +738,7 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
     """
     from app.models.stock import StockDailyQuote
     from sqlalchemy.dialects.postgresql import insert as pg_insert
-    from app.services.data_fetcher import get_realtime_prices, is_etf
+    from app.services.data_fetcher import get_realtime_prices, get_unadjusted_close, is_etf
 
     # 所有交易
     trades_result = await db.execute(
@@ -778,7 +778,19 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
             if realtime_prices:
                 logger.info("NAV: 已获取 %d/%d 只持仓的实时行情", len(realtime_prices), len(holding_codes))
         except Exception as e:
-            logger.warning("NAV: 实时行情获取失败，回退到行情表: %s", e)
+            logger.warning("NAV: 实时行情获取失败: %s", e)
+
+        # 对于实时行情未覆盖的股票，用 akshare 逐只获取不复权收盘价补全
+        missing_codes = [c for c in holding_codes if c not in realtime_prices]
+        if missing_codes:
+            logger.info("NAV: %d 只持仓缺少实时行情，尝试获取不复权收盘价: %s", len(missing_codes), missing_codes)
+            try:
+                unadj_prices = await get_unadjusted_close(missing_codes)
+                if unadj_prices:
+                    realtime_prices.update(unadj_prices)
+                    logger.info("NAV: 不复权收盘价补全 %d 只: %s", len(unadj_prices), unadj_prices)
+            except Exception as e:
+                logger.warning("NAV: 不复权收盘价获取失败: %s", e)
 
     # 计算持仓市值
     total_market_value = Decimal("0")

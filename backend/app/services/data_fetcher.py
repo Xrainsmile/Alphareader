@@ -488,6 +488,57 @@ def _sync_fetch_spot_prices() -> dict[str, float]:
     return prices
 
 
+def _sync_fetch_unadjusted_close(code: str) -> float | None:
+    """获取单只股票/ETF 的最新不复权收盘价。
+
+    用 adjust="" (不复权) 获取最近 5 个交易日数据，取最新一条的收盘价。
+    仅在实时行情拉取失败时作为 fallback 使用。
+    """
+    import time
+    from datetime import datetime as dt, timedelta as td
+
+    end_date = dt.now().strftime("%Y%m%d")
+    start_date = (dt.now() - td(days=10)).strftime("%Y%m%d")
+
+    for attempt in range(1, 3):
+        try:
+            if is_etf(code):
+                df = ak.fund_etf_hist_em(
+                    symbol=code, period="daily",
+                    start_date=start_date, end_date=end_date,
+                    adjust="",
+                )
+            else:
+                df = ak.stock_zh_a_hist(
+                    symbol=code, period="daily",
+                    start_date=start_date, end_date=end_date,
+                    adjust="",
+                )
+            if df is not None and not df.empty:
+                close = df.iloc[-1].get("收盘")
+                if close is not None and float(close) > 0:
+                    return float(close)
+            return None
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(0.3)
+            else:
+                logger.warning("获取 %s 不复权收盘价失败: %s", code, e)
+                return None
+    return None
+
+
+async def get_unadjusted_close(codes: list[str]) -> dict[str, float]:
+    """批量获取不复权收盘价（逐只获取，仅对少量持仓使用）。"""
+    result: dict[str, float] = {}
+    for code in codes:
+        price = await asyncio.to_thread(_sync_fetch_unadjusted_close, code)
+        if price is not None:
+            result[code] = price
+        await asyncio.sleep(0.2)
+    return result
+
+
 async def get_realtime_prices(codes: list[str], timeout: float = 30.0) -> dict[str, float]:
     """获取指定代码列表的实时不复权价格。
 
