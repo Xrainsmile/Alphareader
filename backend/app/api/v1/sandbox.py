@@ -638,7 +638,7 @@ async def admin_add_trade(
     if net > 0:
         stock.status = "holding"
     elif net == 0 and body.action == "sell":
-        stock.status = "exited"
+        stock.status = "watching"
 
     await db.commit()
     await db.refresh(trade)
@@ -679,9 +679,7 @@ async def admin_delete_trade(
     if stock:
         if net > 0:
             stock.status = "holding"
-        elif net == 0 and remaining:
-            stock.status = "exited"
-        elif net == 0 and not remaining:
+        else:
             stock.status = "watching"
 
     await db.commit()
