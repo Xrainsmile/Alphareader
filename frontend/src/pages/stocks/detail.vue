@@ -143,7 +143,6 @@
           </view>
           <view class="trade-right">
             <text class="trade-price">¥{{ item.price }}</text>
-            <text class="trade-shares">× {{ item.shares }} 股</text>
           </view>
         </view>
       </view>

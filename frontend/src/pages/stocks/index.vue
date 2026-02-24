@@ -310,8 +310,8 @@
             </view>
           </template>
 
-          <view v-if="item.net_shares > 0" class="sb-card-bottom">
-            <text class="sb-shares">持仓 {{ item.net_shares }} 股</text>
+          <view v-if="item.position_pct > 0" class="sb-card-bottom">
+            <text class="sb-shares">持仓比例 {{ item.position_pct }}%</text>
           </view>
 
           <view class="sb-card-arrow">

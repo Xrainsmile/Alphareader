@@ -222,11 +222,23 @@ async def sandbox_stock_list(
     db: AsyncSession = Depends(get_db),
 ):
     """观察池列表，附最新一条推演摘要。支持按 discipline_action 筛选。"""
+    from app.models.stock import StockDailyQuote
+
     query = select(SandboxStock).order_by(desc(SandboxStock.updated_at))
     if status:
         query = query.where(SandboxStock.status == status)
     result = await db.execute(query)
     stocks = result.scalars().all()
+
+    # 获取最新总资产用于计算持仓比例
+    latest_nav_result = await db.execute(
+        select(SandboxNav).order_by(desc(SandboxNav.trade_date)).limit(1)
+    )
+    latest_nav_row = latest_nav_result.scalar_one_or_none()
+    total_assets = (
+        float(latest_nav_row.total_market_value) + float(latest_nav_row.cash)
+        if latest_nav_row else float(INITIAL_CAPITAL)
+    )
 
     items = []
     for s in stocks:
@@ -258,13 +270,27 @@ async def sandbox_stock_list(
         )
         net_shares = trade_result.scalar() or 0
 
+        # 计算持仓比例（持仓市值 / 总资产）
+        position_pct = 0.0
+        if int(net_shares) > 0:
+            price_result = await db.execute(
+                select(StockDailyQuote.close)
+                .where(StockDailyQuote.ts_code == s.ts_code)
+                .order_by(desc(StockDailyQuote.trade_date))
+                .limit(1)
+            )
+            close_price = price_result.scalar()
+            if close_price and total_assets > 0:
+                market_val = float(close_price) * int(net_shares)
+                position_pct = round(market_val / total_assets * 100, 1)
+
         items.append({
             "id": s.id,
             "ts_code": s.ts_code,
             "name": s.name,
             "status": s.status,
             "reason": s.reason,
-            "net_shares": int(net_shares),
+            "position_pct": position_pct,
             "added_at": s.added_at.isoformat() if s.added_at else None,
             "latest_analysis": {
                 "id": la.id,
