@@ -136,12 +136,14 @@ export function fetchSandboxOverview(days = 90) {
 /**
  * 观察池列表
  */
-export function fetchSandboxStocks(status = '', discipline = '') {
+export function fetchSandboxStocks(status = '', discipline = '', q = '', holdingOnly = false) {
   const params = []
   if (status) params.push(`status=${status}`)
   if (discipline) params.push(`discipline=${discipline}`)
-  const q = params.length ? `?${params.join('&')}` : ''
-  return request(`/api/v1/sandbox/stocks${q}`)
+  if (q) params.push(`q=${encodeURIComponent(q)}`)
+  if (holdingOnly) params.push(`holding_only=true`)
+  const qs = params.length ? `?${params.join('&')}` : ''
+  return request(`/api/v1/sandbox/stocks${qs}`)
 }
 
 /**

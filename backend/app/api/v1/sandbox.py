@@ -180,6 +180,76 @@ async def sandbox_overview(
     ytd_start = date(today.year, 1, 1)
     pnl_ytd = _calc_return(all_navs, ytd_start)
 
+    # ── 持仓标的仓位分布（供环状图使用）──
+    holdings_result = await db.execute(
+        select(SandboxStock).where(SandboxStock.status == "holding")
+    )
+    holding_stocks = holdings_result.scalars().all()
+
+    from app.models.stock import StockDailyQuote
+
+    holdings_data = []
+    for hs in holding_stocks:
+        # 计算净持仓
+        ht_result = await db.execute(
+            select(
+                func.sum(
+                    case(
+                        (SandboxTrade.action == "buy", SandboxTrade.shares),
+                        else_=-SandboxTrade.shares,
+                    )
+                )
+            ).where(SandboxTrade.stock_id == hs.id)
+        )
+        net_shares = ht_result.scalar() or 0
+        if int(net_shares) <= 0:
+            continue
+
+        # 取收盘价
+        hp_result = await db.execute(
+            select(StockDailyQuote.close)
+            .where(StockDailyQuote.ts_code == hs.ts_code)
+            .order_by(desc(StockDailyQuote.trade_date))
+            .limit(1)
+        )
+        close_price = hp_result.scalar()
+        if close_price is None:
+            fb = await db.execute(
+                select(SandboxTrade.price)
+                .where(SandboxTrade.ts_code == hs.ts_code)
+                .order_by(desc(SandboxTrade.trade_date), desc(SandboxTrade.id))
+                .limit(1)
+            )
+            close_price = fb.scalar()
+        if close_price:
+            mv = float(close_price) * int(net_shares)
+            holdings_data.append({
+                "name": hs.name,
+                "ts_code": hs.ts_code,
+                "market_value": round(mv, 2),
+            })
+
+    # 计算各标的仓位百分比
+    total_mv_holdings = sum(h["market_value"] for h in holdings_data)
+    cash_val = float(latest_nav.cash) if latest_nav else float(INITIAL_CAPITAL)
+    pie_total = total_mv_holdings + cash_val
+    holdings_pie = []
+    for h in sorted(holdings_data, key=lambda x: x["market_value"], reverse=True):
+        pct = round(h["market_value"] / pie_total * 100, 1) if pie_total > 0 else 0
+        holdings_pie.append({
+            "name": h["name"],
+            "ts_code": h["ts_code"],
+            "market_value": h["market_value"],
+            "pct": pct,
+        })
+    cash_pct = round(cash_val / pie_total * 100, 1) if pie_total > 0 else 100
+    holdings_pie.append({
+        "name": "现金",
+        "ts_code": "",
+        "market_value": round(cash_val, 2),
+        "pct": cash_pct,
+    })
+
     return {
         "nav_series": [
             {
@@ -212,6 +282,7 @@ async def sandbox_overview(
             "pnl_3m": pnl_3m,
             "pnl_ytd": pnl_ytd,
         },
+        "holdings_pie": holdings_pie,
     }
 
 
@@ -219,14 +290,23 @@ async def sandbox_overview(
 async def sandbox_stock_list(
     status: str | None = Query(None, pattern=r"^(watching|holding|exited)$"),
     discipline: str | None = Query(None, pattern=r"^(retain|gray|research|churn)$"),
+    q: str | None = Query(None, max_length=20, description="搜索：代码或名称"),
+    holding_only: bool = Query(False, description="仅显示持仓票"),
     db: AsyncSession = Depends(get_db),
 ):
-    """观察池列表，附最新一条推演摘要。支持按 discipline_action 筛选。"""
+    """观察池列表，附最新一条推演摘要。支持按 discipline_action 筛选、搜索、仅持仓。"""
     from app.models.stock import StockDailyQuote
 
     query = select(SandboxStock).order_by(desc(SandboxStock.updated_at))
     if status:
         query = query.where(SandboxStock.status == status)
+    if holding_only:
+        query = query.where(SandboxStock.status == "holding")
+    if q:
+        keyword = f"%{q.strip()}%"
+        query = query.where(
+            (SandboxStock.ts_code.ilike(keyword)) | (SandboxStock.name.ilike(keyword))
+        )
     result = await db.execute(query)
     stocks = result.scalars().all()
 

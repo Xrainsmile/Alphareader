@@ -220,6 +220,48 @@
         </view>
       </view>
 
+      <!-- 持仓分布环状图 -->
+      <view v-if="holdingsPie.length > 1" class="sb-pie-card">
+        <view class="sb-pie-header">
+          <text class="sb-pie-title">持仓分布</text>
+          <text class="sb-pie-sub">仓位 {{ sbSummary.position_pct || 0 }}%</text>
+        </view>
+        <view class="sb-pie-body">
+          <!-- #ifdef H5 -->
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" class="sb-pie-svg">
+            <circle cx="100" cy="100" r="70" fill="none" stroke="#f0f2f5" stroke-width="28" />
+            <circle
+              v-for="(seg, i) in pieSegments"
+              :key="i"
+              cx="100" cy="100" r="70"
+              fill="none"
+              :stroke="seg.color"
+              stroke-width="28"
+              :stroke-dasharray="seg.dash"
+              :stroke-dashoffset="seg.offset"
+              stroke-linecap="round"
+              style="transition: stroke-dasharray 0.5s, stroke-dashoffset 0.5s"
+            />
+            <text x="100" y="94" text-anchor="middle" font-size="22" font-weight="800" fill="#1a1a2e">
+              {{ sbSummary.holding_count || 0 }}
+            </text>
+            <text x="100" y="116" text-anchor="middle" font-size="11" fill="#8c8c9a">只持仓</text>
+          </svg>
+          <!-- #endif -->
+          <view class="sb-pie-legend">
+            <view
+              v-for="(item, i) in holdingsPie"
+              :key="i"
+              class="sb-legend-item"
+            >
+              <view class="sb-legend-dot" :style="{ background: pieColors[i % pieColors.length] }"></view>
+              <text class="sb-legend-name">{{ item.name }}</text>
+              <text class="sb-legend-pct">{{ item.pct }}%</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
       <!-- 观察池快照 -->
       <view class="sb-snapshot">
         <view class="sb-snapshot-header">
@@ -258,6 +300,29 @@
           >
             <text class="sb-tag-label">流失 Churn</text>
             <text class="sb-tag-num">{{ sbSummary.churn_count || 0 }}支</text>
+          </view>
+        </view>
+
+        <!-- 筛选 + 搜索栏 -->
+        <view class="sb-filter-bar">
+          <view
+            class="sb-filter-chip"
+            :class="{ 'sb-filter-chip-active': sbHoldingOnly }"
+            @click="toggleHoldingOnly"
+          >
+            <text class="sb-filter-chip-text">持仓票</text>
+          </view>
+          <view class="sb-search-wrap">
+            <text class="sb-search-icon">🔍</text>
+            <input
+              class="sb-search-input"
+              type="text"
+              placeholder="代码 / 名称"
+              :value="sbSearchQuery"
+              @input="onSbSearchInput"
+              @confirm="onSbSearchConfirm"
+            />
+            <text v-if="sbSearchQuery" class="sb-search-clear" @click="onSbClearSearch">✕</text>
           </view>
         </view>
       </view>
@@ -433,8 +498,33 @@ const sbLoading = ref(false)
 const sbStocks = ref([])
 const sbSummary = ref({})
 const navSeries = ref([])
+const holdingsPie = ref([])
 const sbFilter = ref('')
+const sbHoldingOnly = ref(false)
+const sbSearchQuery = ref('')
 let sbLoaded = false
+
+// 环状图配色
+const pieColors = ['#3b82f6', '#f59e0b', '#22c55e', '#a855f7', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#d0d0d8']
+
+// 环状图弧段计算（纯 SVG stroke-dasharray 实现）
+const pieSegments = computed(() => {
+  const data = holdingsPie.value
+  if (!data || data.length === 0) return []
+  const circumference = 2 * Math.PI * 70 // r=70
+  const gap = 3 // 间隙
+  let offset = circumference * 0.25 // 从 12 点钟方向开始
+  return data.map((item, i) => {
+    const arc = (item.pct / 100) * circumference - gap
+    const seg = {
+      color: pieColors[i % pieColors.length],
+      dash: `${Math.max(arc, 0)} ${circumference}`,
+      offset: -offset,
+    }
+    offset += (item.pct / 100) * circumference
+    return seg
+  })
+})
 
 const statusLabel = (s) => ({ holding: '持仓', watching: '观察', exited: '退出' }[s] || s)
 
@@ -454,6 +544,11 @@ const scoreClass = (score) => {
 const formatShortDate = (iso) => {
   if (!iso) return ''
   const d = new Date(iso)
+  const now = new Date()
+  const isToday = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+  if (isToday) {
+    return `今天 ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
@@ -472,6 +567,15 @@ const toggleDisciplineFilter = (action) => {
   loadSandboxStocks()
 }
 
+const toggleHoldingOnly = () => {
+  sbHoldingOnly.value = !sbHoldingOnly.value
+  loadSandboxStocks()
+}
+
+const onSbSearchInput = (e) => { sbSearchQuery.value = e.detail.value }
+const onSbSearchConfirm = () => { loadSandboxStocks() }
+const onSbClearSearch = () => { sbSearchQuery.value = ''; loadSandboxStocks() }
+
 const switchToSandbox = () => {
   activeTab.value = 'sandbox'
   if (!sbLoaded) {
@@ -485,10 +589,11 @@ const loadSandboxData = async () => {
   try {
     const [overview, stocks] = await Promise.all([
       fetchSandboxOverview(90),
-      apiFetchSandboxStocks('', sbFilter.value),
+      apiFetchSandboxStocks('', sbFilter.value, sbSearchQuery.value, sbHoldingOnly.value),
     ])
     sbSummary.value = overview.summary || {}
     navSeries.value = overview.nav_series || []
+    holdingsPie.value = overview.holdings_pie || []
     sbStocks.value = stocks.items || []
   } catch (e) {
     console.error('加载模拟仓失败:', e)
@@ -499,7 +604,7 @@ const loadSandboxData = async () => {
 
 const loadSandboxStocks = async () => {
   try {
-    const data = await apiFetchSandboxStocks('', sbFilter.value)
+    const data = await apiFetchSandboxStocks('', sbFilter.value, sbSearchQuery.value, sbHoldingOnly.value)
     sbStocks.value = data.items || []
   } catch (e) {
     console.error(e)
@@ -873,6 +978,91 @@ const onOpenIcp = () => {
 .sb-snapshot {
   margin-top: 24rpx; padding: 0 4rpx;
 }
+
+/* ── 持仓分布环状图 ── */
+.sb-pie-card {
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 24rpx 28rpx;
+  margin-top: 24rpx;
+  box-shadow: 0 2rpx 16rpx rgba(0, 0, 0, 0.05);
+}
+.sb-pie-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20rpx;
+}
+.sb-pie-title { font-size: 30rpx; font-weight: 700; color: #1a1a2e; }
+.sb-pie-sub { font-size: 22rpx; color: #8c8c9a; font-weight: 500; }
+.sb-pie-body {
+  display: flex; align-items: center; gap: 28rpx;
+}
+.sb-pie-svg {
+  width: 240rpx; height: 240rpx; flex-shrink: 0;
+}
+.sb-pie-legend {
+  flex: 1; display: flex; flex-direction: column; gap: 12rpx;
+}
+.sb-legend-item {
+  display: flex; align-items: center; gap: 10rpx;
+}
+.sb-legend-dot {
+  width: 16rpx; height: 16rpx; border-radius: 4rpx; flex-shrink: 0;
+}
+.sb-legend-name {
+  font-size: 24rpx; color: #4a4a5a; flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sb-legend-pct {
+  font-size: 24rpx; color: #1a1a2e; font-weight: 700;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+}
+
+/* ── 筛选+搜索栏 ── */
+.sb-filter-bar {
+  display: flex; align-items: center; gap: 12rpx;
+  margin-top: 16rpx;
+}
+.sb-filter-chip {
+  padding: 12rpx 24rpx;
+  border-radius: 32rpx;
+  background: #f5f7fa;
+  border: 2rpx solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.sb-filter-chip-active {
+  background: #1a1a2e; border-color: #1a1a2e;
+}
+.sb-filter-chip-text {
+  font-size: 24rpx; font-weight: 600; color: #6a6a7a;
+}
+.sb-filter-chip-active .sb-filter-chip-text {
+  color: #ffffff;
+}
+.sb-search-wrap {
+  flex: 1;
+  display: flex; align-items: center; gap: 8rpx;
+  background: #f5f7fa;
+  border-radius: 32rpx;
+  padding: 10rpx 20rpx;
+  border: 2rpx solid transparent;
+  transition: border-color 0.2s;
+}
+.sb-search-wrap:focus-within {
+  border-color: #3b82f6;
+}
+.sb-search-icon {
+  font-size: 24rpx; flex-shrink: 0;
+}
+.sb-search-input {
+  flex: 1; font-size: 24rpx; color: #1a1a2e; background: transparent;
+  border: none; outline: none;
+}
+.sb-search-clear {
+  font-size: 24rpx; color: #b0b0be; cursor: pointer; flex-shrink: 0;
+  padding: 0 4rpx;
+}
 .sb-snapshot-header {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 16rpx;
@@ -1132,6 +1322,26 @@ const onOpenIcp = () => {
   .sb-tag { padding: 14px 12px; border-radius: 10px; }
   .sb-tag-label { font-size: 12px; }
   .sb-tag-num { font-size: 22px; }
+
+  /* 持仓分布环状图 PC */
+  .sb-pie-card { padding: 18px 22px; border-radius: 14px; margin-top: 18px; }
+  .sb-pie-title { font-size: 16px; }
+  .sb-pie-sub { font-size: 12px; }
+  .sb-pie-body { gap: 20px; }
+  .sb-pie-svg { width: 140px; height: 140px; }
+  .sb-pie-legend { gap: 8px; }
+  .sb-legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+  .sb-legend-name { font-size: 13px; }
+  .sb-legend-pct { font-size: 13px; }
+
+  /* 筛选搜索栏 PC */
+  .sb-filter-bar { gap: 8px; margin-top: 12px; }
+  .sb-filter-chip { padding: 7px 16px; border-radius: 20px; border-width: 1px; }
+  .sb-filter-chip-text { font-size: 13px; }
+  .sb-search-wrap { padding: 7px 14px; border-radius: 20px; border-width: 1px; gap: 6px; }
+  .sb-search-icon { font-size: 13px; }
+  .sb-search-input { font-size: 13px; }
+  .sb-search-clear { font-size: 13px; }
 
   .sb-stock-list { margin-top: 12px; }
   .sb-stock-card { padding: 18px; margin-bottom: 10px; border-radius: 12px; transition: box-shadow 0.15s; }
