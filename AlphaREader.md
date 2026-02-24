@@ -505,7 +505,7 @@ final_score = ts_rank_cd(文本相关度) × ln(ai_score + 1) × 1/(hours+2)^0.5
 | `total_pnl` | Float | 累计盈亏% |
 | `created_at` | DateTime(tz) | 创建时间 |
 
-- 初始资金：61,908.99 元（用于 NAV 计算基准）
+- 初始现金：61,908.99 元（持仓市值按最新价格计算）
 
 ### 关键索引
 - `ix_news_created_score`: `(created_at DESC, ai_score DESC)` — 热门查询

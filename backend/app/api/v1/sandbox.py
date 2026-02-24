@@ -128,6 +128,7 @@ async def sandbox_overview(
 
     # 仓位 = market_value / (market_value + cash) * 100
     position_pct = 0.0
+    total_assets = float(INITIAL_CAPITAL)
     if latest_nav:
         total_assets = float(latest_nav.total_market_value) + float(latest_nav.cash)
         if total_assets > 0:
@@ -187,12 +188,14 @@ async def sandbox_overview(
                 "total_pnl": round(float(n.total_pnl), 2),
                 "market_value": float(n.total_market_value),
                 "cash": float(n.cash),
+                "total_assets": round(float(n.total_market_value) + float(n.cash), 2),
             }
             for n in nav_rows
         ],
         "summary": {
             "latest_nav": round(float(latest_nav.nav), 4) if latest_nav else 1.0,
             "total_pnl": round(float(latest_nav.total_pnl), 2) if latest_nav else 0.0,
+            "total_assets": round(total_assets, 2),
             "daily_pnl": daily_pnl,
             "position_pct": position_pct,
             "holding_count": counts.holding,
@@ -534,7 +537,7 @@ async def admin_add_trade(
 # NAV 计算
 # ════════════════════════════════════════════════════════════
 
-INITIAL_CAPITAL = Decimal("61908.99")  # 61,908.99 元虚拟初始资金
+INITIAL_CAPITAL = Decimal("61908.99")  # 61,908.99 元虚拟初始现金
 
 
 async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
@@ -619,6 +622,7 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
         "total_pnl": total_pnl,
         "market_value": float(total_market_value),
         "cash": float(cash),
+        "total_assets": round(float(total_market_value + cash), 2),
     }
 
 
@@ -640,5 +644,12 @@ async def compute_nav(
     calc_date = target_date or date.today()
     result = await _compute_nav_core(db, calc_date)
     if result is None:
-        return {"date": str(calc_date), "nav": 1.0, "message": "No trades yet"}
+        return {
+            "date": str(calc_date),
+            "nav": 1.0,
+            "market_value": 0.0,
+            "cash": float(INITIAL_CAPITAL),
+            "total_assets": float(INITIAL_CAPITAL),
+            "message": "No trades yet",
+        }
     return result
