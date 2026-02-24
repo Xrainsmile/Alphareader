@@ -318,12 +318,15 @@ async def sandbox_stock_list(
     holding_only: bool = Query(False, description="仅显示持仓票"),
     db: AsyncSession = Depends(get_db),
 ):
-    """观察池列表，附最新一条推演摘要。支持按 discipline_action 筛选、搜索、仅持仓。"""
+    """观察池列表，附最新一条推演摘要。支持按 discipline_action 筛选、搜索、仅持仓。
+    默认排除已退出(exited)的股票，除非显式传入 status=exited。"""
     from app.models.stock import StockDailyQuote
 
     query = select(SandboxStock).order_by(desc(SandboxStock.updated_at))
     if status:
         query = query.where(SandboxStock.status == status)
+    else:
+        query = query.where(SandboxStock.status != "exited")
     if holding_only:
         query = query.where(SandboxStock.status == "holding")
     if q:
