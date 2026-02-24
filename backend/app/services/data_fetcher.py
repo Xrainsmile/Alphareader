@@ -354,7 +354,9 @@ async def get_all_stock_data(force_refresh: bool = False) -> pd.DataFrame:
     流程：
       1. 检查 PostgreSQL 是否已有当天数据
       2. 若有效则直接从数据库加载返回
-      3. 否则在线获取 → 清洗 → 写入 PostgreSQL → 返回
+      3. 否则尝试 akshare 在线获取
+      4. akshare 失败则降级到腾讯财经 API
+      5. 清洗 → 写入 PostgreSQL → 返回
 
     Args:
         force_refresh: 为 True 时强制重新下载，忽略缓存。
@@ -367,8 +369,32 @@ async def get_all_stock_data(force_refresh: bool = False) -> pd.DataFrame:
             logger.info("当天数据已存在，从 PostgreSQL 加载")
             return await load_from_db()
 
-    stock_list = await fetch_stock_list()
-    raw_data = await fetch_all_stocks_hist(stock_list)
+    # 方式 1：akshare
+    raw_data = pd.DataFrame()
+    try:
+        stock_list = await fetch_stock_list()
+        raw_data = await fetch_all_stocks_hist(stock_list)
+    except Exception as e:
+        logger.warning("akshare 获取行情失败: %s", e)
+
+    # 方式 2：腾讯财经 API（当 akshare 完全失败或数据过少）
+    if raw_data.empty or raw_data["股票代码"].nunique() < 100:
+        logger.info("akshare 数据不足（%d 只），尝试腾讯财经 API...",
+                     raw_data["股票代码"].nunique() if not raw_data.empty else 0)
+        try:
+            # 从数据库获取已有股票代码列表
+            db_list = await fetch_stock_list_from_db()
+            if not db_list.empty:
+                codes = db_list["代码"].tolist()
+                names = dict(zip(db_list["代码"], db_list["名称"]))
+                tencent_data = await fetch_all_stocks_tencent(codes, names)
+                if not tencent_data.empty:
+                    raw_data = tencent_data
+                    logger.info("腾讯财经 API 获取成功，共 %d 只股票",
+                                tencent_data["股票代码"].nunique())
+        except Exception as e:
+            logger.warning("腾讯财经 API 也失败: %s", e)
+
     clean = clean_data(raw_data)
 
     if not clean.empty:
@@ -491,6 +517,142 @@ async def fetch_sandbox_etf_quotes() -> int:
 # ============================================================
 # 7.5 新浪财经 HTTP 行情（不依赖 akshare，作为 NAV 计算的可靠备选）
 # ============================================================
+
+# ── 腾讯财经代码格式转换 ──
+
+def _tencent_code(code: str) -> str:
+    """将纯数字代码转为腾讯财经格式：sh600000 / sz000001。"""
+    if code.startswith(("6", "5")):
+        return f"sh{code}"
+    return f"sz{code}"
+
+
+def _sync_fetch_tencent_kline(symbol: str, days: int = 320) -> pd.DataFrame | None:
+    """通过腾讯财经 API 获取单只股票的前复权日K线数据。
+
+    API: http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},day,,,{days},qfq
+    返回: [日期, 开盘, 收盘, 最高, 最低, 成交量]
+    """
+    import json
+    import urllib.request
+
+    tc_code = _tencent_code(symbol)
+    url = f"http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={tc_code},day,,,{days},qfq"
+
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            text = resp.read().decode("utf-8")
+        data = json.loads(text)
+
+        # 解析数据：data -> data -> {code} -> qfqday 或 day
+        stock_data = data.get("data", {}).get(tc_code, {})
+        kline = stock_data.get("qfqday") or stock_data.get("day")
+        if not kline:
+            return None
+
+        rows = []
+        for item in kline:
+            # [日期, 开盘, 收盘, 最高, 最低, 成交量]
+            if len(item) >= 6:
+                rows.append({
+                    "日期": item[0],
+                    "开盘": float(item[1]),
+                    "收盘": float(item[2]),
+                    "最高": float(item[3]),
+                    "最低": float(item[4]),
+                    "成交量": float(item[5]),
+                    "股票代码": symbol,
+                })
+
+        if not rows:
+            return None
+
+        df = pd.DataFrame(rows)
+        # 计算涨跌额和涨跌幅
+        df.sort_values("日期", inplace=True)
+        df["涨跌额"] = df["收盘"].diff()
+        df["涨跌幅"] = df["收盘"].pct_change() * 100
+        df["成交额"] = 0.0  # 腾讯 API 不提供成交额
+        df["换手率"] = None
+        df["振幅"] = None
+        return df
+
+    except Exception as e:
+        logger.debug("腾讯K线 %s 失败: %s", symbol, e)
+        return None
+
+
+async def fetch_all_stocks_tencent(stock_codes: list[str], stock_names: dict[str, str] | None = None) -> pd.DataFrame:
+    """通过腾讯财经 API 批量获取日K线数据（作为 akshare 备选）。
+
+    Args:
+        stock_codes: 股票代码列表
+        stock_names: 可选，{代码: 名称} 映射
+
+    Returns:
+        与 akshare 格式兼容的 DataFrame
+    """
+    if stock_names is None:
+        stock_names = {}
+
+    total = len(stock_codes)
+    logger.info("开始通过腾讯财经 API 下载历史行情，共 %d 只股票...", total)
+
+    all_dfs: list[pd.DataFrame] = []
+    for idx, code in enumerate(stock_codes, 1):
+        if idx % 200 == 0:
+            logger.info("腾讯K线下载进度: %d/%d (%.1f%%)", idx, total, idx / total * 100)
+
+        df = await asyncio.to_thread(_sync_fetch_tencent_kline, code, 320)
+        if df is not None:
+            df["名称"] = stock_names.get(code, "")
+            all_dfs.append(df)
+
+        # 腾讯 API 较宽松，间隔可短一些
+        await asyncio.sleep(0.3 + random.uniform(0, 0.2))
+
+    if not all_dfs:
+        logger.error("腾讯财经 API 未获取到任何股票数据")
+        return pd.DataFrame()
+
+    combined = pd.concat(all_dfs, ignore_index=True)
+    logger.info(
+        "腾讯K线合并完成，共 %d 条记录，涉及 %d 只股票",
+        len(combined),
+        combined["股票代码"].nunique(),
+    )
+    return combined
+
+
+def _sync_fetch_stock_list_tencent() -> pd.DataFrame:
+    """通过新浪财经获取 A 股股票列表（作为 akshare stock_zh_a_spot_em 的备选）。
+
+    新浪 hq.sinajs.cn 不适合拿列表，改用腾讯每日行情接口获取。
+    但腾讯也没有直接的列表接口，所以从数据库已有股票中提取。
+    """
+    return pd.DataFrame()  # 占位，实际使用数据库已有代码
+
+
+async def fetch_stock_list_from_db() -> pd.DataFrame:
+    """从数据库中获取已有的股票代码列表（当在线接口不可用时的备选）。"""
+    async with async_session() as session:
+        result = await session.execute(
+            select(StockDailyQuote.ts_code, StockDailyQuote.name)
+            .distinct(StockDailyQuote.ts_code)
+            .order_by(StockDailyQuote.ts_code)
+        )
+        rows = result.all()
+
+    if not rows:
+        return pd.DataFrame(columns=["代码", "名称"])
+
+    data = [{"代码": r[0], "名称": r[1] or ""} for r in rows]
+    df = pd.DataFrame(data)
+    logger.info("从数据库获取到 %d 只股票代码", len(df))
+    return df
 
 def _sina_code(code: str) -> str:
     """将纯数字代码转为新浪财经格式：sh600000 / sz000001 / sh510300。"""
