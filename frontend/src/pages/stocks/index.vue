@@ -160,7 +160,7 @@
       <!-- 净值概览卡 -->
       <view class="sb-hero-card">
         <view class="sb-hero-top">
-          <text class="sb-hero-since">成立于 2026.02.24</text>
+          <text class="sb-hero-since">成立于 2026.02.13</text>
         </view>
         <view class="sb-hero-body">
           <view class="sb-hero-left">

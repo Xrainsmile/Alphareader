@@ -210,7 +210,20 @@ async def compute_and_save_rs_rating(force_refresh: bool = False) -> pd.DataFram
                 return await load_rs_rating(today)
 
     # 获取行情数据 → 计算
-    stock_data = await get_all_stock_data(force_refresh=force_refresh)
+    # 策略：先尝试在线拉取；失败则降级为数据库已有数据
+    stock_data = pd.DataFrame()
+    try:
+        stock_data = await get_all_stock_data(force_refresh=force_refresh)
+    except Exception as e:
+        logger.warning("在线获取行情数据失败: %s，尝试使用数据库已有数据", e)
+
+    if stock_data.empty:
+        logger.info("在线数据为空，降级使用数据库已有行情数据计算 RS Rating")
+        stock_data = await load_from_db()
+        if stock_data.empty:
+            logger.error("数据库中也无行情数据，无法计算 RS Rating")
+            return pd.DataFrame(columns=["ts_code", "name", "trade_date", "rs_rating"])
+
     rating_df = await compute_rs_rating(stock_data)
 
     if rating_df.empty:

@@ -166,7 +166,7 @@ async def sandbox_overview(
         return round((float(latest.nav) - float(base.nav)) / float(base.nav) * 100, 2)
 
     today = date.today()
-    inception_date = date(2026, 2, 24)  # 成立日
+    inception_date = date(2026, 2, 13)  # 成立日
 
     # 成立以来收益率
     pnl_since_inception = _calc_return(all_navs, inception_date) if all_navs else 0.0

@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import random
 from datetime import date, datetime, timedelta
+from itertools import cycle
 
 import akshare as ak
 import pandas as pd
@@ -32,14 +35,55 @@ from app.models.stock import StockDailyQuote
 logger = logging.getLogger("alphareader.data_fetcher")
 
 # ────────── 配置 ──────────
-REQUEST_INTERVAL = 0.1          # 每次请求间隔（秒），防触发反爬
+REQUEST_INTERVAL = 1.5          # 每次请求基础间隔（秒），避免触发反爬
+REQUEST_JITTER = 0.8            # 随机抖动上限（秒），实际间隔 = INTERVAL + random(0, JITTER)
 LOOKBACK_DAYS = 365             # 回溯天数（约 250 个交易日）
 MAX_RETRIES = 3                 # 单只股票最大重试次数
-RETRY_DELAY = 2                 # 重试间隔（秒）
+RETRY_DELAY = 3                 # 重试间隔（秒）
 
 # ETF 代码前缀规则（沪深两市场内 ETF）
 # 上交所: 51xxxx / 56xxxx / 58xxxx  深交所: 15xxxx / 16xxxx
 ETF_PREFIXES = ("51", "56", "58", "15", "16")
+
+
+# ────────── 代理 IP 轮换 ──────────
+# 环境变量 AKSHARE_PROXIES 配置代理列表，逗号分隔
+# 示例: AKSHARE_PROXIES=http://user:pass@proxy1:8080,http://user:pass@proxy2:8080
+# 留空或不设置则不使用代理
+_PROXY_LIST: list[str] = [
+    p.strip() for p in os.environ.get("AKSHARE_PROXIES", "").split(",") if p.strip()
+]
+_proxy_cycle = cycle(_PROXY_LIST) if _PROXY_LIST else None
+
+def _next_proxy() -> dict[str, str] | None:
+    """获取下一个代理地址（轮换），无代理配置时返回 None。"""
+    if _proxy_cycle is None:
+        return None
+    proxy_url = next(_proxy_cycle)
+    return {"http": proxy_url, "https": proxy_url}
+
+def _apply_proxy():
+    """将代理设置注入到环境变量中，akshare 内部使用 requests 库会自动读取。"""
+    proxy = _next_proxy()
+    if proxy:
+        os.environ["HTTP_PROXY"] = proxy["http"]
+        os.environ["HTTPS_PROXY"] = proxy["https"]
+        logger.debug("使用代理: %s", proxy["http"])
+    else:
+        # 无代理时清除，防止残留
+        os.environ.pop("HTTP_PROXY", None)
+        os.environ.pop("HTTPS_PROXY", None)
+
+def _sleep_with_jitter(base: float = REQUEST_INTERVAL):
+    """带随机抖动的休眠，模拟人类行为。"""
+    import time
+    delay = base + random.uniform(0, REQUEST_JITTER)
+    time.sleep(delay)
+
+async def _async_sleep_with_jitter(base: float = REQUEST_INTERVAL):
+    """异步版带随机抖动休眠。"""
+    delay = base + random.uniform(0, REQUEST_JITTER)
+    await asyncio.sleep(delay)
 
 
 # ============================================================
@@ -48,6 +92,7 @@ ETF_PREFIXES = ("51", "56", "58", "15", "16")
 
 def _sync_fetch_stock_list() -> pd.DataFrame:
     """获取当前 A 股所有股票的代码和名称。"""
+    _apply_proxy()
     df = ak.stock_zh_a_spot_em()
     df = df[["代码", "名称"]].copy()
     df.reset_index(drop=True, inplace=True)
@@ -72,10 +117,9 @@ def _sync_fetch_single_stock_hist(
     end_date: str,
 ) -> pd.DataFrame | None:
     """获取单只股票的前复权日线数据，自带重试机制。"""
-    import time
-
     for attempt in range(1, MAX_RETRIES + 1):
         try:
+            _apply_proxy()
             df = ak.stock_zh_a_hist(
                 symbol=symbol,
                 period="daily",
@@ -91,7 +135,7 @@ def _sync_fetch_single_stock_hist(
             return None
         except Exception as e:
             if attempt < MAX_RETRIES:
-                time.sleep(RETRY_DELAY)
+                _sleep_with_jitter(RETRY_DELAY)
             else:
                 logger.warning("%s 经 %d 次重试仍失败: %s", symbol, MAX_RETRIES, e)
                 return None
@@ -124,7 +168,7 @@ async def fetch_all_stocks_hist(stock_list: pd.DataFrame) -> pd.DataFrame:
         if df is not None:
             df["名称"] = names.get(code, "")
             all_dfs.append(df)
-        await asyncio.sleep(REQUEST_INTERVAL)
+        await _async_sleep_with_jitter()
 
     if not all_dfs:
         logger.error("未获取到任何股票数据")
@@ -348,10 +392,9 @@ def _sync_fetch_single_etf_hist(
     end_date: str,
 ) -> pd.DataFrame | None:
     """获取单只 ETF 的前复权日线数据，自带重试机制。"""
-    import time
-
     for attempt in range(1, MAX_RETRIES + 1):
         try:
+            _apply_proxy()
             df = ak.fund_etf_hist_em(
                 symbol=symbol,
                 period="daily",
@@ -367,7 +410,7 @@ def _sync_fetch_single_etf_hist(
             return None
         except Exception as e:
             if attempt < MAX_RETRIES:
-                time.sleep(RETRY_DELAY)
+                _sleep_with_jitter(RETRY_DELAY)
             else:
                 logger.warning("ETF %s 经 %d 次重试仍失败: %s", symbol, MAX_RETRIES, e)
                 return None
@@ -403,7 +446,7 @@ async def fetch_etf_hist(
         if df is not None:
             # fund_etf_hist_em 列名与 stock_zh_a_hist 一致，直接复用 _df_to_records
             all_dfs.append(df)
-        await asyncio.sleep(REQUEST_INTERVAL)
+        await _async_sleep_with_jitter()
 
     if not all_dfs:
         logger.warning("未获取到任何 ETF 数据")
@@ -523,12 +566,11 @@ _spot_cache_ts: float = 0.0          # 缓存时间戳
 
 def _sync_fetch_spot_prices() -> dict[str, float]:
     """同步获取 A 股 + ETF 实时行情（不复权最新价），返回 {代码: 最新价}。"""
-    import time
-
     prices: dict[str, float] = {}
 
     # A 股实时行情
     try:
+        _apply_proxy()
         df = ak.stock_zh_a_spot_em()
         if df is not None and not df.empty:
             for _, row in df.iterrows():
@@ -539,10 +581,11 @@ def _sync_fetch_spot_prices() -> dict[str, float]:
     except Exception as e:
         logger.warning("获取 A 股实时行情失败: %s", e)
 
-    time.sleep(0.2)
+    _sleep_with_jitter(0.5)
 
     # ETF 实时行情
     try:
+        _apply_proxy()
         df = ak.fund_etf_spot_em()
         if df is not None and not df.empty:
             for _, row in df.iterrows():
@@ -562,7 +605,6 @@ def _sync_fetch_unadjusted_close(code: str) -> float | None:
     用 adjust="" (不复权) 获取最近 5 个交易日数据，取最新一条的收盘价。
     仅在实时行情拉取失败时作为 fallback 使用。
     """
-    import time
     from datetime import datetime as dt, timedelta as td
 
     end_date = dt.now().strftime("%Y%m%d")
@@ -570,6 +612,7 @@ def _sync_fetch_unadjusted_close(code: str) -> float | None:
 
     for attempt in range(1, 3):
         try:
+            _apply_proxy()
             if is_etf(code):
                 df = ak.fund_etf_hist_em(
                     symbol=code, period="daily",
@@ -589,7 +632,7 @@ def _sync_fetch_unadjusted_close(code: str) -> float | None:
             return None
         except Exception as e:
             if attempt < 2:
-                time.sleep(0.3)
+                _sleep_with_jitter(1.0)
             else:
                 logger.warning("获取 %s 不复权收盘价失败: %s", code, e)
                 return None
@@ -603,7 +646,7 @@ async def get_unadjusted_close(codes: list[str]) -> dict[str, float]:
         price = await asyncio.to_thread(_sync_fetch_unadjusted_close, code)
         if price is not None:
             result[code] = price
-        await asyncio.sleep(0.2)
+        await _async_sleep_with_jitter(0.5)
     return result
 
 
