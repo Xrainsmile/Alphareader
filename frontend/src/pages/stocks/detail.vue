@@ -57,40 +57,33 @@
               <text class="a-logic-title">盘面逻辑推演</text>
             </view>
 
-            <view class="a-logic-item">
-              <text class="a-logic-sub">· 趋势 (TREND)</text>
-              <text class="a-logic-text-bold">{{ extractTitle(item.trend) }}</text>
-              <text v-if="extractDesc(item.trend)" class="a-logic-text">{{ extractDesc(item.trend) }}</text>
+            <!-- 趋势 -->
+            <view class="a-block-item">
+              <text class="a-block-heading">趋势 (TREND)</text>
+              <text class="a-block-body">{{ item.trend }}</text>
             </view>
 
-            <view class="a-logic-item">
-              <text class="a-logic-sub">· 形态 (SETUP)</text>
-              <text class="a-logic-text-bold">{{ extractTitle(item.pattern) }}</text>
-              <text v-if="extractDesc(item.pattern)" class="a-logic-text">{{ extractDesc(item.pattern) }}</text>
+            <!-- 形态 -->
+            <view class="a-block-item">
+              <text class="a-block-heading">形态 (SETUP)</text>
+              <text class="a-block-body">{{ item.pattern }}</text>
             </view>
 
-            <view class="a-logic-item">
-              <text class="a-logic-sub">· 量价 (P&V)</text>
-              <text class="a-logic-text-bold">{{ extractTitle(item.volume_price) }}</text>
-              <text v-if="extractDesc(item.volume_price)" class="a-logic-text">{{ extractDesc(item.volume_price) }}</text>
-            </view>
-          </view>
-
-          <!-- 纪律与计划 -->
-          <view class="a-discipline-section">
-            <view class="a-logic-header">
-              <view class="a-logic-bar"></view>
-              <text class="a-logic-title">纪律与计划</text>
+            <!-- 量价 -->
+            <view class="a-block-item">
+              <text class="a-block-heading">量价 (P&V)</text>
+              <text class="a-block-body">{{ item.volume_price }}</text>
             </view>
 
-            <view class="a-discipline-content">
+            <!-- 纪律与计划 -->
+            <view class="a-block-item">
+              <text class="a-block-heading">纪律与计划</text>
               <view class="a-disc-row">
                 <view class="discipline-badge" :class="'disc-' + item.discipline_action">
                   <text class="disc-text">{{ disciplineLabel(item.discipline_action) }}</text>
                 </view>
                 <text class="a-disc-date">{{ formatDate(item.created_at) }}</text>
               </view>
-
               <!-- 风控 -->
               <view v-if="item.risk_type" class="a-risk-block">
                 <view class="risk-tag" :class="'risk-' + item.risk_type">
@@ -100,18 +93,18 @@
                 <text v-if="item.risk_note" class="a-risk-note">{{ item.risk_note }}</text>
               </view>
             </view>
-          </view>
 
-          <!-- 亏盈思考 -->
-          <view v-if="item.pnl_thinking" class="a-pnl-section">
-            <text class="a-pnl-label">亏盈思考</text>
-            <text class="a-pnl-text">{{ item.pnl_thinking }}</text>
-          </view>
+            <!-- 亏盈思考 -->
+            <view v-if="item.pnl_thinking" class="a-block-item">
+              <text class="a-block-heading">亏盈思考</text>
+              <text class="a-block-body">{{ item.pnl_thinking }}</text>
+            </view>
 
-          <!-- 哨子 Verdict -->
-          <view class="a-verdict-section">
-            <text class="a-verdict-label">哨子 Verdict</text>
-            <text class="a-verdict-text">{{ item.verdict }}</text>
+            <!-- 哨子 Verdict -->
+            <view class="a-block-item a-block-verdict">
+              <text class="a-block-heading">哨子 Verdict</text>
+              <text class="a-block-body a-verdict-body">{{ item.verdict }}</text>
+            </view>
           </view>
         </view>
       </view>
@@ -173,20 +166,6 @@ const scoreClass = (score) => {
   if (score >= 4) return 'a-score-high'
   if (score >= 2.5) return 'a-score-mid'
   return 'a-score-low'
-}
-
-// 从文本中提取标题行（第一句 / 换行前）和描述部分
-const extractTitle = (text) => {
-  if (!text) return ''
-  const parts = text.split(/[，。\n]/)
-  return parts[0] || text
-}
-const extractDesc = (text) => {
-  if (!text) return ''
-  const idx = text.search(/[，。\n]/)
-  if (idx < 0) return ''
-  const rest = text.slice(idx + 1).trim()
-  return rest || ''
 }
 
 const formatDate = (iso) => {
@@ -327,7 +306,7 @@ onLoad(async (options) => {
 }
 .a-logic-header {
   display: flex; align-items: center; gap: 10rpx;
-  margin-bottom: 16rpx;
+  margin-bottom: 20rpx;
 }
 .a-logic-bar {
   width: 6rpx; height: 28rpx; background: #3b82f6; border-radius: 3rpx;
@@ -335,30 +314,33 @@ onLoad(async (options) => {
 .a-logic-title {
   font-size: 28rpx; font-weight: 700; color: #1a1a2e;
 }
-.a-logic-item {
-  padding-left: 16rpx;
-  margin-bottom: 16rpx;
+
+/* 统一的 6 个平行 block 样式 */
+.a-block-item {
+  margin-bottom: 24rpx;
 }
-.a-logic-sub {
-  font-size: 22rpx; color: #8c8c9a; font-weight: 500;
-  display: block; margin-bottom: 4rpx;
+.a-block-item:last-child {
+  margin-bottom: 0;
 }
-.a-logic-text-bold {
+.a-block-heading {
   font-size: 28rpx; font-weight: 700; color: #1a1a2e;
-  display: block; line-height: 1.4;
+  display: block; margin-bottom: 8rpx;
 }
-.a-logic-text {
-  font-size: 24rpx; color: #6a6a7a; line-height: 1.6;
-  display: block; margin-top: 4rpx;
+.a-block-body {
+  font-size: 24rpx; color: #6a6a7a; line-height: 1.7;
+  display: block;
 }
 
-/* 纪律与计划 */
-.a-discipline-section {
-  margin-bottom: 20rpx;
+/* 哨子 Verdict 特殊背景 */
+.a-block-verdict {
+  background: #f0f4ff; border-radius: 12rpx;
+  padding: 16rpx 20rpx;
 }
-.a-discipline-content {
-  padding-left: 16rpx;
+.a-verdict-body {
+  color: #1a1a2e; font-weight: 600; font-size: 26rpx;
 }
+
+/* 纪律动作标签 */
 .a-disc-row {
   display: flex; align-items: center; gap: 12rpx;
   margin-bottom: 10rpx;
@@ -391,33 +373,6 @@ onLoad(async (options) => {
 .a-risk-note {
   font-size: 24rpx; color: #6a6a7a; line-height: 1.6;
   display: block; margin-top: 8rpx;
-}
-
-/* 亏盈思考 */
-.a-pnl-section {
-  background: #f8f9fb; border-radius: 12rpx;
-  padding: 16rpx 20rpx; margin-bottom: 16rpx;
-}
-.a-pnl-label {
-  font-size: 22rpx; color: #8c8c9a; font-weight: 600;
-  display: block; margin-bottom: 6rpx;
-}
-.a-pnl-text {
-  font-size: 24rpx; color: #4a4a5a; line-height: 1.6; display: block;
-}
-
-/* 哨子 Verdict */
-.a-verdict-section {
-  background: #f0f4ff; border-radius: 12rpx;
-  padding: 16rpx 20rpx;
-}
-.a-verdict-label {
-  font-size: 22rpx; color: #3b82f6; font-weight: 600;
-  display: block; margin-bottom: 6rpx;
-}
-.a-verdict-text {
-  font-size: 26rpx; color: #1a1a2e; font-weight: 600;
-  line-height: 1.5; display: block;
 }
 
 /* ── Trade List ── */
@@ -487,10 +442,11 @@ onLoad(async (options) => {
 
   .a-logic-bar { width: 3px; height: 16px; }
   .a-logic-title { font-size: 15px; }
-  .a-logic-sub { font-size: 12px; }
-  .a-logic-text-bold { font-size: 15px; }
-  .a-logic-text { font-size: 13px; }
-  .a-logic-item { padding-left: 10px; margin-bottom: 10px; }
+  .a-block-heading { font-size: 15px; margin-bottom: 4px; }
+  .a-block-body { font-size: 13px; }
+  .a-block-item { margin-bottom: 16px; }
+  .a-block-verdict { padding: 10px 14px; border-radius: 8px; }
+  .a-verdict-body { font-size: 14px; }
 
   .discipline-badge { padding: 3px 12px; border-radius: 6px; }
   .disc-text { font-size: 13px; }
@@ -499,14 +455,6 @@ onLoad(async (options) => {
   .risk-label { font-size: 12px; }
   .risk-price { font-size: 13px; }
   .a-risk-note { font-size: 13px; }
-
-  .a-pnl-section { padding: 10px 14px; border-radius: 8px; }
-  .a-pnl-label { font-size: 12px; }
-  .a-pnl-text { font-size: 13px; }
-
-  .a-verdict-section { padding: 10px 14px; border-radius: 8px; }
-  .a-verdict-label { font-size: 12px; }
-  .a-verdict-text { font-size: 14px; }
 
   .trade-list { border-radius: 12px; }
   .trade-row { padding: 14px 18px; }
