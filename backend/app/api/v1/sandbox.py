@@ -616,7 +616,7 @@ async def admin_delete_trade(
 INITIAL_CAPITAL = Decimal("104152.59")  # 104,152.59 元初始总资产（NAV=1 的基准）
 
 
-async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: float | None = None) -> dict | None:
+async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: float | None = None, use_realtime: bool = True) -> dict | None:
     """NAV 核心计算逻辑（供 API 端点和 scheduler 共用）。
 
     计算公式（标准基金净值算法）：
@@ -631,6 +631,7 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
         db: 数据库 session
         calc_date: 计算日期
         cash_balance: 可选，手动传入的实际现金余额（覆盖从交易推算的值，用于补偿手续费等差异）
+        use_realtime: 是否拉取实时不复权行情（默认 True）。scheduler 调用时传 False 避免拖慢进程。
 
     返回 dict 包含 nav/total_pnl/market_value/cash/total_assets，若无交易返回 None。
     """
@@ -668,9 +669,9 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: flo
     # 获取持仓代码列表
     holding_codes = [code for code, shares in positions.items() if shares > 0]
 
-    # 优先使用实时不复权行情（当天或盘中）
+    # 优先使用实时不复权行情（当天或盘中，且 use_realtime=True）
     realtime_prices: dict[str, float] = {}
-    if holding_codes and calc_date >= date.today():
+    if use_realtime and holding_codes and calc_date >= date.today():
         try:
             realtime_prices = await get_realtime_prices(holding_codes)
             if realtime_prices:

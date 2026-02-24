@@ -488,10 +488,13 @@ def _sync_fetch_spot_prices() -> dict[str, float]:
     return prices
 
 
-async def get_realtime_prices(codes: list[str]) -> dict[str, float]:
+async def get_realtime_prices(codes: list[str], timeout: float = 30.0) -> dict[str, float]:
     """获取指定代码列表的实时不复权价格。
 
     使用短期缓存（5 分钟），避免频繁调用 akshare。
+    Args:
+        codes: 股票/ETF 代码列表
+        timeout: 超时秒数（默认 30s），防止 akshare 卡死拖垮进程
     Returns: {ts_code: latest_price}
     """
     import time
@@ -505,10 +508,19 @@ async def get_realtime_prices(codes: list[str]) -> dict[str, float]:
         if len(result) == len(codes):
             return result
 
-    # 重新获取
-    _spot_cache = await asyncio.to_thread(_sync_fetch_spot_prices)
-    _spot_cache_ts = now
-    logger.info("实时行情已刷新，共 %d 只标的", len(_spot_cache))
+    # 重新获取（带超时保护）
+    try:
+        _spot_cache = await asyncio.wait_for(
+            asyncio.to_thread(_sync_fetch_spot_prices),
+            timeout=timeout,
+        )
+        _spot_cache_ts = now
+        logger.info("实时行情已刷新，共 %d 只标的", len(_spot_cache))
+    except asyncio.TimeoutError:
+        logger.warning("实时行情拉取超时 (%.0fs)，使用缓存或跳过", timeout)
+        # 超时后返回已有缓存（如果有的话）
+    except Exception as e:
+        logger.warning("实时行情拉取异常: %s", e)
 
     return {c: _spot_cache[c] for c in codes if c in _spot_cache}
 
