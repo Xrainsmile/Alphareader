@@ -223,7 +223,6 @@ async def sandbox_stock_list(
 ):
     """观察池列表，附最新一条推演摘要。支持按 discipline_action 筛选。"""
     from app.models.stock import StockDailyQuote
-    from app.services.data_fetcher import get_realtime_prices
 
     query = select(SandboxStock).order_by(desc(SandboxStock.updated_at))
     if status:
@@ -231,17 +230,12 @@ async def sandbox_stock_list(
     result = await db.execute(query)
     stocks = result.scalars().all()
 
-    # 实时计算总资产（避免依赖可能过时的 SandboxNav 快照）
-    nav_data = await _compute_nav_core(db, date.today())
-    total_assets = nav_data["total_assets"] if nav_data else float(INITIAL_CAPITAL)
-
-    # 预取所有持仓代码的实时行情
-    all_codes = [s.ts_code for s in stocks]
-    realtime_prices: dict[str, float] = {}
-    try:
-        realtime_prices = await get_realtime_prices(all_codes)
-    except Exception:
-        pass
+    # 从 SandboxNav 表读取最新快照（轻量级，不触发实时行情拉取）
+    nav_result = await db.execute(
+        select(SandboxNav).order_by(desc(SandboxNav.trade_date)).limit(1)
+    )
+    latest_nav = nav_result.scalar_one_or_none()
+    total_assets = float(latest_nav.total_market_value + latest_nav.cash) if latest_nav else float(INITIAL_CAPITAL)
 
     items = []
     for s in stocks:
@@ -273,20 +267,17 @@ async def sandbox_stock_list(
         )
         net_shares = trade_result.scalar() or 0
 
-        # 计算持仓比例（持仓市值 / 总资产）
+        # 计算持仓比例（持仓市值 / 总资产）— 使用行情表数据，不触发实时拉取
         position_pct = 0.0
         if int(net_shares) > 0:
-            # 优先实时不复权行情
-            close_price = realtime_prices.get(s.ts_code)
-            if close_price is None:
-                # 回退：行情表收盘价
-                price_result = await db.execute(
-                    select(StockDailyQuote.close)
-                    .where(StockDailyQuote.ts_code == s.ts_code)
-                    .order_by(desc(StockDailyQuote.trade_date))
-                    .limit(1)
-                )
-                close_price = price_result.scalar()
+            # 优先：行情表收盘价
+            price_result = await db.execute(
+                select(StockDailyQuote.close)
+                .where(StockDailyQuote.ts_code == s.ts_code)
+                .order_by(desc(StockDailyQuote.trade_date))
+                .limit(1)
+            )
+            close_price = price_result.scalar()
             if close_price is None:
                 # 回退：最近交易价格
                 fb = await db.execute(
