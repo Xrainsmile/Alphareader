@@ -537,13 +537,21 @@ async def admin_add_trade(
 # NAV 计算
 # ════════════════════════════════════════════════════════════
 
-INITIAL_CAPITAL = Decimal("61908.99")  # 61,908.99 元虚拟初始现金
+INITIAL_CAPITAL = Decimal("104152.59")  # 104,152.59 元初始总资产（NAV=1 的基准）
 
 
 async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
     """NAV 核心计算逻辑（供 API 端点和 scheduler 共用）。
 
-    返回 dict 包含 nav/total_pnl/market_value/cash，若无交易返回 None。
+    计算公式（标准基金净值算法）：
+      初始总资产 = INITIAL_CAPITAL = 104,152.59（NAV=1 的基准）
+      当前现金 = INITIAL_CAPITAL - Σ(买入金额) + Σ(卖出金额)
+      持仓市值 = Σ(净持仓 × 当天收盘价)
+      当天总资产 = 当前现金 + 持仓市值
+      NAV = 当天总资产 / 初始总资产
+      收益率 = (NAV - 1) × 100%
+
+    返回 dict 包含 nav/total_pnl/market_value/cash/total_assets，若无交易返回 None。
     """
     from app.models.stock import StockDailyQuote
     from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -557,19 +565,19 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
     if not all_trades:
         return None
 
-    # 按股票汇总持仓
+    # 按股票汇总持仓 + 计算现金变动
     positions: dict[str, int] = {}  # ts_code -> net_shares
-    cash_flow = Decimal("0")  # 净流出（买入为正，卖出为负）
+    cash_flow = Decimal("0")  # 净现金流出（买入为正流出，卖出为负流出）
     for t in all_trades:
         code = t.ts_code
         if t.action == "buy":
             positions[code] = positions.get(code, 0) + t.shares
-            cash_flow += t.price * t.shares
+            cash_flow += t.price * t.shares  # 买入花钱
         else:
             positions[code] = positions.get(code, 0) - t.shares
-            cash_flow -= t.price * t.shares
+            cash_flow -= t.price * t.shares  # 卖出回款
 
-    cash = INITIAL_CAPITAL - cash_flow
+    cash = INITIAL_CAPITAL - cash_flow  # 当前现金 = 初始资金 - 买入 + 卖出
 
     # 取收盘价（优先取 calc_date，若无则取最近交易日）
     total_market_value = Decimal("0")
@@ -589,7 +597,8 @@ async def _compute_nav_core(db: AsyncSession, calc_date: date) -> dict | None:
         if close_price:
             total_market_value += Decimal(str(close_price)) * shares
 
-    nav_value = float((total_market_value + cash) / INITIAL_CAPITAL)
+    total_assets = total_market_value + cash
+    nav_value = float(total_assets / INITIAL_CAPITAL) if INITIAL_CAPITAL > 0 else 1.0
     total_pnl = round((nav_value - 1.0) * 100, 2)
 
     # Upsert NAV
@@ -635,11 +644,11 @@ async def compute_nav(
     """计算指定日期（默认今天）的净值。
 
     逻辑：
-    1. 找出所有 holding 状态的股票
-    2. 对每只股票计算净持仓 & 从 stock_daily_quote 取收盘价
-    3. 市值 = Σ(净持仓 × 收盘价)
-    4. 现金 = 初始资金 - Σ(买入金额) + Σ(卖出金额)
-    5. NAV = (市值 + 现金) / 初始资金
+    1. 汇总所有交易记录，计算各股票净持仓
+    2. 初始总资产 = 现金(61908.99) + Σ(买入价 × 买入股数)
+    3. 持仓市值 = Σ(净持仓 × 当天收盘价)
+    4. 当天总资产 = 现金 + 持仓市值
+    5. NAV = 当天总资产 / 初始总资产
     """
     calc_date = target_date or date.today()
     result = await _compute_nav_core(db, calc_date)

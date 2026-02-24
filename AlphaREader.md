@@ -505,7 +505,9 @@ final_score = ts_rank_cd(文本相关度) × ln(ai_score + 1) × 1/(hours+2)^0.5
 | `total_pnl` | Float | 累计盈亏% |
 | `created_at` | DateTime(tz) | 创建时间 |
 
-- 初始现金：61,908.99 元（持仓市值按最新价格计算）
+- 初始总资产：104,152.59 元（NAV=1 的基准）
+- 当前现金：初始总资产 - Σ(买入金额) + Σ(卖出金额)
+- NAV 公式：NAV = (当前现金 + 持仓市值) / 104,152.59
 
 ### 关键索引
 - `ix_news_created_score`: `(created_at DESC, ai_score DESC)` — 热门查询
