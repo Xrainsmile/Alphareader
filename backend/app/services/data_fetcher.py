@@ -674,6 +674,82 @@ async def fetch_all_stocks_tencent(stock_codes: list[str], stock_names: dict[str
     return pd.DataFrame(columns=["股票代码"])
 
 
+# ============================================================
+# 7.4 增量行情更新（只拉最近几天，快速补齐新交易日数据）
+# ============================================================
+
+async def incremental_update_quotes(days: int = 10) -> int:
+    """增量更新行情数据：只拉最近 N 天的 K 线，快速补齐新交易日。
+
+    与全量拉取（320天 × 5000+只，耗时 ~50 分钟）不同，
+    增量只拉最近 10 天，耗时 ~10 分钟，内存 <200MB。
+
+    Args:
+        days: 回溯天数，默认 10（覆盖长假后的补数据场景）
+
+    Returns:
+        新增/更新的记录数
+    """
+    import gc
+
+    # 先检查是否已有今天的数据
+    if await has_today_data():
+        logger.info("增量更新跳过：今天的行情数据已存在")
+        return 0
+
+    # 从 DB 获取股票列表
+    db_list = await fetch_stock_list_from_db()
+    if db_list.empty:
+        logger.warning("增量更新失败：数据库中无股票列表")
+        return 0
+
+    codes = db_list["代码"].tolist()
+    names = dict(zip(db_list["代码"], db_list["名称"]))
+    total = len(codes)
+
+    logger.info("开始增量更新行情（最近 %d 天），共 %d 只股票...", days, total)
+
+    BATCH_SIZE = 500  # 增量数据量小，可以用更大的批次
+    total_records = 0
+    batch_dfs: list[pd.DataFrame] = []
+
+    for idx, code in enumerate(codes, 1):
+        if idx % 500 == 0:
+            logger.info("增量更新进度: %d/%d (%.1f%%)", idx, total, idx / total * 100)
+
+        df = await asyncio.to_thread(_sync_fetch_tencent_kline, code, days)
+        if df is not None:
+            df["名称"] = names.get(code, "")
+            batch_dfs.append(df)
+
+        # 分批写入 DB
+        if len(batch_dfs) >= BATCH_SIZE:
+            batch_combined = pd.concat(batch_dfs, ignore_index=True)
+            batch_clean = clean_data(batch_combined)
+            if not batch_clean.empty:
+                await save_to_db(batch_clean)
+                total_records += len(batch_clean)
+            del batch_dfs, batch_combined, batch_clean
+            batch_dfs = []
+            gc.collect()
+
+        # 增量拉取间隔更短（数据量小）
+        await asyncio.sleep(0.15 + random.uniform(0, 0.1))
+
+    # 最后一批
+    if batch_dfs:
+        batch_combined = pd.concat(batch_dfs, ignore_index=True)
+        batch_clean = clean_data(batch_combined)
+        if not batch_clean.empty:
+            await save_to_db(batch_clean)
+            total_records += len(batch_clean)
+        del batch_dfs, batch_combined, batch_clean
+        gc.collect()
+
+    logger.info("增量更新完成，共 %d 条记录（%d 只股票）", total_records, total)
+    return total_records
+
+
 def _sync_fetch_stock_list_tencent() -> pd.DataFrame:
     """通过新浪财经获取 A 股股票列表（作为 akshare stock_zh_a_spot_em 的备选）。
 

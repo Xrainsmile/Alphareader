@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.services.indicators import compute_and_save_rs_rating, load_rs_rating
+from app.services.data_fetcher import incremental_update_quotes
 
 logger = logging.getLogger("alphareader.api.stocks")
 router = APIRouter(prefix="/stocks", tags=["stocks"])
@@ -171,9 +172,17 @@ async def get_compute_status():
 
 
 async def _run_compute(force: bool):
-    """后台执行 RS Rating 计算。"""
+    """后台执行 RS Rating 计算（先增量更新行情数据）。"""
     try:
         _task.reset()
+        # Step 1: 增量更新行情
+        try:
+            updated = await incremental_update_quotes(days=10)
+            logger.info("行情增量更新完成: %d 条记录", updated)
+        except Exception as e:
+            logger.warning("行情增量更新失败（继续用已有数据计算）: %s", e)
+
+        # Step 2: 计算 RS Rating
         logger.info("后台任务开始: RS Rating 计算 (force=%s)", force)
         df = await compute_and_save_rs_rating(force_refresh=force)
         _task.complete(len(df))
@@ -206,6 +215,28 @@ async def trigger_rs_rating_compute(
         content={
             "status": "accepted",
             "message": "RS Rating 计算已在后台启动，请通过 GET /api/v1/stocks/rs_rating/status 查看进度",
+        },
+    )
+
+
+@router.post("/update_quotes")
+async def trigger_update_quotes(
+    days: int = Query(10, ge=1, le=320, description="回溯天数"),
+):
+    """手动触发行情增量更新（后台任务）。"""
+    async def _update():
+        try:
+            count = await incremental_update_quotes(days=days)
+            logger.info("手动行情增量更新完成: %d 条", count)
+        except Exception as e:
+            logger.error("手动行情增量更新失败: %s", e)
+
+    asyncio.create_task(_update())
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "message": f"行情增量更新已在后台启动（回溯 {days} 天）",
         },
     )
 

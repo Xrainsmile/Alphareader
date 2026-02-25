@@ -32,6 +32,7 @@ from app.config import settings
 from app.services.pipeline import run_pipeline
 from app.services.notifier import send_alert
 from app.services.indicators import compute_and_save_rs_rating
+from app.services.data_fetcher import incremental_update_quotes
 
 logger = logging.getLogger("alphareader.scheduler")
 
@@ -114,11 +115,24 @@ async def _pipeline_job():
 async def _rs_rating_job():
     """RS Rating 定时计算 — 每个交易日 11:30 和 15:00 触发。
 
+    流程：
+      1. 先增量更新行情数据（只拉最近 10 天，~10 分钟）
+      2. 再计算 RS Rating（SQL 模式，几秒完成）
+
     11:30: 午盘结束后计算（上午行情）
     15:00: 收盘后计算最终结果
     """
     try:
         logger.info("RS Rating job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        # Step 1: 增量更新行情数据
+        try:
+            updated = await incremental_update_quotes(days=10)
+            logger.info("行情增量更新完成: %d 条记录", updated)
+        except Exception as e:
+            logger.warning("行情增量更新失败（继续用已有数据计算）: %s", e)
+
+        # Step 2: 计算 RS Rating
         df = await compute_and_save_rs_rating(force_refresh=True)
         logger.info("RS Rating job completed: %d stocks", len(df))
         return {"status": "ok", "count": len(df)}
