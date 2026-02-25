@@ -24,8 +24,11 @@ import random
 from datetime import date, datetime, timedelta
 from itertools import cycle
 
+import threading
+
 import akshare as ak
 import pandas as pd
+import requests as _requests
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -40,6 +43,33 @@ REQUEST_JITTER = 0.8            # 随机抖动上限（秒），实际间隔 = I
 LOOKBACK_DAYS = 365             # 回溯天数（约 250 个交易日）
 MAX_RETRIES = 3                 # 单只股票最大重试次数
 RETRY_DELAY = 3                 # 重试间隔（秒）
+_AKSHARE_TIMEOUT = 15           # akshare HTTP 请求默认超时（秒）
+
+
+# ────────── akshare 请求超时注入 ──────────
+# akshare 内部使用 requests 库但不设置 timeout，远端断连时会永久挂起。
+# 通过 monkey-patch Session.request（所有 HTTP 方法的底层入口）注入默认超时。
+_original_session_request = _requests.Session.request
+_timeout_patch_lock = threading.Lock()
+_timeout_patched = False
+
+
+def _patched_session_request(self, method, url, **kwargs):
+    kwargs.setdefault("timeout", _AKSHARE_TIMEOUT)
+    return _original_session_request(self, method, url, **kwargs)
+
+
+def _ensure_timeout_patch():
+    """确保 requests.Session.request 已被 patch（仅执行一次）。"""
+    global _timeout_patched
+    if _timeout_patched:
+        return
+    with _timeout_patch_lock:
+        if _timeout_patched:
+            return
+        _requests.Session.request = _patched_session_request
+        _timeout_patched = True
+        logger.info("已注入 requests 默认超时: %ds", _AKSHARE_TIMEOUT)
 
 # ETF 代码前缀规则（沪深两市场内 ETF）
 # 上交所: 51xxxx / 56xxxx / 58xxxx  深交所: 15xxxx / 16xxxx
@@ -117,6 +147,7 @@ def _sync_fetch_single_stock_hist(
     end_date: str,
 ) -> pd.DataFrame | None:
     """获取单只股票的前复权日线数据，自带重试机制。"""
+    _ensure_timeout_patch()
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             _apply_proxy()
@@ -454,6 +485,7 @@ def _sync_fetch_single_etf_hist(
     end_date: str,
 ) -> pd.DataFrame | None:
     """获取单只 ETF 的前复权日线数据，自带重试机制。"""
+    _ensure_timeout_patch()
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             _apply_proxy()
