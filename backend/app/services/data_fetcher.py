@@ -359,15 +359,24 @@ async def get_all_stock_data(force_refresh: bool = False) -> pd.DataFrame:
       5. 清洗 → 写入 PostgreSQL → 返回
 
     Args:
-        force_refresh: 为 True 时强制重新下载，忽略缓存。
+        force_refresh: 为 True 时强制重新计算 RS Rating，但仍优先使用 DB 已有行情数据。
+                       只有当 DB 行情数据不足时才重新下载。
 
     Returns:
         清洗后的完整 DataFrame。
     """
+    # force_refresh 也优先检查 DB：只要有足够的行情数据就直接用，避免重复下载
+    if await has_today_data():
+        logger.info("当天数据已存在，从 PostgreSQL 加载（force_refresh=%s）", force_refresh)
+        return await load_from_db()
+
     if not force_refresh:
-        if await has_today_data():
-            logger.info("当天数据已存在，从 PostgreSQL 加载")
-            return await load_from_db()
+        # 非强制模式：检查是否有近期数据（可能不是今天，但足够计算）
+        db_data = await load_from_db()
+        if not db_data.empty and db_data["股票代码"].nunique() >= 100:
+            logger.info("数据库已有 %d 只股票的行情数据，直接使用",
+                        db_data["股票代码"].nunique())
+            return db_data
 
     # 方式 1：akshare
     raw_data = pd.DataFrame()
