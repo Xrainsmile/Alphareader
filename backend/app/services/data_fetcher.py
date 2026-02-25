@@ -331,7 +331,7 @@ async def load_from_db(min_date: date | None = None) -> pd.DataFrame:
     return df
 
 
-async def has_today_data(min_stocks: int = 1000) -> bool:
+async def has_today_data(min_stocks: int = 5000) -> bool:
     """检查是否已有最新交易日的行情数据（足够多的股票）。
 
     逻辑：DB 中最新 trade_date 必须 >= 昨天，且该日期至少有 min_stocks 只股票。
