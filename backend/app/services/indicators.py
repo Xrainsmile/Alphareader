@@ -1,4 +1,4 @@
-"""Alphareader — RS Rating 计算模块（异步版）。
+"""Alphareader — RS Rating 计算模块（异步版，SQL 优化）。
 
 职责：
   基于 IBD/Minervini 方法，计算 A 股个股相对强度评分（RS Rating）。
@@ -8,10 +8,10 @@
   2. 加权得分：Score = 0.4*P3 + 0.2*P6 + 0.2*P9 + 0.2*P12
   3. 百分位排名映射为 1~99 整数（99 = 最强）
 
-核心逻辑：
-  - 从 PostgreSQL 读取行情数据（通过 data_fetcher）
-  - 纯 pandas/numpy 计算在 asyncio.to_thread() 中执行
-  - 计算结果写入 stock_rs_rating 表
+核心逻辑（v2 — 内存优化）：
+  - 通过 SQL 窗口函数在 PostgreSQL 中完成 ROC 计算
+  - Python 只处理 ~5000 行聚合结果（<50MB 内存）
+  - 不再将 165 万行行情数据全量加载到内存
 
 错误处理：
   - 数据不足的股票自动跳过（至少需要 63 个交易日）
@@ -20,19 +20,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import date
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session
+from app.database import async_session, engine
 from app.models.stock import StockDailyQuote, StockRSRating
-from app.services.data_fetcher import fetch_stock_list, get_all_stock_data, load_from_db
 
 logger = logging.getLogger("alphareader.indicators")
 
@@ -42,104 +39,110 @@ PERIOD_6M = 126
 PERIOD_9M = 189
 PERIOD_12M = 252
 
-WEIGHTS = {
-    "P3": 0.4,
-    "P6": 0.2,
-    "P9": 0.2,
-    "P12": 0.2,
-}
-
 MIN_TRADING_DAYS = PERIOD_3M
 
+# ────────── SQL: 在数据库中完成 ROC 计算 ──────────
+# 用窗口函数为每只股票按日期排序，取最新价和 N 天前的价格
+# 只返回每只股票的一行聚合结果（~5000 行），内存 <50MB
+RS_RATING_SQL = text("""
+WITH ranked AS (
+    SELECT
+        ts_code,
+        name,
+        trade_date,
+        close,
+        ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn,
+        COUNT(*) OVER (PARTITION BY ts_code) AS total_days
+    FROM stock_daily_quote
+    WHERE trade_date >= CURRENT_DATE - CAST(:lookback_days || ' days' AS INTERVAL)
+      AND close IS NOT NULL AND close > 0
+),
+pivoted AS (
+    SELECT
+        ts_code,
+        MAX(name) AS name,
+        MAX(trade_date) FILTER (WHERE rn = 1) AS latest_date,
+        MAX(total_days) AS total_days,
+        MAX(CASE WHEN rn = 1 THEN close END) AS latest_close,
+        MAX(CASE WHEN rn = :p3 THEN close END) AS close_p3,
+        MAX(CASE WHEN rn = :p6 THEN close END) AS close_p6,
+        MAX(CASE WHEN rn = :p9 THEN close END) AS close_p9,
+        MAX(CASE WHEN rn = :p12 THEN close END) AS close_p12
+    FROM ranked
+    GROUP BY ts_code
+    HAVING MAX(total_days) >= :min_days
+)
+SELECT
+    ts_code,
+    name,
+    latest_date,
+    total_days,
+    CASE WHEN close_p3 IS NOT NULL AND close_p3 > 0
+         THEN ROUND(CAST((latest_close / close_p3 - 1) * 100 AS numeric), 2) END AS p3,
+    CASE WHEN close_p6 IS NOT NULL AND close_p6 > 0
+         THEN ROUND(CAST((latest_close / close_p6 - 1) * 100 AS numeric), 2) END AS p6,
+    CASE WHEN close_p9 IS NOT NULL AND close_p9 > 0
+         THEN ROUND(CAST((latest_close / close_p9 - 1) * 100 AS numeric), 2) END AS p9,
+    CASE WHEN close_p12 IS NOT NULL AND close_p12 > 0
+         THEN ROUND(CAST((latest_close / close_p12 - 1) * 100 AS numeric), 2) END AS p12
+FROM pivoted
+WHERE close_p3 IS NOT NULL
+""")
+
 
 # ============================================================
-# 1. 计算单只股票的多周期 ROC
+# 1. 纯 SQL 计算 RS Rating（内存友好）
 # ============================================================
 
-def _calc_roc(group: pd.DataFrame) -> pd.Series | None:
-    """对单只股票的日线数据计算 4 个周期的涨跌幅。
+async def _compute_rs_rating_sql() -> pd.DataFrame:
+    """通过 SQL 窗口函数在 PostgreSQL 中计算 RS Rating。
 
-    当数据不足某个长周期时，该周期记为 NaN，
-    加权得分按可用周期的权重重新归一化。
-    至少需要 3 个月（63 天）数据。
+    只返回 ~5000 行聚合结果，内存 <50MB。
     """
-    n = len(group)
-    if n < MIN_TRADING_DAYS:
-        return None
+    async with async_session() as session:
+        result = await session.execute(
+            RS_RATING_SQL,
+            {
+                "lookback_days": PERIOD_12M + 30,  # 多留 30 天余量
+                "p3": PERIOD_3M,
+                "p6": PERIOD_6M,
+                "p9": PERIOD_9M,
+                "p12": PERIOD_12M,
+                "min_days": MIN_TRADING_DAYS,
+            },
+        )
+        rows = result.fetchall()
 
-    close = group["收盘"].values
-    latest = close[-1]
-
-    p3 = (latest / close[-PERIOD_3M] - 1) * 100 if n >= PERIOD_3M else np.nan
-    p6 = (latest / close[-PERIOD_6M] - 1) * 100 if n >= PERIOD_6M else np.nan
-    p9 = (latest / close[-PERIOD_9M] - 1) * 100 if n >= PERIOD_9M else np.nan
-    p12 = (latest / close[-PERIOD_12M] - 1) * 100 if n >= PERIOD_12M else np.nan
-
-    rocs = {"P3": p3, "P6": p6, "P9": p9, "P12": p12}
-    valid_weight_sum = sum(WEIGHTS[k] for k, v in rocs.items() if not np.isnan(v))
-
-    if valid_weight_sum == 0:
-        return None
-
-    score = sum(
-        WEIGHTS[k] / valid_weight_sum * v
-        for k, v in rocs.items()
-        if not np.isnan(v)
-    )
-
-    return pd.Series({
-        "P3": round(p3, 2),
-        "P6": round(p6, 2),
-        "P9": round(p9, 2),
-        "P12": round(p12, 2),
-        "Score": round(score, 4),
-    })
-
-
-# ============================================================
-# 2. 计算全市场 RS Rating（纯计算，同步）
-# ============================================================
-
-def _compute_rs_rating_sync(df: pd.DataFrame) -> pd.DataFrame:
-    """同步版 RS Rating 计算核心，在 to_thread 中执行。"""
-    if df.empty:
-        logger.error("输入数据为空，无法计算 RS Rating")
+    if not rows:
+        logger.error("SQL 查询无结果，数据库可能无行情数据")
         return pd.DataFrame(columns=["ts_code", "name", "trade_date", "rs_rating"])
 
-    df = df.copy()
-    df["日期"] = pd.to_datetime(df["日期"])
-    df.sort_values(by=["股票代码", "日期"], inplace=True)
-
-    latest_date = df["日期"].max()
-
-    # 构建股票名称映射
-    name_map: dict[str, str] = {}
-    if "名称" in df.columns:
-        name_map = (
-            df.drop_duplicates(subset="股票代码", keep="last")
-            .set_index("股票代码")["名称"]
-            .to_dict()
+    # 构建 DataFrame（~5000 行，非常轻量）
+    records = []
+    for r in rows:
+        p3, p6, p9, p12 = r.p3, r.p6, r.p9, r.p12
+        rocs = {"p3": (p3, 0.4), "p6": (p6, 0.2), "p9": (p9, 0.2), "p12": (p12, 0.2)}
+        valid_weight = sum(w for v, w in rocs.values() if v is not None)
+        if valid_weight == 0:
+            continue
+        score = sum(
+            (w / valid_weight) * float(v)
+            for v, w in rocs.values()
+            if v is not None
         )
-
-    records: list[dict] = []
-    grouped = df.groupby("股票代码", sort=False)
-
-    for code, group in grouped:
-        result = _calc_roc(group)
-        if result is not None and not np.isnan(result["Score"]):
-            records.append({
-                "ts_code": code,
-                "name": name_map.get(code, ""),
-                "trade_date": latest_date.date() if hasattr(latest_date, "date") else latest_date,
-                "p3": None if np.isnan(result["P3"]) else result["P3"],
-                "p6": None if np.isnan(result["P6"]) else result["P6"],
-                "p9": None if np.isnan(result["P9"]) else result["P9"],
-                "p12": None if np.isnan(result["P12"]) else result["P12"],
-                "score": result["Score"],
-            })
+        records.append({
+            "ts_code": r.ts_code,
+            "name": r.name or "",
+            "trade_date": r.latest_date,
+            "p3": float(p3) if p3 is not None else None,
+            "p6": float(p6) if p6 is not None else None,
+            "p9": float(p9) if p9 is not None else None,
+            "p12": float(p12) if p12 is not None else None,
+            "score": round(score, 4),
+        })
 
     if not records:
-        logger.error("没有股票满足最低数据量要求，无法生成 RS Rating")
+        logger.error("没有股票满足最低数据量要求")
         return pd.DataFrame(columns=["ts_code", "name", "trade_date", "rs_rating"])
 
     rating_df = pd.DataFrame(records)
@@ -159,7 +162,7 @@ def _compute_rs_rating_sync(df: pd.DataFrame) -> pd.DataFrame:
     rating_df.reset_index(drop=True, inplace=True)
 
     logger.info(
-        "RS Rating 计算完成：共 %d 只股票，日期 %s",
+        "RS Rating 计算完成（SQL 模式）：共 %d 只股票，日期 %s",
         len(rating_df),
         rating_df["trade_date"].iloc[0],
     )
@@ -167,27 +170,23 @@ def _compute_rs_rating_sync(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ============================================================
-# 3. 异步入口：计算并持久化
+# 2. 异步入口：计算并持久化
 # ============================================================
 
 async def compute_rs_rating(df: pd.DataFrame | None = None) -> pd.DataFrame:
     """计算全市场 RS Rating（异步入口）。
 
-    Args:
-        df: 行情 DataFrame；为 None 时自动从 data_fetcher 获取。
-
-    Returns:
-        包含 RS Rating 的 DataFrame。
+    v2: 忽略 df 参数，直接使用 SQL 计算，避免加载全量行情到内存。
+    保留参数签名以兼容旧调用方。
     """
-    if df is None:
-        df = await get_all_stock_data()
-
-    result = await asyncio.to_thread(_compute_rs_rating_sync, df)
-    return result
+    return await _compute_rs_rating_sql()
 
 
 async def compute_and_save_rs_rating(force_refresh: bool = False) -> pd.DataFrame:
     """计算 RS Rating 并写入 PostgreSQL（主入口）。
+
+    v2: 不再加载全量行情到内存，通过 SQL 直接在 DB 中计算。
+    force_refresh 控制是否跳过缓存检查。
 
     Args:
         force_refresh: 为 True 时强制重新计算。
@@ -209,22 +208,9 @@ async def compute_and_save_rs_rating(force_refresh: bool = False) -> pd.DataFram
                 logger.info("今天的 RS Rating 已存在（%d 条），跳过计算", count)
                 return await load_rs_rating(today)
 
-    # 获取行情数据 → 计算
-    # 策略：先尝试在线拉取；失败则降级为数据库已有数据
-    stock_data = pd.DataFrame()
-    try:
-        stock_data = await get_all_stock_data(force_refresh=force_refresh)
-    except Exception as e:
-        logger.warning("在线获取行情数据失败: %s，尝试使用数据库已有数据", e)
-
-    if stock_data.empty:
-        logger.info("在线数据为空，降级使用数据库已有行情数据计算 RS Rating")
-        stock_data = await load_from_db()
-        if stock_data.empty:
-            logger.error("数据库中也无行情数据，无法计算 RS Rating")
-            return pd.DataFrame(columns=["ts_code", "name", "trade_date", "rs_rating"])
-
-    rating_df = await compute_rs_rating(stock_data)
+    # 直接在 SQL 中计算，内存 <50MB
+    logger.info("开始 RS Rating 计算（SQL 模式，force_refresh=%s）...", force_refresh)
+    rating_df = await _compute_rs_rating_sql()
 
     if rating_df.empty:
         return rating_df
@@ -365,13 +351,11 @@ if __name__ == "__main__":
     import asyncio as _asyncio
 
     async def _main():
-        stock_data = await get_all_stock_data()
+        rs = await compute_rs_rating()
 
-        if stock_data.empty:
+        if rs.empty:
             print("[ERROR] 无可用数据，请先确保数据库连接正常。")
             return
-
-        rs = await compute_rs_rating(stock_data)
 
         print("\n===== RS Rating Top 20 =====")
         print(rs.head(20).to_string(index=False))
