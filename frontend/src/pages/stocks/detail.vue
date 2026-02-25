@@ -43,11 +43,14 @@
           :key="item.id"
           class="analysis-card"
         >
-          <!-- 综合评分 -->
+          <!-- 时间 + 综合评分 -->
           <view class="a-score-section">
-            <text class="a-score-label">综合评分：</text>
-            <text class="a-score-big" :class="scoreClass(item.score)">{{ item.score.toFixed(1) }}</text>
-            <text class="a-score-max">/ 5.0</text>
+            <view class="a-score-left">
+              <text class="a-score-label">综合评分：</text>
+              <text class="a-score-big" :class="scoreClass(item.score)">{{ item.score.toFixed(1) }}</text>
+              <text class="a-score-max">/ 5.0</text>
+            </view>
+            <text class="a-created-time">{{ formatDate(item.created_at) }}</text>
           </view>
 
           <!-- 盘面逻辑推演 -->
@@ -284,11 +287,12 @@ onLoad(async (options) => {
 
 /* 综合评分 */
 .a-score-section {
-  display: flex; align-items: baseline; gap: 6rpx;
+  display: flex; align-items: baseline; justify-content: space-between;
   margin-bottom: 20rpx;
   padding-bottom: 18rpx;
   border-bottom: 1rpx solid #f0f0f2;
 }
+.a-score-left { display: flex; align-items: baseline; gap: 6rpx; }
 .a-score-label { font-size: 24rpx; color: #8c8c9a; font-weight: 500; }
 .a-score-big {
   font-size: 48rpx; font-weight: 900;
@@ -299,6 +303,7 @@ onLoad(async (options) => {
 .a-score-mid { color: #f59e0b; }
 .a-score-low { color: #ef4444; }
 .a-score-max { font-size: 24rpx; color: #b0b0be; font-weight: 500; }
+.a-created-time { font-size: 22rpx; color: #b0b0be; white-space: nowrap; }
 
 /* 盘面逻辑推演 */
 .a-logic-section {
@@ -439,6 +444,7 @@ onLoad(async (options) => {
   .a-score-big { font-size: 30px; }
   .a-score-max { font-size: 13px; }
   .a-score-section { margin-bottom: 14px; padding-bottom: 12px; }
+  .a-created-time { font-size: 12px; }
 
   .a-logic-bar { width: 3px; height: 16px; }
   .a-logic-title { font-size: 15px; }

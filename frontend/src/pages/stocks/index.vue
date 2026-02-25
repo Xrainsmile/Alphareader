@@ -372,12 +372,16 @@
             <!-- 哨子 Verdict -->
             <text class="sb-verdict">{{ item.latest_analysis.verdict }}</text>
 
-            <!-- 动作标签 + 风控 -->
+            <!-- 动作标签 + 推演统计 -->
             <view class="sb-action-row">
               <view class="sb-disc-badge" :class="'sb-disc-' + item.latest_analysis.discipline_action">
                 <text class="sb-disc-text">{{ disciplineLabel(item.latest_analysis.discipline_action) }}</text>
               </view>
-              <text class="sb-analysis-date">{{ formatShortDate(item.latest_analysis.created_at) }}</text>
+              <view class="sb-meta-info">
+                <text class="sb-analysis-count">{{ item.analysis_count || 0 }}条记录</text>
+                <text class="sb-analysis-dot">·</text>
+                <text class="sb-analysis-date">{{ formatShortDate(item.analysis_latest_at || item.latest_analysis.created_at) }}</text>
+              </view>
             </view>
           </template>
 
@@ -1238,6 +1242,9 @@ const onOpenIcp = () => {
 .sb-disc-research .sb-disc-text { color: #a855f7; }
 .sb-disc-churn { background: rgba(239, 68, 68, 0.1); }
 .sb-disc-churn .sb-disc-text { color: #ef4444; }
+.sb-meta-info { display: flex; align-items: center; gap: 6rpx; }
+.sb-analysis-count { font-size: 22rpx; color: #8c8c9a; font-weight: 500; }
+.sb-analysis-dot { font-size: 22rpx; color: #d0d0d8; }
 .sb-analysis-date { font-size: 22rpx; color: #b0b0be; }
 
 .sb-card-bottom { margin-top: 10rpx; }
@@ -1424,6 +1431,8 @@ const onOpenIcp = () => {
   .sb-verdict { font-size: 14px; }
   .sb-disc-badge { padding: 2px 10px; border-radius: 5px; }
   .sb-disc-text { font-size: 12px; }
+  .sb-analysis-count { font-size: 12px; }
+  .sb-analysis-dot { font-size: 12px; }
   .sb-analysis-date { font-size: 12px; }
   .sb-shares { font-size: 12px; }
   .sb-position-bar-wrap { height: 4px; margin-bottom: 6px; }

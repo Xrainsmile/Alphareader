@@ -355,6 +355,17 @@ async def sandbox_stock_list(
         )
         la = latest_analysis.scalar_one_or_none()
 
+        # 推演记录统计（总数 + 最新更新时间）
+        analysis_stats = await db.execute(
+            select(
+                func.count(SandboxAnalysis.id).label("count"),
+                func.max(SandboxAnalysis.created_at).label("latest_at"),
+            ).where(SandboxAnalysis.stock_id == s.id)
+        )
+        stats_row = analysis_stats.one()
+        analysis_count = stats_row.count or 0
+        analysis_latest_at = stats_row.latest_at
+
         # 按 discipline_action 过滤
         if discipline:
             action = la.discipline_action if la else "retain"
@@ -408,6 +419,8 @@ async def sandbox_stock_list(
             "reason": s.reason,
             "position_pct": position_pct,
             "added_at": s.added_at.isoformat() if s.added_at else None,
+            "analysis_count": analysis_count,
+            "analysis_latest_at": analysis_latest_at.isoformat() if analysis_latest_at else None,
             "latest_analysis": {
                 "id": la.id,
                 "score": la.score,
