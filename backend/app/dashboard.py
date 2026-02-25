@@ -218,6 +218,7 @@ tr:hover td{background:#f8f8fc}
 
 <script>
 const API = '/api/v1/analytics';
+const _API_KEY = '{{ api_key }}';
 let userTrendChart, sourceChart, scoreChart;
 
 function switchTab(name) {
@@ -239,7 +240,8 @@ function fmtTime(iso){
 }
 
 async function fetchJSON(url){
-  const r=await fetch(url);
+  const h=_API_KEY?{'X-API-Key':_API_KEY}:{};
+  const r=await fetch(url,{headers:h});
   if(!r.ok) throw new Error(r.status);
   return r.json();
 }
@@ -356,4 +358,5 @@ async def dashboard_page(dash_token: str = Cookie(None)):
     # 如果设置了密码且 token 验证失败，跳转登录
     if settings.DASHBOARD_PASSWORD and not _verify_token(dash_token or ""):
         return RedirectResponse("/dashboard/login", status_code=303)
-    return HTMLResponse(DASHBOARD_HTML)
+    html = DASHBOARD_HTML.replace("{{ api_key }}", settings.API_KEY or "")
+    return HTMLResponse(html)

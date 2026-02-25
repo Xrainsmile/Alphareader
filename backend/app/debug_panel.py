@@ -162,6 +162,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 
 <script>
 const BASE = window.location.origin;
+const _API_KEY = '{{ api_key }}';
 
 // ── Endpoint Definitions ──
 const ENDPOINTS = [
@@ -317,7 +318,7 @@ async function sendRequest(id) {
 
   const t0 = performance.now();
   try {
-    const resp = await fetch(url, { method: ep.method });
+    const resp = await fetch(url, { method: ep.method, headers: _API_KEY ? {'X-API-Key': _API_KEY} : {} });
     const elapsed = (performance.now() - t0).toFixed(0);
     const rid = resp.headers.get('x-request-id') || '—';
 
@@ -360,9 +361,10 @@ async function sendRequest(id) {
 
 // ── Status Bar Auto-Refresh ──
 async function refreshStatus() {
+  const _h = _API_KEY ? {'X-API-Key': _API_KEY} : {};
   // Service info
   try {
-    const r = await fetch(BASE + '/');
+    const r = await fetch(BASE + '/', {headers: _h});
     const d = await r.json();
     document.getElementById('val-service').textContent = `v${d.version}`;
     document.getElementById('val-service').className = 'value ok';
@@ -387,7 +389,7 @@ async function refreshStatus() {
 
   // Pipeline
   try {
-    const r = await fetch(BASE + '/api/v1/news/pipeline/status');
+    const r = await fetch(BASE + '/api/v1/news/pipeline/status', {headers: _h});
     const d = await r.json();
     if (d.running) {
       document.getElementById('val-pipeline').textContent = 'RUNNING';
@@ -427,4 +429,6 @@ document.addEventListener('keydown', e => {
 @router.get("/debug", response_class=HTMLResponse, include_in_schema=False)
 async def debug_panel():
     """Serve the API debug panel (only available when DEBUG=true)."""
-    return HTMLResponse(content=_DEBUG_HTML)
+    from app.config import settings
+    html = _DEBUG_HTML.replace("{{ api_key }}", settings.API_KEY or "")
+    return HTMLResponse(content=html)

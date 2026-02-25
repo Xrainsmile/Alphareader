@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # ── Reports 同步鉴权 ──
     REPORT_SYNC_TOKEN: str = "your-secret-token"  # Node.js 上传脚本使用的 Bearer Token
 
+    # ── API Key 全局鉴权 ──
+    API_KEY: str = ""  # 为空则不启用鉴权（仅限开发环境）
+
     # ── Dashboard 密码保护 ──
     DASHBOARD_PASSWORD: str = ""  # 为空则不保护（不推荐生产环境）
 

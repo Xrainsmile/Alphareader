@@ -288,6 +288,7 @@ tr:hover td{background:#f8f8fc}
 
 <script>
 const API='/api/v1/sandbox';
+const _API_KEY='{{ api_key }}';
 let allStocks=[];
 const pickerState={};  // {pickerId: {ts_code, name, stock_id}}
 
@@ -310,9 +311,11 @@ function fmtDate(iso){
 }
 
 async function apiCall(path,opts={}){
+  const h=opts.body?{'Content-Type':'application/json'}:{};
+  if(_API_KEY) h['X-API-Key']=_API_KEY;
   const r=await fetch(API+path,{
     method:opts.method||'GET',
-    headers:opts.body?{'Content-Type':'application/json'}:{},
+    headers:h,
     body:opts.body?JSON.stringify(opts.body):undefined,
     credentials:'same-origin',
   });
@@ -643,4 +646,5 @@ async def sandbox_admin_page(dash_token: str = Cookie(None)):
     """模拟仓管理页面 — 复用 Dashboard cookie 认证。"""
     if settings.DASHBOARD_PASSWORD and not _verify_token(dash_token or ""):
         return RedirectResponse("/dashboard/login", status_code=303)
-    return HTMLResponse(SANDBOX_ADMIN_HTML)
+    html = SANDBOX_ADMIN_HTML.replace("{{ api_key }}", settings.API_KEY or "")
+    return HTMLResponse(html)

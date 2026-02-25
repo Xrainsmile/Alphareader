@@ -7,19 +7,28 @@
 // 开发环境用 localhost:8000
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.MODE === 'production' ? '' : 'http://localhost:8000')
 
+// API Key — 通过环境变量注入
+const API_KEY = import.meta.env.VITE_API_KEY || ''
+
 /**
  * 通用请求封装
  */
 function request(url, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {})
+  }
+  // 自动注入 API Key
+  if (API_KEY) {
+    headers['X-API-Key'] = API_KEY
+  }
+
   return new Promise((resolve, reject) => {
     uni.request({
       url: `${BASE_URL}${url}`,
       method: options.method || 'GET',
       data: options.data || {},
-      header: {
-        'Content-Type': 'application/json',
-        ...(options.headers || {})
-      },
+      header: headers,
       timeout: 15000,
       success: (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
