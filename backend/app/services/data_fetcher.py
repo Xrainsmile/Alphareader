@@ -331,17 +331,40 @@ async def load_from_db(min_date: date | None = None) -> pd.DataFrame:
     return df
 
 
-async def has_today_data() -> bool:
-    """检查今天是否已有缓存数据。"""
+async def has_today_data(min_stocks: int = 1000) -> bool:
+    """检查是否已有最新交易日的行情数据（足够多的股票）。
+
+    逻辑：DB 中最新 trade_date 必须 >= 昨天，且该日期至少有 min_stocks 只股票。
+    这样即使数据源只更新到昨天，也不会重复拉取；
+    同时避免少量 ETF 数据误判为全量已就绪。
+    """
     today = date.today()
     async with async_session() as session:
-        result = await session.execute(
-            select(func.count())
-            .select_from(StockDailyQuote)
-            .where(StockDailyQuote.trade_date == today)
+        # 获取 DB 中最新的交易日期
+        max_date_result = await session.execute(
+            select(func.max(StockDailyQuote.trade_date))
         )
-        count = result.scalar() or 0
-    return count > 0
+        max_date = max_date_result.scalar()
+        if max_date is None:
+            logger.info("has_today_data: 数据库无行情数据")
+            return False
+
+        # 最新日期与今天的差距
+        gap_days = (today - max_date).days
+
+        # 检查最新日期有多少只股票
+        count_result = await session.execute(
+            select(func.count(func.distinct(StockDailyQuote.ts_code)))
+            .where(StockDailyQuote.trade_date == max_date)
+        )
+        stock_count = count_result.scalar() or 0
+
+    logger.info(
+        "has_today_data: DB最新日期=%s, 距今%d天, 该日%d只股票（阈值: gap<=1 且 stocks>=%d）",
+        max_date, gap_days, stock_count, min_stocks,
+    )
+    # DB 最新日期距今不超过 1 天，且有足够多的股票数据
+    return gap_days <= 1 and stock_count >= min_stocks
 
 
 # ============================================================
