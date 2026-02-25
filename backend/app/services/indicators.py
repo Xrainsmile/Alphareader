@@ -54,7 +54,7 @@ WITH ranked AS (
         ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn,
         COUNT(*) OVER (PARTITION BY ts_code) AS total_days
     FROM stock_daily_quote
-    WHERE trade_date >= CURRENT_DATE - CAST(:lookback_days || ' days' AS INTERVAL)
+    WHERE trade_date >= CURRENT_DATE - make_interval(days => :lookback_days)
       AND close IS NOT NULL AND close > 0
 ),
 pivoted AS (
