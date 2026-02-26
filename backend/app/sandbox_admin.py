@@ -213,6 +213,28 @@ tr:hover td{background:#f8f8fc}
       <button class="btn btn-primary" onclick="addAnalysis()">提交推演</button>
     </div>
   </div>
+
+  <!-- 批量导入推演 -->
+  <div class="card">
+    <h3>批量导入推演</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+      通过 CSV 文件批量录入推演记录。请先下载模板，按格式填写后上传。<br>
+      <strong>注意：</strong>CSV 中的 ts_code 必须已在观察池中，否则该行会被跳过。
+    </p>
+    <div class="form-row" style="align-items:center;gap:16px">
+      <button class="btn btn-primary" onclick="downloadCsvTemplate()" style="background:var(--amber)">
+        📥 下载 CSV 模板
+      </button>
+      <div style="position:relative">
+        <input type="file" id="csv-upload" accept=".csv" style="display:none" onchange="uploadCsv(this)">
+        <button class="btn btn-green" onclick="document.getElementById('csv-upload').click()">
+          📤 上传 CSV 批量导入
+        </button>
+      </div>
+    </div>
+    <div id="batch-result" style="margin-top:16px"></div>
+  </div>
+
   <div class="card">
     <h3>推演记录</h3>
     <div class="form-row" style="margin-bottom:16px">
@@ -508,6 +530,70 @@ async function addAnalysis(){
     document.getElementById('a-risktype').value='';toggleRiskFields();
     loadAnalysisHistory();
   }catch(e){showToast(e.message,false)}
+}
+
+// ── 批量导入推演 ──
+
+function downloadCsvTemplate(){
+  const h={'X-API-Key':_API_KEY};
+  fetch(API+'/admin/analyses/csv-template',{headers:h,credentials:'same-origin'})
+    .then(r=>{
+      if(!r.ok) throw new Error('下载失败');
+      return r.blob();
+    })
+    .then(blob=>{
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='analysis_template.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast('模板已下载');
+    })
+    .catch(e=>showToast(e.message,false));
+}
+
+async function uploadCsv(input){
+  const file=input.files[0];
+  if(!file){return;}
+  const resultDiv=document.getElementById('batch-result');
+  resultDiv.innerHTML='<span style="color:var(--muted)">正在导入...</span>';
+
+  const formData=new FormData();
+  formData.append('file',file);
+
+  try{
+    const h={};
+    if(_API_KEY) h['X-API-Key']=_API_KEY;
+    const r=await fetch(API+'/admin/analyses/batch',{
+      method:'POST',
+      headers:h,
+      body:formData,
+      credentials:'same-origin',
+    });
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||'导入失败');
+
+    let html=`<div style="font-size:14px;font-weight:700;color:var(--green)">
+      ✅ 成功导入 ${d.imported} 条，共 ${d.total_rows} 行</div>`;
+    if(d.errors&&d.errors.length>0){
+      html+=`<div style="margin-top:8px;font-size:13px;color:var(--red)">
+        <strong>⚠️ ${d.errors.length} 行有错误：</strong><ul style="margin:4px 0 0 16px">`;
+      d.errors.forEach(e=>{
+        html+=`<li>第 ${e.row} 行${e.ts_code?' ('+e.ts_code+')':''}：${e.error}</li>`;
+      });
+      html+='</ul></div>';
+    }
+    resultDiv.innerHTML=html;
+    if(d.imported>0){
+      showToast(`成功导入 ${d.imported} 条推演`);
+      loadAnalysisHistory();
+    }
+  }catch(e){
+    resultDiv.innerHTML=`<span style="color:var(--red)">❌ ${e.message}</span>`;
+    showToast(e.message,false);
+  }
+  // 重置 input 以便重复上传同一文件
+  input.value='';
 }
 
 async function loadAnalysisHistory(){

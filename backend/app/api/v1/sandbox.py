@@ -18,11 +18,14 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -590,6 +593,173 @@ async def admin_add_analysis(
     await db.refresh(analysis)
     logger.info("Added analysis #%d for %s", analysis.id, body.ts_code)
     return {"id": analysis.id}
+
+
+# ── CSV 模板下载 & 批量导入推演 ──
+
+_CSV_TEMPLATE_HEADER = [
+    "ts_code", "score", "trend", "pattern", "volume_price",
+    "discipline_action", "risk_type", "risk_price", "risk_note",
+    "pnl_thinking", "verdict",
+]
+_CSV_TEMPLATE_EXAMPLE = [
+    "600519", "3.5", "均线多头排列，MA20向上", "杯柄形态突破",
+    "放量突破前高，量价配合良好", "retain", "bottom", "1800.00",
+    "跌破1800止损", "盈亏比合理，风控明确", "趋势向好，可持有观察",
+]
+
+_DISCIPLINE_VALID = {"retain", "gray", "research", "churn"}
+_RISK_TYPE_VALID = {"top", "bottom", ""}
+
+
+@router.get("/admin/analyses/csv-template")
+async def download_csv_template(
+    _: None = Depends(_require_admin),
+):
+    """下载推演批量录入 CSV 模板。"""
+    buf = io.StringIO()
+    # 写入 BOM 使 Excel 正确识别 UTF-8
+    buf.write("\ufeff")
+    writer = csv.writer(buf)
+    writer.writerow(_CSV_TEMPLATE_HEADER)
+    writer.writerow(_CSV_TEMPLATE_EXAMPLE)
+    buf.seek(0)
+
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=analysis_template.csv"},
+    )
+
+
+@router.post("/admin/analyses/batch")
+async def admin_batch_import_analyses(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_admin),
+):
+    """通过 CSV 文件批量导入推演记录。
+
+    CSV 列: ts_code, score, trend, pattern, volume_price,
+            discipline_action, risk_type, risk_price, risk_note,
+            pnl_thinking, verdict
+
+    系统自动根据 ts_code 匹配观察池中的 stock_id。
+    """
+    if not file.filename or not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="请上传 .csv 文件")
+
+    content = await file.read()
+    # 尝试 UTF-8 BOM / UTF-8 / GBK 解码
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "gbk", "gb2312"):
+        try:
+            text = content.decode(enc)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    if text is None:
+        raise HTTPException(status_code=400, detail="文件编码无法识别，请使用 UTF-8 编码保存")
+
+    reader = csv.DictReader(io.StringIO(text))
+    # 验证表头
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV 文件为空或格式错误")
+
+    # 标准化表头（去空格）
+    reader.fieldnames = [f.strip() for f in reader.fieldnames]
+    missing = set(_CSV_TEMPLATE_HEADER[:5]) - set(reader.fieldnames)  # 前5个必填列
+    if missing:
+        raise HTTPException(status_code=400, detail=f"CSV 缺少必要列: {', '.join(missing)}")
+
+    # 预加载观察池 ts_code -> stock_id 映射
+    result = await db.execute(
+        select(SandboxStock.id, SandboxStock.ts_code, SandboxStock.name)
+        .where(SandboxStock.status != "exited")
+    )
+    stock_map = {row.ts_code: row.id for row in result.all()}
+
+    imported = 0
+    errors: list[dict] = []
+
+    for row_num, row in enumerate(reader, start=2):  # 从第2行开始（第1行是表头）
+        ts_code = (row.get("ts_code") or "").strip()
+        if not ts_code:
+            errors.append({"row": row_num, "error": "ts_code 为空"})
+            continue
+
+        stock_id = stock_map.get(ts_code)
+        if stock_id is None:
+            errors.append({"row": row_num, "ts_code": ts_code, "error": "不在观察池中"})
+            continue
+
+        # 解析字段
+        try:
+            score = float((row.get("score") or "0").strip())
+            if score < 0 or score > 5:
+                raise ValueError("评分须在 0-5 之间")
+        except ValueError as e:
+            errors.append({"row": row_num, "ts_code": ts_code, "error": f"score 无效: {e}"})
+            continue
+
+        trend = (row.get("trend") or "").strip()
+        pattern = (row.get("pattern") or "").strip()
+        volume_price = (row.get("volume_price") or "").strip()
+        pnl_thinking = (row.get("pnl_thinking") or "").strip()
+        verdict = (row.get("verdict") or "").strip()
+
+        if not all([trend, pattern, volume_price, pnl_thinking, verdict]):
+            errors.append({"row": row_num, "ts_code": ts_code, "error": "trend/pattern/volume_price/pnl_thinking/verdict 不能为空"})
+            continue
+
+        discipline_action = (row.get("discipline_action") or "retain").strip().lower()
+        if discipline_action not in _DISCIPLINE_VALID:
+            errors.append({"row": row_num, "ts_code": ts_code, "error": f"discipline_action 无效: {discipline_action}"})
+            continue
+
+        risk_type = (row.get("risk_type") or "").strip().lower() or None
+        if risk_type and risk_type not in ("top", "bottom"):
+            errors.append({"row": row_num, "ts_code": ts_code, "error": f"risk_type 无效: {risk_type}"})
+            continue
+
+        risk_price_str = (row.get("risk_price") or "").strip()
+        risk_price = None
+        if risk_price_str:
+            try:
+                risk_price = float(risk_price_str)
+            except ValueError:
+                errors.append({"row": row_num, "ts_code": ts_code, "error": f"risk_price 无效: {risk_price_str}"})
+                continue
+
+        risk_note = (row.get("risk_note") or "").strip() or None
+
+        # 截断到200字
+        analysis = SandboxAnalysis(
+            stock_id=stock_id,
+            ts_code=ts_code,
+            score=round(score, 1),
+            trend=trend[:200],
+            pattern=pattern[:200],
+            volume_price=volume_price[:200],
+            discipline_action=discipline_action,
+            risk_type=risk_type,
+            risk_price=risk_price,
+            risk_note=risk_note[:200] if risk_note else None,
+            pnl_thinking=pnl_thinking[:200],
+            verdict=verdict[:200],
+        )
+        db.add(analysis)
+        imported += 1
+
+    if imported > 0:
+        await db.commit()
+
+    logger.info("Batch import analyses: %d imported, %d errors", imported, len(errors))
+    return {
+        "imported": imported,
+        "errors": errors,
+        "total_rows": imported + len(errors),
+    }
 
 
 @router.get("/admin/analyses")
