@@ -155,18 +155,18 @@ tr:hover td{background:#f8f8fc}
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group" style="flex:1"><label>趋势判断 (200字以内)</label>
-        <textarea id="a-trend" maxlength="200" placeholder="描述当前趋势..."></textarea>
+      <div class="form-group" style="flex:1"><label>趋势判断 (500字以内)</label>
+        <textarea id="a-trend" maxlength="500" placeholder="描述当前趋势..."></textarea>
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group" style="flex:1"><label>形态识别 (200字以内)</label>
-        <textarea id="a-pattern" maxlength="200" placeholder="描述技术形态..."></textarea>
+      <div class="form-group" style="flex:1"><label>形态识别 (500字以内)</label>
+        <textarea id="a-pattern" maxlength="500" placeholder="描述技术形态..."></textarea>
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group" style="flex:1"><label>量价行为 (200字以内)</label>
-        <textarea id="a-volprice" maxlength="200" placeholder="描述量价特征..."></textarea>
+      <div class="form-group" style="flex:1"><label>量价行为 (500字以内)</label>
+        <textarea id="a-volprice" maxlength="500" placeholder="描述量价特征..."></textarea>
       </div>
     </div>
 
@@ -193,20 +193,20 @@ tr:hover td{background:#f8f8fc}
         </div>
       </div>
       <div class="form-row risk-field" style="display:none">
-        <div class="form-group" style="flex:1"><label>风控说明 (200字以内)</label>
-          <textarea id="a-risknote" maxlength="200" placeholder="风控计划说明..."></textarea>
+        <div class="form-group" style="flex:1"><label>风控说明 (500字以内)</label>
+          <textarea id="a-risknote" maxlength="500" placeholder="风控计划说明..."></textarea>
         </div>
       </div>
     </div>
 
     <div class="form-row">
-      <div class="form-group" style="flex:1"><label>亏盈思考 (200字以内)</label>
-        <textarea id="a-pnl" maxlength="200" placeholder="对亏盈的思考..."></textarea>
+      <div class="form-group" style="flex:1"><label>亏盈思考 (500字以内)</label>
+        <textarea id="a-pnl" maxlength="500" placeholder="对亏盈的思考..."></textarea>
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group" style="flex:1"><label>哨子 Verdict (200字以内)</label>
-        <textarea id="a-verdict" maxlength="200" placeholder="最终判断..."></textarea>
+      <div class="form-group" style="flex:1"><label>哨子 Verdict (500字以内)</label>
+        <textarea id="a-verdict" maxlength="500" placeholder="最终判断..."></textarea>
       </div>
     </div>
     <div class="form-row">

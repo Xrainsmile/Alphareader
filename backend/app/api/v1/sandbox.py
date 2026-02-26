@@ -53,15 +53,15 @@ class AnalysisCreate(BaseModel):
     stock_id: int
     ts_code: str = Field(..., max_length=10)
     score: float = Field(..., ge=0, le=5)
-    trend: str = Field(..., max_length=200)
-    pattern: str = Field(..., max_length=200)
-    volume_price: str = Field(..., max_length=200)
+    trend: str = Field(..., max_length=500)
+    pattern: str = Field(..., max_length=500)
+    volume_price: str = Field(..., max_length=500)
     discipline_action: str = Field(..., pattern=r"^(retain|gray|research|churn)$")
     risk_type: str | None = Field(None, pattern=r"^(top|bottom)$")
     risk_price: float | None = None
-    risk_note: str | None = Field(None, max_length=200)
-    pnl_thinking: str = Field(..., max_length=200)
-    verdict: str = Field(..., max_length=200)
+    risk_note: str | None = Field(None, max_length=500)
+    pnl_thinking: str = Field(..., max_length=500)
+    verdict: str = Field(..., max_length=500)
 
 class TradeCreate(BaseModel):
     stock_id: int
@@ -738,15 +738,15 @@ async def admin_batch_import_analyses(
             stock_id=stock_id,
             ts_code=ts_code,
             score=round(score, 1),
-            trend=trend[:200],
-            pattern=pattern[:200],
-            volume_price=volume_price[:200],
+            trend=trend[:500],
+            pattern=pattern[:500],
+            volume_price=volume_price[:500],
             discipline_action=discipline_action,
             risk_type=risk_type,
             risk_price=risk_price,
-            risk_note=risk_note[:200] if risk_note else None,
-            pnl_thinking=pnl_thinking[:200],
-            verdict=verdict[:200],
+            risk_note=risk_note[:500] if risk_note else None,
+            pnl_thinking=pnl_thinking[:500],
+            verdict=verdict[:500],
         )
         db.add(analysis)
         imported += 1

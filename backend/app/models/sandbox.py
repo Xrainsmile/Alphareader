@@ -77,13 +77,13 @@ class SandboxAnalysis(Base):
     score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
 
     # 2. 趋势判断
-    trend: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    trend: Mapped[str] = mapped_column(String(500), nullable=False, default="")
 
     # 3. 形态识别
-    pattern: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    pattern: Mapped[str] = mapped_column(String(500), nullable=False, default="")
 
     # 4. 量价行为
-    volume_price: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    volume_price: Mapped[str] = mapped_column(String(500), nullable=False, default="")
 
     # 5a. 纪律与计划 — 动作 (retain/gray/research/churn)
     discipline_action: Mapped[str] = mapped_column(
@@ -93,13 +93,13 @@ class SandboxAnalysis(Base):
     # 5b. 纪律与计划 — 风控
     risk_type: Mapped[str | None] = mapped_column(String(8), nullable=True)  # top / bottom
     risk_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    risk_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    risk_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # 6. 亏盈思考
-    pnl_thinking: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    pnl_thinking: Mapped[str] = mapped_column(String(500), nullable=False, default="")
 
     # 7. 哨子 Verdict
-    verdict: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    verdict: Mapped[str] = mapped_column(String(500), nullable=False, default="")
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
