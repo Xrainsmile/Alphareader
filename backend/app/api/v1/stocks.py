@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.services.indicators import compute_and_save_rs_rating, load_rs_rating, backfill_rs_rating
-from app.services.data_fetcher import incremental_update_quotes
+from app.services.data_fetcher import incremental_update_quotes, backfill_quotes
 
 logger = logging.getLogger("alphareader.api.stocks")
 router = APIRouter(prefix="/stocks", tags=["stocks"])
@@ -346,5 +346,40 @@ async def trigger_backfill(
         content={
             "status": "accepted",
             "message": f"RS Rating 回填已启动: {start_date} ~ {end_date}",
+        },
+    )
+
+
+@router.post("/quotes/backfill")
+async def trigger_quotes_backfill(
+    start_date: str = Query(..., description="起始日期 YYYYMMDD"),
+    end_date: str = Query(..., description="结束日期 YYYYMMDD"),
+):
+    """回填指定日期范围的历史行情数据（后台任务，使用 akshare）。
+
+    耗时较长（每只股票约 0.5~1 秒，5000+ 只约 1~2 小时）。
+    """
+    if _task.status == TaskStatus.RUNNING:
+        return JSONResponse(
+            status_code=409,
+            content={"status": "conflict", "message": "已有任务在运行中"},
+        )
+
+    async def _run():
+        try:
+            _task.reset()
+            result = await backfill_quotes(start_date, end_date)
+            _task.complete(result["total_stocks"])
+            logger.info("行情回填完成: %s", result)
+        except Exception as e:
+            _task.fail(str(e))
+            logger.error("行情回填失败: %s\n%s", e, traceback.format_exc())
+
+    asyncio.create_task(_run())
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "message": f"历史行情回填已启动: {start_date} ~ {end_date}",
         },
     )

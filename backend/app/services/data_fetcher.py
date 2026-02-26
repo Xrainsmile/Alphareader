@@ -1028,6 +1028,104 @@ async def get_realtime_prices(codes: list[str], timeout: float = 30.0) -> dict[s
 
 
 # ============================================================
+# 9. 历史行情回填（指定日期范围）
+# ============================================================
+
+async def backfill_quotes(
+    start_date: str,
+    end_date: str,
+    batch_size: int = 200,
+) -> dict:
+    """回填指定日期范围的历史行情数据（使用 akshare）。
+
+    逐只股票拉取指定日期范围的前复权日线，分批写入 DB。
+    服务器内存有限，采用分批写入策略。
+
+    Args:
+        start_date: 起始日期，格式 YYYYMMDD
+        end_date: 结束日期，格式 YYYYMMDD
+        batch_size: 每批写入 DB 的股票数量
+
+    Returns:
+        {"total_stocks": N, "total_records": N, "failed": N}
+    """
+    import gc
+
+    # 获取股票列表
+    db_list = await fetch_stock_list_from_db()
+    if db_list.empty:
+        # 数据库无列表，在线获取
+        try:
+            db_list = await fetch_stock_list()
+        except Exception as e:
+            logger.error("获取股票列表失败: %s", e)
+            return {"total_stocks": 0, "total_records": 0, "failed": 0}
+
+    codes = db_list["代码"].tolist()
+    names = dict(zip(db_list["代码"], db_list["名称"]))
+    total = len(codes)
+
+    logger.info(
+        "开始回填历史行情: %s ~ %s，共 %d 只股票",
+        start_date, end_date, total,
+    )
+
+    total_records = 0
+    total_stocks = 0
+    failed = 0
+    batch_dfs: list[pd.DataFrame] = []
+
+    for idx, code in enumerate(codes, 1):
+        if idx % 200 == 0:
+            logger.info(
+                "历史行情回填进度: %d/%d (%.1f%%)，已写入 %d 条",
+                idx, total, idx / total * 100, total_records,
+            )
+
+        df = await asyncio.to_thread(
+            _sync_fetch_single_stock_hist, code, start_date, end_date
+        )
+        if df is not None and not df.empty:
+            df["名称"] = names.get(code, "")
+            batch_dfs.append(df)
+        else:
+            failed += 1
+
+        # 分批写入 DB
+        if len(batch_dfs) >= batch_size:
+            batch_combined = pd.concat(batch_dfs, ignore_index=True)
+            batch_clean = clean_data(batch_combined)
+            if not batch_clean.empty:
+                await save_to_db(batch_clean)
+                total_records += len(batch_clean)
+                total_stocks += batch_clean["股票代码"].nunique()
+            del batch_dfs, batch_combined, batch_clean
+            batch_dfs = []
+            gc.collect()
+
+        await _async_sleep_with_jitter()
+
+    # 最后一批
+    if batch_dfs:
+        batch_combined = pd.concat(batch_dfs, ignore_index=True)
+        batch_clean = clean_data(batch_combined)
+        if not batch_clean.empty:
+            await save_to_db(batch_clean)
+            total_records += len(batch_clean)
+            total_stocks += batch_clean["股票代码"].nunique()
+        del batch_dfs, batch_combined, batch_clean
+        gc.collect()
+
+    result = {
+        "total_stocks": total_stocks,
+        "total_records": total_records,
+        "failed": failed,
+    }
+    logger.info("历史行情回填完成: %s", result)
+    return result
+
+
+# ============================================================
 # 直接运行入口（开发调试用）
 # ============================================================
 
