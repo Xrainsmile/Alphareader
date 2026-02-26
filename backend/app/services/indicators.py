@@ -44,19 +44,7 @@ MIN_TRADING_DAYS = PERIOD_3M
 # ────────── SQL: 在数据库中完成 ROC 计算 ──────────
 # 用窗口函数为每只股票按日期排序，取最新价和 N 天前的价格
 # 只返回每只股票的一行聚合结果（~5000 行），内存 <50MB
-RS_RATING_SQL = text("""
-WITH ranked AS (
-    SELECT
-        ts_code,
-        name,
-        trade_date,
-        close,
-        ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn,
-        COUNT(*) OVER (PARTITION BY ts_code) AS total_days
-    FROM stock_daily_quote
-    WHERE trade_date >= CURRENT_DATE - make_interval(days => :lookback_days)
-      AND close IS NOT NULL AND close > 0
-),
+_PIVOTED_SELECT_SQL = """
 pivoted AS (
     SELECT
         ts_code,
@@ -87,7 +75,39 @@ SELECT
          THEN ROUND(CAST((latest_close / close_p12 - 1) * 100 AS numeric), 2) END AS p12
 FROM pivoted
 WHERE close_p3 IS NOT NULL
-""")
+"""
+
+RS_RATING_SQL = text("""
+WITH ranked AS (
+    SELECT
+        ts_code,
+        name,
+        trade_date,
+        close,
+        ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn,
+        COUNT(*) OVER (PARTITION BY ts_code) AS total_days
+    FROM stock_daily_quote
+    WHERE trade_date >= CURRENT_DATE - make_interval(days => :lookback_days)
+      AND close IS NOT NULL AND close > 0
+),
+""" + _PIVOTED_SELECT_SQL)
+
+# 支持指定截止日期的 SQL（用于历史回填）
+RS_RATING_SQL_AT_DATE = text("""
+WITH ranked AS (
+    SELECT
+        ts_code,
+        name,
+        trade_date,
+        close,
+        ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn,
+        COUNT(*) OVER (PARTITION BY ts_code) AS total_days
+    FROM stock_daily_quote
+    WHERE trade_date <= :target_date
+      AND trade_date >= :target_date - make_interval(days => :lookback_days)
+      AND close IS NOT NULL AND close > 0
+),
+""" + _PIVOTED_SELECT_SQL)
 
 
 # ============================================================
@@ -167,6 +187,254 @@ async def _compute_rs_rating_sql() -> pd.DataFrame:
         rating_df["trade_date"].iloc[0],
     )
     return rating_df
+
+
+# ============================================================
+# 1b. 指定日期计算 RS Rating（用于历史回填）
+# ============================================================
+
+async def _compute_rs_rating_at_date(target_date: date) -> pd.DataFrame:
+    """计算指定日期的 RS Rating（基于截止到该日期的行情数据）。"""
+    async with async_session() as session:
+        result = await session.execute(
+            RS_RATING_SQL_AT_DATE,
+            {
+                "target_date": target_date,
+                "lookback_days": PERIOD_12M + 30,
+                "p3": PERIOD_3M,
+                "p6": PERIOD_6M,
+                "p9": PERIOD_9M,
+                "p12": PERIOD_12M,
+                "min_days": MIN_TRADING_DAYS,
+            },
+        )
+        rows = result.fetchall()
+
+    if not rows:
+        return pd.DataFrame(columns=["ts_code", "name", "trade_date", "rs_rating"])
+
+    records = []
+    for r in rows:
+        p3, p6, p9, p12 = r.p3, r.p6, r.p9, r.p12
+        rocs = {"p3": (p3, 0.4), "p6": (p6, 0.2), "p9": (p9, 0.2), "p12": (p12, 0.2)}
+        valid_weight = sum(w for v, w in rocs.values() if v is not None)
+        if valid_weight == 0:
+            continue
+        score = sum(
+            (w / valid_weight) * float(v)
+            for v, w in rocs.values()
+            if v is not None
+        )
+        records.append({
+            "ts_code": r.ts_code,
+            "name": r.name or "",
+            "trade_date": r.latest_date,
+            "p3": float(p3) if p3 is not None else None,
+            "p6": float(p6) if p6 is not None else None,
+            "p9": float(p9) if p9 is not None else None,
+            "p12": float(p12) if p12 is not None else None,
+            "score": round(score, 4),
+        })
+
+    if not records:
+        return pd.DataFrame(columns=["ts_code", "name", "trade_date", "rs_rating"])
+
+    rating_df = pd.DataFrame(records)
+    rating_df["rs_rating"] = (
+        rating_df["score"]
+        .rank(pct=True)
+        .mul(98)
+        .add(1)
+        .round(0)
+        .astype(int)
+        .clip(1, 99)
+    )
+    rating_df.sort_values("rs_rating", ascending=False, inplace=True)
+    rating_df.reset_index(drop=True, inplace=True)
+    return rating_df
+
+
+async def backfill_rs_rating(
+    start_date: date,
+    end_date: date,
+    skip_existing: bool = True,
+) -> dict:
+    """回填指定日期范围的 RS Rating。
+
+    对于非交易日（数据库无行情数据的日子），复制上一个最近交易日的数据。
+
+    Args:
+        start_date: 起始日期
+        end_date: 结束日期（含）
+        skip_existing: 为 True 时跳过已有数据的日期
+
+    Returns:
+        {"computed": N, "copied": N, "skipped": N, "failed": N}
+    """
+    from datetime import timedelta
+
+    # 1. 获取行情表中日期范围内的所有实际交易日
+    async with async_session() as session:
+        result = await session.execute(
+            select(StockDailyQuote.trade_date)
+            .where(StockDailyQuote.trade_date.between(start_date, end_date))
+            .distinct()
+            .order_by(StockDailyQuote.trade_date)
+        )
+        trading_dates = [row[0] for row in result.all()]
+
+    if not trading_dates:
+        logger.warning("回填范围内无交易日行情数据: %s ~ %s", start_date, end_date)
+        return {"computed": 0, "copied": 0, "skipped": 0, "failed": 0}
+
+    logger.info(
+        "开始回填 RS Rating: %s ~ %s，共 %d 个交易日",
+        start_date, end_date, len(trading_dates),
+    )
+
+    # 2. 查询已有 RS Rating 数据的日期
+    existing_dates = set()
+    if skip_existing:
+        async with async_session() as session:
+            result = await session.execute(
+                select(StockRSRating.trade_date)
+                .where(StockRSRating.trade_date.between(start_date, end_date))
+                .distinct()
+            )
+            existing_dates = {row[0] for row in result.all()}
+
+    stats = {"computed": 0, "copied": 0, "skipped": 0, "failed": 0}
+    last_computed_date = None
+
+    # 3. 逐个交易日计算
+    for td in trading_dates:
+        if td in existing_dates:
+            logger.info("跳过已有数据: %s", td)
+            stats["skipped"] += 1
+            last_computed_date = td
+            continue
+
+        try:
+            rating_df = await _compute_rs_rating_at_date(td)
+            if rating_df.empty:
+                logger.warning("日期 %s 计算结果为空，跳过", td)
+                stats["failed"] += 1
+                continue
+
+            # 确保 trade_date 统一为该交易日
+            rating_df["trade_date"] = td
+
+            # 写入 DB
+            records = rating_df.to_dict("records")
+            batch_size = 2000
+            async with async_session() as session:
+                for i in range(0, len(records), batch_size):
+                    batch = records[i : i + batch_size]
+                    stmt = pg_insert(StockRSRating).values(batch)
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_rs_code_date",
+                        set_={
+                            "name": stmt.excluded.name,
+                            "p3": stmt.excluded.p3,
+                            "p6": stmt.excluded.p6,
+                            "p9": stmt.excluded.p9,
+                            "p12": stmt.excluded.p12,
+                            "score": stmt.excluded.score,
+                            "rs_rating": stmt.excluded.rs_rating,
+                        },
+                    )
+                    await session.execute(stmt)
+                await session.commit()
+
+            stats["computed"] += 1
+            last_computed_date = td
+            logger.info("回填完成: %s（%d 只股票）", td, len(rating_df))
+        except Exception as e:
+            logger.error("回填日期 %s 失败: %s", td, e)
+            stats["failed"] += 1
+
+    # 4. 填充非交易日（周末/节假日）：复制上一个最近交易日的数据
+    all_dates = set()
+    d = start_date
+    while d <= end_date:
+        all_dates.add(d)
+        d += timedelta(days=1)
+
+    non_trading_dates = sorted(all_dates - set(trading_dates) - existing_dates)
+
+    if non_trading_dates and trading_dates:
+        # 构建日期→最近交易日的映射
+        sorted_trading = sorted(set(trading_dates) | existing_dates)
+        for ntd in non_trading_dates:
+            # 找到 <= ntd 的最近交易日
+            prev_td = None
+            for t in sorted_trading:
+                if t <= ntd:
+                    prev_td = t
+                else:
+                    break
+            if prev_td is None:
+                continue
+
+            # 检查是否已有该非交易日的数据
+            async with async_session() as session:
+                check = await session.execute(
+                    select(func.count())
+                    .select_from(StockRSRating)
+                    .where(StockRSRating.trade_date == ntd)
+                )
+                if (check.scalar() or 0) > 0:
+                    stats["skipped"] += 1
+                    continue
+
+            # 从上一个交易日复制数据，修改 trade_date
+            async with async_session() as session:
+                prev_data = await session.execute(
+                    select(StockRSRating)
+                    .where(StockRSRating.trade_date == prev_td)
+                )
+                prev_rows = prev_data.scalars().all()
+                if not prev_rows:
+                    continue
+
+                copy_records = [
+                    {
+                        "ts_code": r.ts_code,
+                        "name": r.name,
+                        "trade_date": ntd,
+                        "p3": r.p3,
+                        "p6": r.p6,
+                        "p9": r.p9,
+                        "p12": r.p12,
+                        "score": r.score,
+                        "rs_rating": r.rs_rating,
+                    }
+                    for r in prev_rows
+                ]
+
+                for i in range(0, len(copy_records), 2000):
+                    batch = copy_records[i : i + 2000]
+                    stmt = pg_insert(StockRSRating).values(batch)
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_rs_code_date",
+                        set_={
+                            "name": stmt.excluded.name,
+                            "p3": stmt.excluded.p3,
+                            "p6": stmt.excluded.p6,
+                            "p9": stmt.excluded.p9,
+                            "p12": stmt.excluded.p12,
+                            "score": stmt.excluded.score,
+                            "rs_rating": stmt.excluded.rs_rating,
+                        },
+                    )
+                    await session.execute(stmt)
+                await session.commit()
+
+            stats["copied"] += 1
+            logger.info("非交易日 %s 已复制自 %s（%d 只股票）", ntd, prev_td, len(copy_records))
+
+    logger.info("回填完成: %s", stats)
+    return stats
 
 
 # ============================================================

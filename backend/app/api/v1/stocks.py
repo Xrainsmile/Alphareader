@@ -14,7 +14,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.services.indicators import compute_and_save_rs_rating, load_rs_rating
+from app.services.indicators import compute_and_save_rs_rating, load_rs_rating, backfill_rs_rating
 from app.services.data_fetcher import incremental_update_quotes
 
 logger = logging.getLogger("alphareader.api.stocks")
@@ -310,4 +310,41 @@ async def search_stocks(
         date=actual_date,
         items=[],
         message=f"未找到匹配「{q.strip()}」的股票",
+    )
+
+
+@router.post("/rs_rating/backfill")
+async def trigger_backfill(
+    start_date: date = Query(..., description="起始日期"),
+    end_date: date = Query(..., description="结束日期"),
+    skip_existing: bool = Query(True, description="跳过已有数据的日期"),
+):
+    """回填指定日期范围的 RS Rating（后台任务）。
+
+    对于非交易日，复制上一个最近交易日的数据。
+    """
+    if _task.status == TaskStatus.RUNNING:
+        return JSONResponse(
+            status_code=409,
+            content={"status": "conflict", "message": "已有任务在运行中"},
+        )
+
+    async def _run():
+        try:
+            _task.reset()
+            result = await backfill_rs_rating(start_date, end_date, skip_existing)
+            total = result["computed"] + result["copied"]
+            _task.complete(total)
+            logger.info("回填完成: %s", result)
+        except Exception as e:
+            _task.fail(str(e))
+            logger.error("回填失败: %s\n%s", e, traceback.format_exc())
+
+    asyncio.create_task(_run())
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "message": f"RS Rating 回填已启动: {start_date} ~ {end_date}",
+        },
     )
