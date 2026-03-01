@@ -56,10 +56,7 @@ class AnalysisCreate(BaseModel):
     trend: str = Field(..., max_length=500)
     pattern: str = Field(..., max_length=500)
     volume_price: str = Field(..., max_length=500)
-    discipline_action: str = Field(..., pattern=r"^(retain|gray|research|churn)$")
-    risk_type: str | None = Field(None, pattern=r"^(top|bottom)$")
-    risk_price: float | None = None
-    risk_note: str | None = Field(None, max_length=500)
+    plan: str = Field(..., max_length=500)
     pnl_thinking: str = Field(..., max_length=500)
     verdict: str = Field(..., max_length=500)
 
@@ -102,25 +99,8 @@ async def sandbox_overview(
     )
     counts = count_result.one()
 
-    # 按 discipline_action 统计（基于每只活跃股票的最新推演记录）
-    active_stocks_result = await db.execute(
-        select(SandboxStock.id).where(SandboxStock.status.in_(["holding", "watching"]))
-    )
-    active_ids = [row[0] for row in active_stocks_result.all()]
-
-    discipline_counts = {"retain": 0, "gray": 0, "research": 0, "churn": 0}
-    for sid in active_ids:
-        la_result = await db.execute(
-            select(SandboxAnalysis.discipline_action)
-            .where(SandboxAnalysis.stock_id == sid)
-            .order_by(desc(SandboxAnalysis.created_at))
-            .limit(1)
-        )
-        action = la_result.scalar()
-        if action and action in discipline_counts:
-            discipline_counts[action] += 1
-        else:
-            discipline_counts["retain"] += 1  # 无推演记录默认留存
+    # 观察池总数（不含退出）
+    total_active = counts.holding + counts.watching
 
     latest_nav = nav_rows[-1] if nav_rows else None
     prev_nav = nav_rows[-2] if len(nav_rows) >= 2 else None
@@ -277,10 +257,6 @@ async def sandbox_overview(
             "exited_count": counts.exited,
             "total_active": total_active,
             "latest_date": str(latest_nav.trade_date) if latest_nav else None,
-            "retain_count": discipline_counts["retain"],
-            "gray_count": discipline_counts["gray"],
-            "research_count": discipline_counts["research"],
-            "churn_count": discipline_counts["churn"],
             "pnl_since_inception": pnl_since_inception,
             "pnl_1y": pnl_1y,
             "pnl_3m": pnl_3m,
@@ -316,12 +292,12 @@ async def sandbox_stock_search(
 @router.get("/stocks")
 async def sandbox_stock_list(
     status: str | None = Query(None, pattern=r"^(watching|holding|exited)$"),
-    discipline: str | None = Query(None, pattern=r"^(retain|gray|research|churn)$"),
+    discipline: str | None = Query(None, pattern=r"^(retain|gray|research|churn)$", deprecated=True),
     q: str | None = Query(None, max_length=20, description="搜索：代码或名称"),
     holding_only: bool = Query(False, description="仅显示持仓票"),
     db: AsyncSession = Depends(get_db),
 ):
-    """观察池列表，附最新一条推演摘要。支持按 discipline_action 筛选、搜索、仅持仓。
+    """观察池列表，附最新一条推演摘要。支持搜索、仅持仓。
     默认排除已退出(exited)的股票，除非显式传入 status=exited。"""
     from app.models.stock import StockDailyQuote
 
@@ -368,12 +344,6 @@ async def sandbox_stock_list(
         stats_row = analysis_stats.one()
         analysis_count = stats_row.count or 0
         analysis_latest_at = stats_row.latest_at
-
-        # 按 discipline_action 过滤
-        if discipline:
-            action = la.discipline_action if la else "retain"
-            if action != discipline:
-                continue
 
         # 持仓统计
         trade_result = await db.execute(
@@ -427,7 +397,7 @@ async def sandbox_stock_list(
             "latest_analysis": {
                 "id": la.id,
                 "score": la.score,
-                "discipline_action": la.discipline_action,
+                "plan": la.plan,
                 "verdict": la.verdict,
                 "created_at": la.created_at.isoformat(),
             } if la else None,
@@ -484,10 +454,7 @@ async def sandbox_stock_detail(
                 "trend": a.trend,
                 "pattern": a.pattern,
                 "volume_price": a.volume_price,
-                "discipline_action": a.discipline_action,
-                "risk_type": a.risk_type,
-                "risk_price": a.risk_price,
-                "risk_note": a.risk_note,
+                "plan": a.plan,
                 "pnl_thinking": a.pnl_thinking,
                 "verdict": a.verdict,
                 "created_at": a.created_at.isoformat(),
@@ -581,10 +548,7 @@ async def admin_add_analysis(
         trend=body.trend,
         pattern=body.pattern,
         volume_price=body.volume_price,
-        discipline_action=body.discipline_action,
-        risk_type=body.risk_type,
-        risk_price=body.risk_price,
-        risk_note=body.risk_note,
+        plan=body.plan,
         pnl_thinking=body.pnl_thinking,
         verdict=body.verdict,
     )
@@ -599,17 +563,14 @@ async def admin_add_analysis(
 
 _CSV_TEMPLATE_HEADER = [
     "ts_code", "score", "trend", "pattern", "volume_price",
-    "discipline_action", "risk_type", "risk_price", "risk_note",
-    "pnl_thinking", "verdict",
+    "plan", "pnl_thinking", "verdict",
 ]
 _CSV_TEMPLATE_EXAMPLE = [
     "600519", "3.5", "均线多头排列，MA20向上", "杯柄形态突破",
-    "放量突破前高，量价配合良好", "retain", "bottom", "1800.00",
-    "跌破1800止损", "盈亏比合理，风控明确", "趋势向好，可持有观察",
+    "放量突破前高，量价配合良好",
+    "突破1900加仓，跌破1800止损，目标2200",
+    "盈亏比合理，风控明确", "趋势向好，可持有观察",
 ]
-
-_DISCIPLINE_VALID = {"retain", "gray", "research", "churn"}
-_RISK_TYPE_VALID = {"top", "bottom", ""}
 
 
 @router.get("/admin/analyses/csv-template")
@@ -641,8 +602,7 @@ async def admin_batch_import_analyses(
     """通过 CSV 文件批量导入推演记录。
 
     CSV 列: ts_code, score, trend, pattern, volume_price,
-            discipline_action, risk_type, risk_price, risk_note,
-            pnl_thinking, verdict
+            plan, pnl_thinking, verdict
 
     系统自动根据 ts_code 匹配观察池中的 stock_id。
     """
@@ -708,32 +668,12 @@ async def admin_batch_import_analyses(
         pnl_thinking = (row.get("pnl_thinking") or "").strip()
         verdict = (row.get("verdict") or "").strip()
 
+        plan = (row.get("plan") or "").strip()
+
         if not all([trend, pattern, volume_price, pnl_thinking, verdict]):
             errors.append({"row": row_num, "ts_code": ts_code, "error": "trend/pattern/volume_price/pnl_thinking/verdict 不能为空"})
             continue
 
-        discipline_action = (row.get("discipline_action") or "retain").strip().lower()
-        if discipline_action not in _DISCIPLINE_VALID:
-            errors.append({"row": row_num, "ts_code": ts_code, "error": f"discipline_action 无效: {discipline_action}"})
-            continue
-
-        risk_type = (row.get("risk_type") or "").strip().lower() or None
-        if risk_type and risk_type not in ("top", "bottom"):
-            errors.append({"row": row_num, "ts_code": ts_code, "error": f"risk_type 无效: {risk_type}"})
-            continue
-
-        risk_price_str = (row.get("risk_price") or "").strip()
-        risk_price = None
-        if risk_price_str:
-            try:
-                risk_price = float(risk_price_str)
-            except ValueError:
-                errors.append({"row": row_num, "ts_code": ts_code, "error": f"risk_price 无效: {risk_price_str}"})
-                continue
-
-        risk_note = (row.get("risk_note") or "").strip() or None
-
-        # 截断到200字
         analysis = SandboxAnalysis(
             stock_id=stock_id,
             ts_code=ts_code,
@@ -741,10 +681,7 @@ async def admin_batch_import_analyses(
             trend=trend[:500],
             pattern=pattern[:500],
             volume_price=volume_price[:500],
-            discipline_action=discipline_action,
-            risk_type=risk_type,
-            risk_price=risk_price,
-            risk_note=risk_note[:500] if risk_note else None,
+            plan=plan[:500] if plan else None,
             pnl_thinking=pnl_thinking[:500],
             verdict=verdict[:500],
         )
@@ -785,10 +722,7 @@ async def admin_list_analyses(
                 "trend": a.trend,
                 "pattern": a.pattern,
                 "volume_price": a.volume_price,
-                "discipline_action": a.discipline_action,
-                "risk_type": a.risk_type,
-                "risk_price": a.risk_price,
-                "risk_note": a.risk_note,
+                "plan": a.plan,
                 "pnl_thinking": a.pnl_thinking,
                 "verdict": a.verdict,
                 "created_at": a.created_at.isoformat(),

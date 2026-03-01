@@ -63,8 +63,8 @@ class SandboxStock(Base):
 class SandboxAnalysis(Base):
     """推演记录 — 对某只观察池股票的多维度分析。
 
-    discipline_action: retain(留存) / gray(灰度) / research(用研) / churn(流失)
-    risk_type: top / bottom (可选)
+    plan: 交易计划（替代旧的 discipline_action/risk_type/risk_price）
+    旧字段保留以兼容历史数据，新录入仅使用 plan。
     """
 
     __tablename__ = "sandbox_analyses"
@@ -85,13 +85,14 @@ class SandboxAnalysis(Base):
     # 4. 量价行为
     volume_price: Mapped[str] = mapped_column(String(500), nullable=False, default="")
 
-    # 5a. 纪律与计划 — 动作 (retain/gray/research/churn)
+    # 5. 交易计划 (Plan) — 新字段，替代旧的 discipline_action/risk_type/risk_price
+    plan: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── 以下旧字段保留以兼容历史数据，新录入不再使用 ──
     discipline_action: Mapped[str] = mapped_column(
         String(16), nullable=False, default="retain"
     )
-
-    # 5b. 纪律与计划 — 风控
-    risk_type: Mapped[str | None] = mapped_column(String(8), nullable=True)  # top / bottom
+    risk_type: Mapped[str | None] = mapped_column(String(8), nullable=True)
     risk_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     risk_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
 

@@ -170,32 +170,9 @@ tr:hover td{background:#f8f8fc}
       </div>
     </div>
 
-    <div style="border-top:1.5px solid var(--border);margin:16px 0;padding-top:16px">
-      <h4 style="font-size:15px;margin-bottom:12px;color:var(--text)">纪律与计划</h4>
-      <div class="form-row">
-        <div class="form-group" style="max-width:180px"><label>动作</label>
-          <select id="a-discipline">
-            <option value="retain">留存</option>
-            <option value="gray">灰度</option>
-            <option value="research">用研</option>
-            <option value="churn">流失</option>
-          </select>
-        </div>
-        <div class="form-group" style="max-width:140px"><label>风控</label>
-          <select id="a-risktype" onchange="toggleRiskFields()">
-            <option value="">不设置</option>
-            <option value="top">Top</option>
-            <option value="bottom">Bottom</option>
-          </select>
-        </div>
-        <div class="form-group risk-field" style="max-width:140px;display:none"><label>风控价格</label>
-          <input id="a-riskprice" type="number" step="0.01" placeholder="价格">
-        </div>
-      </div>
-      <div class="form-row risk-field" style="display:none">
-        <div class="form-group" style="flex:1"><label>风控说明 (500字以内)</label>
-          <textarea id="a-risknote" maxlength="500" placeholder="风控计划说明..."></textarea>
-        </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1"><label>交易计划 Plan (500字以内)</label>
+        <textarea id="a-plan" maxlength="500" placeholder="描述交易计划，如：突破1900加仓，跌破1800止损，目标2200..."></textarea>
       </div>
     </div>
 
@@ -245,8 +222,8 @@ tr:hover td{background:#f8f8fc}
       </div>
     </div>
     <table>
-      <thead><tr><th>日期</th><th>代码</th><th>评分</th><th>动作</th><th>哨子 Verdict</th><th>操作</th></tr></thead>
-      <tbody id="analysisBody"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+      <thead><tr><th>日期</th><th>代码</th><th>评分</th><th>哨子 Verdict</th><th>操作</th></tr></thead>
+      <tbody id="analysisBody"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -491,15 +468,6 @@ async function removeStock(id){
 
 // ── 推演 ──
 
-function toggleRiskFields(){
-  const show=!!document.getElementById('a-risktype').value;
-  document.querySelectorAll('.risk-field').forEach(el=>{el.style.display=show?'':'none'});
-  if(!show){document.getElementById('a-riskprice').value='';document.getElementById('a-risknote').value='';}
-}
-
-const DISCIPLINE_LABELS={retain:'留存',gray:'灰度',research:'用研',churn:'流失'};
-const RISK_LABELS={top:'Top',bottom:'Bottom'};
-
 async function addAnalysis(){
   const picked=pickerState['picker-analysis'];
   if(!picked||!picked.stock_id){showToast('请先搜索并选择观察池中的股票',false);return;}
@@ -508,26 +476,22 @@ async function addAnalysis(){
   const trend=document.getElementById('a-trend').value.trim();
   const pattern=document.getElementById('a-pattern').value.trim();
   const volprice=document.getElementById('a-volprice').value.trim();
+  const plan=document.getElementById('a-plan').value.trim();
   const pnl=document.getElementById('a-pnl').value.trim();
   const verdict=document.getElementById('a-verdict').value.trim();
   if(!trend||!pattern||!volprice||!pnl||!verdict){showToast('趋势/形态/量价/亏盈/哨子均为必填',false);return;}
-  const riskType=document.getElementById('a-risktype').value||null;
   const body={
     stock_id:picked.stock_id,
     ts_code:picked.ts_code,
     score:Math.round(score*10)/10,
     trend,pattern,volume_price:volprice,
-    discipline_action:document.getElementById('a-discipline').value,
-    risk_type:riskType,
-    risk_price:riskType?parseFloat(document.getElementById('a-riskprice').value)||null:null,
-    risk_note:riskType?document.getElementById('a-risknote').value.trim()||null:null,
+    plan:plan||null,
     pnl_thinking:pnl,verdict,
   };
   try{
     await api('/admin/analyses',{method:'POST',body});
     showToast('推演已提交');
-    ['a-score','a-trend','a-pattern','a-volprice','a-riskprice','a-risknote','a-pnl','a-verdict'].forEach(id=>document.getElementById(id).value='');
-    document.getElementById('a-risktype').value='';toggleRiskFields();
+    ['a-score','a-trend','a-pattern','a-volprice','a-plan','a-pnl','a-verdict'].forEach(id=>document.getElementById(id).value='');
     loadAnalysisHistory();
   }catch(e){showToast(e.message,false)}
 }
@@ -603,18 +567,16 @@ async function loadAnalysisHistory(){
     const params=filterId?`?stock_id=${filterId}`:'';
     const d=await api(`/admin/analyses${params}`);
     const items=d.items||[];
-    if(!items.length){body.innerHTML='<tr><td colspan="6" class="empty">暂无推演记录</td></tr>';return;}
+    if(!items.length){body.innerHTML='<tr><td colspan="5" class="empty">暂无推演记录</td></tr>';return;}
     // 构建股票名称映射
     const nameMap={};
     allStocks.forEach(s=>{nameMap[s.ts_code]=s.name});
     body.innerHTML=items.map(a=>{
       const scoreBg=a.score>=4?'var(--green)':a.score>=2.5?'var(--amber)':'var(--red)';
-      const actionLabel=DISCIPLINE_LABELS[a.discipline_action]||a.discipline_action;
       return `<tr>
         <td style="white-space:nowrap">${fmtDate(a.created_at)}</td>
         <td><strong>${a.ts_code}</strong><br><span style="color:var(--muted);font-size:12px">${nameMap[a.ts_code]||''}</span></td>
         <td><span style="display:inline-block;background:${scoreBg};color:#fff;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:700">${a.score}</span></td>
-        <td><span class="badge badge-watching">${actionLabel}</span></td>
         <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.verdict||'').replace(/"/g,'&quot;')}">${a.verdict||'-'}</td>
         <td><button class="btn btn-danger btn-sm" onclick="deleteAnalysis(${a.id},'${a.ts_code}')">删除</button></td>
       </tr>`;

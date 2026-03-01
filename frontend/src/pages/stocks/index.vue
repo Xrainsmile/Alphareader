@@ -270,35 +270,19 @@
         <view class="sb-snapshot-tags">
           <view
             class="sb-tag sb-tag-retain"
-            :class="{ 'sb-tag-active': sbFilter === 'retain' }"
-            @click="toggleDisciplineFilter('retain')"
+            :class="{ 'sb-tag-active': sbFilter === 'watching' }"
+            @click="toggleStatusFilter('watching')"
           >
-            <text class="sb-tag-label">留存 Retain</text>
-            <text class="sb-tag-num">{{ sbSummary.retain_count || 0 }}支</text>
+            <text class="sb-tag-label">观察中</text>
+            <text class="sb-tag-num">{{ sbSummary.watching_count || 0 }}支</text>
           </view>
           <view
             class="sb-tag sb-tag-gray"
-            :class="{ 'sb-tag-active': sbFilter === 'gray' }"
-            @click="toggleDisciplineFilter('gray')"
+            :class="{ 'sb-tag-active': sbFilter === 'holding' }"
+            @click="toggleStatusFilter('holding')"
           >
-            <text class="sb-tag-label">灰度 Gray</text>
-            <text class="sb-tag-num">{{ sbSummary.gray_count || 0 }}支</text>
-          </view>
-          <view
-            class="sb-tag sb-tag-research"
-            :class="{ 'sb-tag-active': sbFilter === 'research' }"
-            @click="toggleDisciplineFilter('research')"
-          >
-            <text class="sb-tag-label">用研 Research</text>
-            <text class="sb-tag-num">{{ sbSummary.research_count || 0 }}支</text>
-          </view>
-          <view
-            class="sb-tag sb-tag-churn"
-            :class="{ 'sb-tag-active': sbFilter === 'churn' }"
-            @click="toggleDisciplineFilter('churn')"
-          >
-            <text class="sb-tag-label">流失 Churn</text>
-            <text class="sb-tag-num">{{ sbSummary.churn_count || 0 }}支</text>
+            <text class="sb-tag-label">持仓中</text>
+            <text class="sb-tag-num">{{ sbSummary.holding_count || 0 }}支</text>
           </view>
         </view>
 
@@ -355,8 +339,8 @@
               <text class="sb-stock-name">{{ item.name }}</text>
               <text class="sb-stock-code">（{{ item.ts_code }}）</text>
             </view>
-            <view class="sb-status-badge" :class="'sb-status-' + (item.latest_analysis ? item.latest_analysis.discipline_action : 'retain')">
-              <text class="sb-status-text">{{ disciplineLabel(item.latest_analysis ? item.latest_analysis.discipline_action : 'retain') }}</text>
+            <view class="sb-status-badge" :class="'sb-status-' + item.status">
+              <text class="sb-status-text">{{ statusLabel(item.status) }}</text>
             </view>
           </view>
 
@@ -372,11 +356,8 @@
             <!-- 哨子 Verdict -->
             <text class="sb-verdict">{{ item.latest_analysis.verdict }}</text>
 
-            <!-- 动作标签 + 推演统计 -->
+            <!-- 推演统计 -->
             <view class="sb-action-row">
-              <view class="sb-disc-badge" :class="'sb-disc-' + item.latest_analysis.discipline_action">
-                <text class="sb-disc-text">{{ disciplineLabel(item.latest_analysis.discipline_action) }}</text>
-              </view>
               <view class="sb-meta-info">
                 <text class="sb-analysis-count">{{ item.analysis_count || 0 }}条记录</text>
                 <text class="sb-analysis-dot">·</text>
@@ -575,11 +556,10 @@ const pieSegments = computed(() => {
 
 const statusLabel = (s) => ({ holding: '持仓', watching: '观察', exited: '退出' }[s] || s)
 
-const disciplineLabel = (d) => ({ retain: '留存', gray: '灰度', research: '用研', churn: '流失' }[d] || d)
+
 
 const isHoldingRetain = (item) => {
-  const action = item.latest_analysis ? item.latest_analysis.discipline_action : 'retain'
-  return item.status === 'holding' && action === 'retain'
+  return item.status === 'holding'
 }
 
 const scoreClass = (score) => {
@@ -609,8 +589,8 @@ const formatPnlVal = (v) => {
   return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
 }
 
-const toggleDisciplineFilter = (action) => {
-  sbFilter.value = sbFilter.value === action ? '' : action
+const toggleStatusFilter = (status) => {
+  sbFilter.value = sbFilter.value === status ? '' : status
   loadSandboxStocks()
 }
 
@@ -1199,14 +1179,12 @@ const onOpenIcp = () => {
   display: inline-flex;
 }
 .sb-status-text { font-size: 22rpx; font-weight: 600; }
-.sb-status-retain { background: #dbeafe; }
-.sb-status-retain .sb-status-text { color: #2563eb; }
-.sb-status-gray { background: #f3f4f6; }
-.sb-status-gray .sb-status-text { color: #6b7280; }
-.sb-status-research { background: #f3e8ff; }
-.sb-status-research .sb-status-text { color: #9333ea; }
-.sb-status-churn { background: #fef2f2; }
-.sb-status-churn .sb-status-text { color: #dc2626; }
+.sb-status-holding { background: #dcfce7; }
+.sb-status-holding .sb-status-text { color: #16a34a; }
+.sb-status-watching { background: #dbeafe; }
+.sb-status-watching .sb-status-text { color: #2563eb; }
+.sb-status-exited { background: #f3f4f6; }
+.sb-status-exited .sb-status-text { color: #6b7280; }
 
 /* 评分 */
 .sb-score-row {

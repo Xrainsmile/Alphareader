@@ -145,10 +145,11 @@ export function fetchSandboxOverview(days = 90) {
 /**
  * 观察池列表
  */
-export function fetchSandboxStocks(status = '', discipline = '', q = '', holdingOnly = false) {
+export function fetchSandboxStocks(status = '', statusFilter = '', q = '', holdingOnly = false) {
   const params = []
-  if (status) params.push(`status=${status}`)
-  if (discipline) params.push(`discipline=${discipline}`)
+  // statusFilter 用于按 watching/holding 筛选（替代旧的 discipline 参数）
+  const effectiveStatus = statusFilter || status
+  if (effectiveStatus) params.push(`status=${effectiveStatus}`)
   if (q) params.push(`q=${encodeURIComponent(q)}`)
   if (holdingOnly) params.push(`holding_only=true`)
   const qs = params.length ? `?${params.join('&')}` : ''

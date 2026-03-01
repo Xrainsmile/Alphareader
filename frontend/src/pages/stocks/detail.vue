@@ -78,23 +78,10 @@
               <text class="a-block-body">{{ item.volume_price }}</text>
             </view>
 
-            <!-- 纪律与计划 -->
-            <view class="a-block-item">
-              <text class="a-block-heading">纪律与计划</text>
-              <view class="a-disc-row">
-                <view class="discipline-badge" :class="'disc-' + item.discipline_action">
-                  <text class="disc-text">{{ disciplineLabel(item.discipline_action) }}</text>
-                </view>
-                <text class="a-disc-date">{{ formatDate(item.created_at) }}</text>
-              </view>
-              <!-- 风控 -->
-              <view v-if="item.risk_type" class="a-risk-block">
-                <view class="risk-tag" :class="'risk-' + item.risk_type">
-                  <text class="risk-label">{{ item.risk_type === 'top' ? 'Top' : 'Bottom' }}</text>
-                  <text v-if="item.risk_price" class="risk-price">¥{{ item.risk_price }}</text>
-                </view>
-                <text v-if="item.risk_note" class="a-risk-note">{{ item.risk_note }}</text>
-              </view>
+            <!-- 交易计划 Plan -->
+            <view v-if="item.plan" class="a-block-item">
+              <text class="a-block-heading">交易计划 (PLAN)</text>
+              <text class="a-block-body">{{ item.plan }}</text>
             </view>
 
             <!-- 亏盈思考 -->
@@ -163,7 +150,7 @@ const trades = ref([])
 
 const statusLabel = (s) => ({ holding: '持仓', watching: '观察', exited: '退出' }[s] || s)
 
-const disciplineLabel = (d) => ({ retain: '留存', gray: '灰度', research: '用研', churn: '流失' }[d] || d)
+
 
 const scoreClass = (score) => {
   if (score >= 4) return 'a-score-high'
@@ -345,40 +332,7 @@ onLoad(async (options) => {
   color: #1a1a2e; font-weight: 600; font-size: 26rpx;
 }
 
-/* 纪律动作标签 */
-.a-disc-row {
-  display: flex; align-items: center; gap: 12rpx;
-  margin-bottom: 10rpx;
-}
-.discipline-badge { padding: 6rpx 16rpx; border-radius: 10rpx; }
-.disc-text { font-size: 24rpx; font-weight: 700; }
-.disc-retain { background: rgba(59, 130, 246, 0.1); }
-.disc-retain .disc-text { color: #3b82f6; }
-.disc-gray { background: rgba(142, 142, 147, 0.1); }
-.disc-gray .disc-text { color: #8e8e93; }
-.disc-research { background: rgba(168, 85, 247, 0.1); }
-.disc-research .disc-text { color: #a855f7; }
-.disc-churn { background: rgba(239, 68, 68, 0.1); }
-.disc-churn .disc-text { color: #ef4444; }
-.a-disc-date { font-size: 22rpx; color: #b0b0be; }
 
-.a-risk-block {
-  margin-top: 8rpx;
-}
-.risk-tag {
-  display: inline-flex; align-items: center; gap: 6rpx;
-  padding: 6rpx 14rpx; border-radius: 8rpx;
-}
-.risk-label { font-size: 22rpx; font-weight: 700; }
-.risk-price { font-size: 24rpx; font-weight: 700; font-family: 'SF Pro Display', 'DIN Alternate', sans-serif; }
-.risk-top { background: rgba(239, 68, 68, 0.08); }
-.risk-top .risk-label, .risk-top .risk-price { color: #ef4444; }
-.risk-bottom { background: rgba(34, 197, 94, 0.08); }
-.risk-bottom .risk-label, .risk-bottom .risk-price { color: #22c55e; }
-.a-risk-note {
-  font-size: 24rpx; color: #6a6a7a; line-height: 1.6;
-  display: block; margin-top: 8rpx;
-}
 
 /* ── Trade List ── */
 .trade-list {
@@ -454,13 +408,7 @@ onLoad(async (options) => {
   .a-block-verdict { padding: 10px 14px; border-radius: 8px; }
   .a-verdict-body { font-size: 14px; }
 
-  .discipline-badge { padding: 3px 12px; border-radius: 6px; }
-  .disc-text { font-size: 13px; }
-  .a-disc-date { font-size: 12px; }
-  .risk-tag { padding: 3px 10px; border-radius: 5px; }
-  .risk-label { font-size: 12px; }
-  .risk-price { font-size: 13px; }
-  .a-risk-note { font-size: 13px; }
+
 
   .trade-list { border-radius: 12px; }
   .trade-row { padding: 14px 18px; }
