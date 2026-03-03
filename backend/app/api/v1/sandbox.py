@@ -34,6 +34,8 @@ from app.config import settings
 from app.dashboard import _verify_token
 from app.database import get_db
 from app.models.sandbox import SandboxAnalysis, SandboxNav, SandboxStock, SandboxTrade
+from app.services.sandbox_nav import INITIAL_CAPITAL, compute_nav_core
+from app.services.sandbox_stock import get_sandbox_stock_list
 
 logger = logging.getLogger("alphareader.sandbox")
 
@@ -68,6 +70,26 @@ class TradeCreate(BaseModel):
     shares: int = Field(..., gt=0)
     trade_date: date
     note: str | None = None
+
+
+# ════════════════════════════════════════════════════════════
+# Sandbox 访问密码验证
+# ════════════════════════════════════════════════════════════
+
+class SandboxAuthRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=128)
+
+@router.post("/verify-access")
+async def verify_sandbox_access(body: SandboxAuthRequest):
+    """验证模拟仓访问密码。使用恒定时间比较防止时序攻击。"""
+    import hmac
+    expected = settings.SANDBOX_PASSWORD
+    if not expected:
+        # 未配置密码 → 直接放行
+        return {"ok": True}
+    if hmac.compare_digest(body.password.encode(), expected.encode()):
+        return {"ok": True}
+    raise HTTPException(status_code=403, detail="密码错误")
 
 
 # ════════════════════════════════════════════════════════════
@@ -299,111 +321,13 @@ async def sandbox_stock_list(
 ):
     """观察池列表，附最新一条推演摘要。支持搜索、仅持仓。
     默认排除已退出(exited)的股票，除非显式传入 status=exited。"""
-    from app.models.stock import StockDailyQuote
-
-    query = select(SandboxStock).order_by(desc(SandboxStock.updated_at))
-    if status:
-        query = query.where(SandboxStock.status == status)
-    else:
-        query = query.where(SandboxStock.status != "exited")
-    if holding_only:
-        query = query.where(SandboxStock.status == "holding")
-    if q:
-        keyword = f"%{q.strip()}%"
-        query = query.where(
-            (SandboxStock.ts_code.ilike(keyword)) | (SandboxStock.name.ilike(keyword))
-        )
-    result = await db.execute(query)
-    stocks = result.scalars().all()
-
-    # 从 SandboxNav 表读取最新快照（轻量级，不触发实时行情拉取）
-    nav_result = await db.execute(
-        select(SandboxNav).order_by(desc(SandboxNav.trade_date)).limit(1)
+    _ = discipline  # 兼容旧参数，避免破坏前端历史调用
+    return await get_sandbox_stock_list(
+        db,
+        status=status,
+        q=q,
+        holding_only=holding_only,
     )
-    latest_nav = nav_result.scalar_one_or_none()
-    total_assets = float(latest_nav.total_market_value + latest_nav.cash) if latest_nav else float(INITIAL_CAPITAL)
-
-    items = []
-    for s in stocks:
-        # 最新推演（按 ID 倒序，比 created_at 更可靠）
-        latest_analysis = await db.execute(
-            select(SandboxAnalysis)
-            .where(SandboxAnalysis.stock_id == s.id)
-            .order_by(desc(SandboxAnalysis.id))
-            .limit(1)
-        )
-        la = latest_analysis.scalar_one_or_none()
-
-        # 推演记录统计（总数 + 最新更新时间）
-        analysis_stats = await db.execute(
-            select(
-                func.count(SandboxAnalysis.id).label("count"),
-                func.max(SandboxAnalysis.created_at).label("latest_at"),
-            ).where(SandboxAnalysis.stock_id == s.id)
-        )
-        stats_row = analysis_stats.one()
-        analysis_count = stats_row.count or 0
-        analysis_latest_at = stats_row.latest_at
-
-        # 持仓统计
-        trade_result = await db.execute(
-            select(
-                func.sum(
-                    case(
-                        (SandboxTrade.action == "buy", SandboxTrade.shares),
-                        else_=-SandboxTrade.shares,
-                    )
-                ).label("net_shares"),
-            ).where(SandboxTrade.stock_id == s.id)
-        )
-        net_shares = trade_result.scalar() or 0
-
-        # 计算持仓比例（持仓市值 / 总资产）— 使用行情表数据，不触发实时拉取
-        position_pct = 0.0
-        if int(net_shares) > 0:
-            # 优先：行情表收盘价
-            price_result = await db.execute(
-                select(StockDailyQuote.close)
-                .where(StockDailyQuote.ts_code == s.ts_code)
-                .order_by(desc(StockDailyQuote.trade_date))
-                .limit(1)
-            )
-            close_price = price_result.scalar()
-            if close_price is None:
-                # 回退：最近交易价格
-                fb = await db.execute(
-                    select(SandboxTrade.price)
-                    .where(SandboxTrade.ts_code == s.ts_code)
-                    .order_by(desc(SandboxTrade.trade_date), desc(SandboxTrade.id))
-                    .limit(1)
-                )
-                close_price = fb.scalar()
-                if close_price:
-                    close_price = float(close_price)
-            if close_price and total_assets > 0:
-                market_val = float(close_price) * int(net_shares)
-                position_pct = round(market_val / total_assets * 100, 1)
-
-        items.append({
-            "id": s.id,
-            "ts_code": s.ts_code,
-            "name": s.name,
-            "status": s.status,
-            "reason": s.reason,
-            "position_pct": position_pct,
-            "added_at": s.added_at.isoformat() if s.added_at else None,
-            "analysis_count": analysis_count,
-            "analysis_latest_at": analysis_latest_at.isoformat() if analysis_latest_at else None,
-            "latest_analysis": {
-                "id": la.id,
-                "score": la.score,
-                "plan": la.plan,
-                "verdict": la.verdict,
-                "created_at": la.created_at.isoformat(),
-            } if la else None,
-        })
-
-    return {"items": items, "total": len(items)}
 
 
 @router.get("/stocks/{stock_id}")
@@ -835,188 +759,6 @@ async def admin_delete_trade(
 # NAV 计算
 # ════════════════════════════════════════════════════════════
 
-INITIAL_CAPITAL = Decimal("104152.59")  # 104,152.59 元初始总资产（NAV=1 的基准）
-
-
-async def _compute_nav_core(db: AsyncSession, calc_date: date, cash_balance: float | None = None, use_realtime: bool = True, market_value_override: float | None = None) -> dict | None:
-    """NAV 核心计算逻辑（供 API 端点和 scheduler 共用）。
-
-    计算公式（标准基金净值算法）：
-      初始总资产 = INITIAL_CAPITAL = 104,152.59（NAV=1 的基准）
-      当前现金 = cash_balance（手动传入）或 INITIAL_CAPITAL - Σ(买入金额) + Σ(卖出金额)
-      持仓市值 = Σ(净持仓 × 不复权最新价)
-      当天总资产 = 当前现金 + 持仓市值
-      NAV = 当天总资产 / 初始总资产
-      收益率 = (NAV - 1) × 100%
-
-    Args:
-        db: 数据库 session
-        calc_date: 计算日期
-        cash_balance: 可选，手动传入的实际现金余额（覆盖从交易推算的值，用于补偿手续费等差异）
-        use_realtime: 是否拉取实时不复权行情（默认 True）。scheduler 调用时传 False 避免拖慢进程。
-
-    返回 dict 包含 nav/total_pnl/market_value/cash/total_assets，若无交易返回 None。
-    """
-    from app.models.stock import StockDailyQuote
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
-    from app.services.data_fetcher import get_sina_prices, is_etf
-
-    # 所有交易
-    trades_result = await db.execute(
-        select(SandboxTrade).where(SandboxTrade.trade_date <= calc_date)
-    )
-    all_trades = trades_result.scalars().all()
-
-    if not all_trades:
-        return None
-
-    # 按股票汇总持仓 + 计算现金变动
-    positions: dict[str, int] = {}  # ts_code -> net_shares
-    cash_flow = Decimal("0")  # 净现金流出（买入为正流出，卖出为负流出）
-    for t in all_trades:
-        code = t.ts_code
-        if t.action == "buy":
-            positions[code] = positions.get(code, 0) + t.shares
-            cash_flow += t.price * t.shares  # 买入花钱
-        else:
-            positions[code] = positions.get(code, 0) - t.shares
-            cash_flow -= t.price * t.shares  # 卖出回款
-
-    # 当前现金：优先使用手动传入值（含手续费补偿），否则从交易推算
-    if cash_balance is not None:
-        cash = Decimal(str(cash_balance))
-    else:
-        cash = INITIAL_CAPITAL - cash_flow
-
-    # 获取持仓代码列表
-    holding_codes = [code for code, shares in positions.items() if shares > 0]
-
-    # 获取持仓最新价格（不复权）
-    realtime_prices: dict[str, float] = {}
-    if use_realtime and holding_codes and calc_date >= date.today():
-        # 方式 1: 新浪财经 HTTP 接口（最可靠，不依赖 akshare）
-        try:
-            realtime_prices = await get_sina_prices(holding_codes)
-            if realtime_prices:
-                logger.info("NAV: 新浪行情获取成功 %d/%d: %s", len(realtime_prices), len(holding_codes), realtime_prices)
-        except Exception as e:
-            logger.warning("NAV: 新浪行情获取失败: %s", e)
-
-        # 方式 2: 如果新浪接口也有缺失，尝试 akshare 逐只获取
-        missing_codes = [c for c in holding_codes if c not in realtime_prices]
-        if missing_codes:
-            logger.info("NAV: 新浪行情缺少 %d 只，尝试 akshare: %s", len(missing_codes), missing_codes)
-            try:
-                from app.services.data_fetcher import get_unadjusted_close
-                ak_prices = await get_unadjusted_close(missing_codes)
-                if ak_prices:
-                    realtime_prices.update(ak_prices)
-                    logger.info("NAV: akshare 补全 %d 只: %s", len(ak_prices), ak_prices)
-            except Exception as e:
-                logger.warning("NAV: akshare 补全失败: %s", e)
-
-    # 计算持仓市值
-    total_market_value = Decimal("0")
-    holdings_detail = []  # 用于日志输出每只股票的明细
-    for code, shares in positions.items():
-        if shares <= 0:
-            continue
-
-        close_price = None
-        price_source = ""
-
-        # 优先级 1: 不复权价格（逐只获取 or 实时行情）
-        if code in realtime_prices:
-            close_price = realtime_prices[code]
-            price_source = "unadjusted"
-        else:
-            # 优先级 2: 行情表收盘价（注意：前复权，历史日期回退用）
-            price_result = await db.execute(
-                select(StockDailyQuote.close)
-                .where(
-                    StockDailyQuote.ts_code == code,
-                    StockDailyQuote.trade_date <= calc_date,
-                )
-                .order_by(desc(StockDailyQuote.trade_date))
-                .limit(1)
-            )
-            close_price = price_result.scalar()
-            if close_price is not None:
-                price_source = "db_qfq"
-
-            # 优先级 3: 最近一笔交易价格
-            if close_price is None:
-                fallback_result = await db.execute(
-                    select(SandboxTrade.price)
-                    .where(
-                        SandboxTrade.ts_code == code,
-                        SandboxTrade.trade_date <= calc_date,
-                    )
-                    .order_by(desc(SandboxTrade.trade_date), desc(SandboxTrade.id))
-                    .limit(1)
-                )
-                fallback_price = fallback_result.scalar()
-                if fallback_price:
-                    close_price = float(fallback_price)
-                    price_source = "trade_fallback"
-                    logger.info("NAV: %s no quote data, using trade price %.4f", code, close_price)
-
-        if close_price:
-            mv = Decimal(str(close_price)) * shares
-            total_market_value += mv
-            holdings_detail.append(
-                f"{code}: price={close_price}({price_source}) × {shares}shares = ¥{float(mv):.2f}"
-            )
-
-    # 输出每只持仓的价格明细
-    if holdings_detail:
-        logger.info("NAV holdings detail:\n  %s", "\n  ".join(holdings_detail))
-
-    # 如果手动传入了市值，直接覆盖计算结果
-    if market_value_override is not None:
-        total_market_value = Decimal(str(market_value_override))
-        logger.info("NAV: 使用手动输入市值 ¥%.2f（覆盖计算值）", market_value_override)
-
-    total_assets = total_market_value + cash
-    nav_value = float(total_assets / INITIAL_CAPITAL) if INITIAL_CAPITAL > 0 else 1.0
-    total_pnl = round((nav_value - 1.0) * 100, 2)
-
-    # Upsert NAV
-    stmt = pg_insert(SandboxNav).values(
-        trade_date=calc_date,
-        total_market_value=total_market_value,
-        cash=cash,
-        nav=nav_value,
-        total_pnl=total_pnl,
-    )
-    stmt = stmt.on_conflict_do_update(
-        constraint="uq_sandbox_nav_date",
-        set_={
-            "total_market_value": stmt.excluded.total_market_value,
-            "cash": stmt.excluded.cash,
-            "nav": stmt.excluded.nav,
-            "total_pnl": stmt.excluded.total_pnl,
-        },
-    )
-    await db.execute(stmt)
-    await db.commit()
-
-    logger.info(
-        "NAV computed for %s: nav=%.4f, pnl=%.2f%%, mv=%.2f, cash=%.2f%s",
-        calc_date, nav_value, total_pnl, total_market_value, cash,
-        " (manual cash)" if cash_balance is not None else "",
-    )
-    return {
-        "date": str(calc_date),
-        "nav": round(nav_value, 4),
-        "total_pnl": total_pnl,
-        "market_value": float(total_market_value),
-        "cash": float(cash),
-        "total_assets": round(float(total_market_value + cash), 2),
-        "holdings_detail": holdings_detail,
-    }
-
-
 @router.post("/nav/compute")
 async def compute_nav(
     target_date: date | None = None,
@@ -1025,32 +767,24 @@ async def compute_nav(
     db: AsyncSession = Depends(get_db),
     _: None = Depends(_require_admin),
 ):
-    """计算指定日期（默认今天）的净值。
+    """计算指定日期（默认今天）的净值。"""
+    from app.services.data_fetcher import fetch_sandbox_etf_quotes
 
-    Args:
-        target_date: 计算日期（默认今天）
-        cash_balance: 可选，实际现金余额（券商账户中的可用资金，
-                      传入后将覆盖从交易推算的值，用于补偿手续费等差异）
-        market_value: 可选，手动输入的持仓市值（当行情获取失败时使用）
-
-    逻辑：
-    1. 汇总所有交易记录，计算各股票净持仓
-    2. 获取实时不复权行情计算持仓市值
-    3. 当天总资产 = 现金 + 持仓市值
-    4. NAV = 当天总资产 / 初始总资产 (104,152.59)
-    """
     calc_date = target_date or date.today()
 
-    # 先更新 ETF 行情，确保计算使用最新数据
     try:
-        from app.services.data_fetcher import fetch_sandbox_etf_quotes
         etf_count = await fetch_sandbox_etf_quotes()
         if etf_count > 0:
             logger.info("NAV compute: ETF 行情已更新 %d 条", etf_count)
     except Exception as etf_err:
         logger.warning("NAV compute: ETF 行情更新失败（不影响计算）: %s", etf_err)
 
-    result = await _compute_nav_core(db, calc_date, cash_balance=cash_balance, market_value_override=market_value)
+    result = await compute_nav_core(
+        db,
+        calc_date,
+        cash_balance=cash_balance,
+        market_value_override=market_value,
+    )
     if result is None:
         return {
             "date": str(calc_date),

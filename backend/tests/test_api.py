@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
 
 from app.models.news import News
+from app.models.sandbox import SandboxAnalysis, SandboxNav, SandboxStock, SandboxTrade
+from app.models.stock import StockDailyQuote
 
 
 class TestRootEndpoint:
@@ -113,8 +116,96 @@ class TestPipelineEndpoints:
         data = resp.json()
         assert "running" in data
 
+    async def test_trigger_pipeline(self, client, monkeypatch):
+        import app.api.v1.news as news_api
+
+        async def _fake_bg():
+            news_api._pipeline_status["running"] = False
+            news_api._pipeline_status["last_result"] = {"fetched": 1, "stored": 1}
+
+        news_api._pipeline_status["running"] = False
+        monkeypatch.setattr(news_api, "_run_pipeline_bg", _fake_bg)
+
+        resp = await client.post("/api/v1/news/pipeline/run")
+        assert resp.status_code == 200
+        assert "Pipeline started" in resp.json()["message"]
+
     async def test_clear_cache(self, client):
         resp = await client.delete("/api/v1/news/pipeline/cache")
         assert resp.status_code == 200
         data = resp.json()
         assert "keys_deleted" in data
+
+
+class TestSandboxStocksEndpoint:
+    @pytest.fixture
+    async def seed_sandbox_data(self, db_session):
+        s_holding = SandboxStock(ts_code="600519", name="贵州茅台", status="holding", reason="核心持仓")
+        s_watch = SandboxStock(ts_code="000001", name="平安银行", status="watching", reason="观察")
+        db_session.add_all([s_holding, s_watch])
+        await db_session.flush()
+
+        db_session.add_all(
+            [
+                SandboxAnalysis(
+                    stock_id=s_holding.id,
+                    ts_code=s_holding.ts_code,
+                    score=3.2,
+                    trend="趋势1",
+                    pattern="形态1",
+                    volume_price="量价1",
+                    plan="计划1",
+                    pnl_thinking="思考1",
+                    verdict="结论1",
+                ),
+                SandboxAnalysis(
+                    stock_id=s_holding.id,
+                    ts_code=s_holding.ts_code,
+                    score=4.3,
+                    trend="趋势2",
+                    pattern="形态2",
+                    volume_price="量价2",
+                    plan="计划2",
+                    pnl_thinking="思考2",
+                    verdict="结论2",
+                ),
+                SandboxTrade(
+                    stock_id=s_holding.id,
+                    ts_code=s_holding.ts_code,
+                    action="buy",
+                    price=Decimal("10.00"),
+                    shares=100,
+                    trade_date=date(2026, 2, 14),
+                    note="建仓",
+                ),
+                StockDailyQuote(
+                    ts_code=s_holding.ts_code,
+                    name=s_holding.name,
+                    trade_date=date(2026, 2, 14),
+                    close=10.0,
+                ),
+                SandboxNav(
+                    trade_date=date(2026, 2, 14),
+                    total_market_value=Decimal("1000.00"),
+                    cash=Decimal("9000.00"),
+                    nav=1.0,
+                    total_pnl=0.0,
+                ),
+            ]
+        )
+        await db_session.commit()
+        return {"holding_id": s_holding.id, "watch_id": s_watch.id}
+
+    async def test_sandbox_stocks_core_path(self, client, seed_sandbox_data):
+        resp = await client.get("/api/v1/sandbox/stocks?holding_only=true")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
+
+        item = data["items"][0]
+        assert item["id"] == seed_sandbox_data["holding_id"]
+        assert item["analysis_count"] == 2
+        assert item["latest_analysis"]["score"] == 4.3
+        assert item["position_pct"] == 10.0

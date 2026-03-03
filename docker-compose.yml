@@ -8,9 +8,14 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      # Nginx envsubst 会将模板中的 ${NGINX_API_KEY} 替换为实际值
+      NGINX_API_KEY: ${API_KEY}
+      # 只替换 NGINX_ 前缀的变量，保留 Nginx 原生 $host/$uri 等
+      NGINX_ENVSUBST_FILTER: NGINX_
     volumes:
-      # Mount SSL certs and Nginx prod config
-      - ./deploy/nginx/conf.d:/etc/nginx/conf.d:ro
+      # Mount SSL certs and Nginx prod config (as template)
+      - ./deploy/nginx/conf.d:/etc/nginx/templates:ro
       - certbot_conf:/etc/letsencrypt:ro
       - certbot_www:/var/www/certbot:ro
     depends_on:

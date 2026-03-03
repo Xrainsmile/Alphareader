@@ -136,6 +136,16 @@ export function searchStocks(params = {}) {
 // ── Sandbox API（模拟仓）──
 
 /**
+ * 验证模拟仓访问密码
+ */
+export function verifySandboxAccess(password) {
+  return request('/api/v1/sandbox/verify-access', {
+    method: 'POST',
+    data: { password },
+  })
+}
+
+/**
  * 模拟仓概览（净值曲线 + 概览指标）
  */
 export function fetchSandboxOverview(days = 90) {

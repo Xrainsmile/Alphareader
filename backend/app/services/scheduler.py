@@ -33,6 +33,7 @@ from app.services.pipeline import run_pipeline
 from app.services.notifier import send_alert
 from app.services.indicators import compute_and_save_rs_rating
 from app.services.data_fetcher import incremental_update_quotes
+from app.services.sandbox_nav import compute_nav_core
 
 logger = logging.getLogger("alphareader.scheduler")
 
@@ -155,7 +156,6 @@ async def _sandbox_nav_job():
     """
     from datetime import date as date_type
     from app.database import async_session
-    from app.api.v1.sandbox import _compute_nav_core
     from app.services.data_fetcher import fetch_sandbox_etf_quotes
 
     try:
@@ -172,7 +172,7 @@ async def _sandbox_nav_job():
         calc_date = date_type.today()
 
         async with async_session() as db:
-            result = await _compute_nav_core(db, calc_date, use_realtime=True)
+            result = await compute_nav_core(db, calc_date, use_realtime=True)
 
         if result is None:
             logger.info("Sandbox NAV: No trades yet, skipping")

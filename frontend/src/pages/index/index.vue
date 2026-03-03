@@ -286,22 +286,23 @@
 
     <!-- 底部备案信息 -->
     </template>
-    <view class="site-footer">
-      <text class="footer-icp" @click="onOpenUrl('https://beian.miit.gov.cn/')">蜀ICP备2026006985号</text>
-      <text class="footer-copy">© 2026 Rick</text>
-    </view>
+    <SiteFooter mobile-padding="40rpx 0 60rpx" desktop-padding="32px 0 48px" />
   </view>
 </template>
 
 <script>
 import { fetchNews, searchNews, fetchHotTopics } from '../../utils/api.js'
 import { initTracker, trackImpression, trackClick, destroyTracker } from '../../utils/tracker.js'
+import SiteFooter from '@/components/common/SiteFooter.vue'
 
 const PAGE_SIZE = 20
 const SEARCH_HISTORY_KEY = 'alphareader_search_history'
 const MAX_HISTORY = 10
 
 export default {
+  components: {
+    SiteFooter,
+  },
   data() {
     return {
       newsList: [],
@@ -1500,24 +1501,6 @@ ${newsBlock}
   color: #8c8c9a;
 }
 
-/* ── Site Footer ── */
-.site-footer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40rpx 0 60rpx;
-  gap: 8rpx;
-}
-.footer-icp {
-  font-size: 22rpx;
-  color: #b0b0be;
-  text-decoration: underline;
-}
-.footer-copy {
-  font-size: 22rpx;
-  color: #b0b0be;
-}
-
 /* ═══════════════════════════════════════════════════════════
    PC / Tablet 适配 (屏幕宽度 > 768px)
    uni-app H5 下 750rpx = 屏幕宽度，PC 宽屏时 rpx 值会被放大。
@@ -1810,21 +1793,6 @@ ${newsBlock}
     font-size: 13px;
   }
 
-  /* ── Site Footer ── */
-  .site-footer {
-    padding: 32px 0 48px;
-    gap: 6px;
-  }
-  .footer-icp {
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .footer-icp:hover {
-    color: #8c8c9a;
-  }
-  .footer-copy {
-    font-size: 12px;
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════
