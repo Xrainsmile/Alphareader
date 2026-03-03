@@ -68,13 +68,17 @@ class ReportDetail(BaseModel):
 
 # ── Auth helper ──
 
-SYNC_TOKEN = getattr(settings, "REPORT_SYNC_TOKEN", "your-secret-token")
+import hmac
+
+SYNC_TOKEN = settings.REPORT_SYNC_TOKEN
 
 
 def verify_sync_token(authorization: str = Header("")):
     """Simple Bearer token check for the sync endpoint."""
+    if not SYNC_TOKEN:
+        raise HTTPException(status_code=503, detail="REPORT_SYNC_TOKEN 未配置")
     token = authorization.replace("Bearer ", "").strip()
-    if not token or token != SYNC_TOKEN:
+    if not token or not hmac.compare_digest(token.encode(), SYNC_TOKEN.encode()):
         raise HTTPException(status_code=401, detail="Unauthorized")
     return token
 

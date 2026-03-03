@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     ALERT_WEBHOOK_URL: str = ""
 
     # ── Reports 同步鉴权 ──
-    REPORT_SYNC_TOKEN: str = "your-secret-token"  # Node.js 上传脚本使用的 Bearer Token
+    REPORT_SYNC_TOKEN: str = ""  # Node.js 上传脚本使用的 Bearer Token，生产环境必须设置
 
     # ── API Key 全局鉴权 ──
     API_KEY: str = ""  # 为空则不启用鉴权（仅限开发环境）
@@ -78,9 +78,12 @@ class Settings(BaseSettings):
     # ── Dashboard 密码保护 ──
     DASHBOARD_PASSWORD: str = ""  # 为空则不保护（不推荐生产环境）
 
+    # ── Sandbox（模拟仓）访问密码 ──
+    SANDBOX_PASSWORD: str = ""  # 为空则不需要密码（不推荐生产环境）
+
     # ── PostgreSQL 数据库 ──
     POSTGRES_USER: str = "alphareader"     # 数据库用户名
-    POSTGRES_PASSWORD: str = "changeme"    # 数据库密码
+    POSTGRES_PASSWORD: str = ""       # 数据库密码（必须通过 .env 设置）
     POSTGRES_DB: str = "alphareader"       # 数据库名
     POSTGRES_HOST: str = "db"              # 主机（Docker 容器名）
     POSTGRES_PORT: int = 5432              # 端口

@@ -1,22 +1,11 @@
 <template>
   <view class="stocks-container">
     <!-- Tab Bar -->
-    <view class="tab-bar">
-      <view
-        class="tab-item"
-        :class="{ 'tab-active': activeTab === 'rs' }"
-        @click="activeTab = 'rs'"
-      >
-        <text class="tab-text">RS Rating</text>
-      </view>
-      <view
-        class="tab-item"
-        :class="{ 'tab-active': activeTab === 'sandbox' }"
-        @click="switchToSandbox"
-      >
-        <text class="tab-text">模拟仓</text>
-      </view>
-    </view>
+    <StocksTabBar
+      :active-tab="activeTab"
+      @select-rs="onSelectRs"
+      @select-sandbox="switchToSandbox"
+    />
 
     <!-- ═══════════════════════════════════════════════════════
          RS Rating Tab
@@ -56,12 +45,8 @@
 
       <!-- 搜索结果 -->
       <template v-if="searchMode && searchSubmitted">
-        <view v-if="searchLoading" class="empty-state">
-          <text class="empty-text">搜索中...</text>
-        </view>
-        <view v-else-if="searchMessage" class="empty-state">
-          <text class="empty-text">{{ searchMessage }}</text>
-        </view>
+        <EmptyState v-if="searchLoading" text="搜索中..." bg="#ffffff" radius="0 0 16rpx 16rpx" />
+        <EmptyState v-else-if="searchMessage" :text="searchMessage" bg="#ffffff" radius="0 0 16rpx 16rpx" />
         <template v-else-if="searchList.length > 0">
           <view class="info-bar">
             <text class="info-date">找到 {{ searchList.length }} 条结果</text>
@@ -118,12 +103,8 @@
           <text class="th th-pct">涨跌幅</text>
           <text class="th th-rs">RS</text>
         </view>
-        <view v-if="loading" class="empty-state">
-          <text class="empty-text">加载中...</text>
-        </view>
-        <view v-else-if="stockList.length === 0" class="empty-state">
-          <text class="empty-text">暂无数据</text>
-        </view>
+        <EmptyState v-if="loading" text="加载中..." bg="#ffffff" radius="0 0 16rpx 16rpx" />
+        <EmptyState v-else-if="stockList.length === 0" text="暂无数据" bg="#ffffff" radius="0 0 16rpx 16rpx" />
         <view v-else class="stock-list">
           <view
             v-for="(item, idx) in stockList"
@@ -311,12 +292,8 @@
       </view>
 
       <!-- 加载 / 空态 -->
-      <view v-if="sbLoading" class="empty-state">
-        <text class="empty-text">加载中...</text>
-      </view>
-      <view v-else-if="sbStocks.length === 0" class="empty-state" style="border-radius: 16rpx; margin-top: 12rpx;">
-        <text class="empty-text">暂无数据</text>
-      </view>
+      <EmptyState v-if="sbLoading" text="加载中..." bg="#ffffff" radius="16rpx" style="margin-top: 12rpx;" />
+      <EmptyState v-else-if="sbStocks.length === 0" text="暂无数据" bg="#ffffff" radius="16rpx" style="margin-top: 12rpx;" />
 
       <!-- 股票列表 -->
       <view v-else class="sb-stock-list">
@@ -381,49 +358,30 @@
     </template>
 
     <!-- Footer -->
-    <view class="site-footer">
-      <text class="footer-icp" @click="onOpenIcp">蜀ICP备2026006985号</text>
-      <text class="footer-copy">© 2026 Rick</text>
-    </view>
+    <SiteFooter />
 
     <!-- 模拟仓密码验证弹窗 -->
-    <view v-if="showPwdModal" class="pwd-overlay" @click.self="showPwdModal = false">
-      <view class="pwd-card">
-        <view class="pwd-header">
-          <text class="pwd-icon">🔒</text>
-          <text class="pwd-title">访问验证</text>
-          <text class="pwd-desc">模拟仓为私密内容，请输入访问密码</text>
-        </view>
-        <view class="pwd-input-wrap" :class="{ 'pwd-input-error': pwdError }">
-          <input
-            class="pwd-input"
-            type="text"
-            :password="true"
-            placeholder="请输入密码"
-            v-model="pwdValue"
-            :focus="showPwdModal"
-            @confirm="onPwdConfirm"
-          />
-        </view>
-        <text v-if="pwdError" class="pwd-error-text">密码错误，请重试</text>
-        <view class="pwd-actions">
-          <view class="pwd-btn pwd-btn-cancel" @click="showPwdModal = false">
-            <text class="pwd-btn-text cancel-text">取消</text>
-          </view>
-          <view class="pwd-btn pwd-btn-confirm" @click="onPwdConfirm">
-            <text class="pwd-btn-text confirm-text">确认</text>
-          </view>
-        </view>
-      </view>
-    </view>
+    <SandboxPasswordModal
+      :visible="showPwdModal"
+      :password="pwdValue"
+      :error="pwdError"
+      @update:visible="showPwdModal = $event"
+      @update:password="pwdValue = $event"
+      @confirm="onPwdConfirm"
+    />
   </view>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { fetchRSRating, searchStocks, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks } from '@/utils/api'
+import StocksTabBar from '@/components/stocks/StocksTabBar.vue'
+import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
+import SiteFooter from '@/components/common/SiteFooter.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import { fetchRSRating, searchStocks, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
 
 const activeTab = ref('rs')
+const onSelectRs = () => { activeTab.value = 'rs' }
 
 // ═══════════════════════════════════════════════════════
 // RS Rating
@@ -622,14 +580,15 @@ const switchToSandbox = () => {
   showPwdModal.value = true
 }
 
-const onPwdConfirm = () => {
-  if (pwdValue.value === '2333') {
+const onPwdConfirm = async () => {
+  try {
+    await verifySandboxAccess(pwdValue.value)
     sbUnlocked.value = true
     showPwdModal.value = false
     try { uni.setStorageSync('sb_unlocked', 'true') } catch (_) {}
     activeTab.value = 'sandbox'
     if (!sbLoaded) { sbLoaded = true; loadSandboxData() }
-  } else {
+  } catch (_) {
     pwdError.value = true
     setTimeout(() => { pwdError.value = false }, 1500)
   }
@@ -729,11 +688,6 @@ const goToDetail = (id) => {
   uni.navigateTo({ url: `/pages/stocks/detail?id=${id}` })
 }
 
-const onOpenIcp = () => {
-  // #ifdef H5
-  window.open('https://beian.miit.gov.cn/', '_blank')
-  // #endif
-}
 </script>
 
 <style scoped>
@@ -741,36 +695,6 @@ const onOpenIcp = () => {
   min-height: 100vh;
   background: #f0f2f5;
   padding: 0 24rpx;
-}
-
-/* ── Tab Bar ── */
-.tab-bar {
-  display: flex;
-  gap: 0;
-  background: #ffffff;
-  border-radius: 12rpx;
-  margin: 16rpx 0 12rpx;
-  padding: 4rpx;
-  box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
-}
-.tab-item {
-  flex: 1;
-  padding: 16rpx 0;
-  text-align: center;
-  border-radius: 10rpx;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-.tab-active {
-  background: #1a1a2e;
-}
-.tab-text {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: #8c8c9a;
-}
-.tab-active .tab-text {
-  color: #ffffff;
 }
 
 /* ── Header ── */
@@ -956,13 +880,6 @@ const onOpenIcp = () => {
 .rs-warm { background: linear-gradient(135deg, #ff9500, #ffb340); }
 .rs-normal { background: linear-gradient(135deg, #f0b429, #d4981e); }
 .rs-cool { background: linear-gradient(135deg, #8e8e93, #a8a8ae); }
-
-/* ── Empty State ── */
-.empty-state {
-  display: flex; justify-content: center; align-items: center;
-  padding: 120rpx 0; background: #ffffff; border-radius: 0 0 16rpx 16rpx;
-}
-.empty-text { font-size: 28rpx; color: #b0b0be; }
 
 /* ═══════════════════════════════════════════════════════
    模拟仓样式
@@ -1277,17 +1194,6 @@ const onOpenIcp = () => {
 }
 .arrow-icon { font-size: 36rpx; color: #d0d0d8; font-weight: 300; }
 
-/* ── Footer ── */
-.site-footer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 48rpx 0 72rpx;
-  gap: 8rpx;
-}
-.footer-icp { font-size: 22rpx; color: #b0b0be; text-decoration: underline; }
-.footer-copy { font-size: 22rpx; color: #b0b0be; }
-
 /* ═══════════════════════════════════════════════════════════
    PC / Tablet 适配 (≥768px)
    ═══════════════════════════════════════════════════════════ */
@@ -1297,11 +1203,6 @@ const onOpenIcp = () => {
     margin: 0 auto;
     padding: 0 24px;
   }
-
-  /* Tab Bar */
-  .tab-bar { margin: 12px 0 8px; padding: 3px; border-radius: 8px; }
-  .tab-item { padding: 10px 0; border-radius: 7px; }
-  .tab-text { font-size: 15px; }
 
   .stocks-header { padding: 24px 0 12px; }
   .stocks-title { font-size: 26px; letter-spacing: 0.5px; }
@@ -1420,141 +1321,6 @@ const onOpenIcp = () => {
   .sb-highlight-text { font-size: 12px; }
   .arrow-icon { font-size: 22px; }
 
-  .site-footer { padding: 32px 0 48px; gap: 6px; }
-  .footer-icp { font-size: 12px; cursor: pointer; }
-  .footer-icp:hover { color: #8c8c9a; }
-  .footer-copy { font-size: 12px; }
 }
 
-/* ── 密码验证弹窗 ── */
-.pwd-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(26, 26, 46, 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  animation: fadeIn 0.2s ease;
-}
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-.pwd-card {
-  width: 600rpx;
-  max-width: 320px;
-  background: #ffffff;
-  border-radius: 24rpx;
-  padding: 48rpx 40rpx 36rpx;
-  box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.12);
-  animation: slideUp 0.25s ease;
-}
-@keyframes slideUp { from { transform: translateY(40rpx); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-
-.pwd-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 36rpx;
-}
-.pwd-icon {
-  font-size: 48rpx;
-  margin-bottom: 16rpx;
-}
-.pwd-title {
-  font-size: 34rpx;
-  font-weight: 700;
-  color: #1a1a2e;
-  letter-spacing: 1rpx;
-  font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
-}
-.pwd-desc {
-  font-size: 24rpx;
-  color: #8c8c9a;
-  margin-top: 10rpx;
-  text-align: center;
-  line-height: 1.5;
-}
-
-.pwd-input-wrap {
-  background: #f5f6f8;
-  border-radius: 16rpx;
-  padding: 24rpx 28rpx;
-  border: 2rpx solid #e8e8ed;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.pwd-input-wrap:focus-within {
-  border-color: #1a1a2e;
-  box-shadow: 0 2rpx 12rpx rgba(26, 26, 46, 0.1);
-}
-.pwd-input-error {
-  border-color: #ff3b30 !important;
-  box-shadow: 0 2rpx 12rpx rgba(255, 59, 48, 0.15) !important;
-  animation: shake 0.3s ease;
-}
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-8rpx); }
-  75% { transform: translateX(8rpx); }
-}
-
-.pwd-input {
-  width: 100%;
-  font-size: 30rpx;
-  color: #1a1a2e;
-  background: transparent;
-  border: none;
-  outline: none;
-  letter-spacing: 4rpx;
-}
-
-.pwd-error-text {
-  display: block;
-  font-size: 22rpx;
-  color: #ff3b30;
-  margin-top: 12rpx;
-  text-align: center;
-}
-
-.pwd-actions {
-  display: flex;
-  gap: 20rpx;
-  margin-top: 36rpx;
-}
-.pwd-btn {
-  flex: 1;
-  padding: 22rpx 0;
-  border-radius: 14rpx;
-  text-align: center;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-.pwd-btn:active { opacity: 0.7; }
-
-.pwd-btn-cancel {
-  background: #f0f2f5;
-}
-.pwd-btn-confirm {
-  background: #1a1a2e;
-}
-.pwd-btn-text {
-  font-size: 28rpx;
-  font-weight: 600;
-}
-.cancel-text { color: #8c8c9a; }
-.confirm-text { color: #ffffff; }
-
-@media (min-width: 750px) {
-  .pwd-card { padding: 36px 32px 28px; border-radius: 16px; }
-  .pwd-icon { font-size: 32px; }
-  .pwd-title { font-size: 18px; }
-  .pwd-desc { font-size: 13px; }
-  .pwd-input-wrap { padding: 12px 16px; border-radius: 10px; }
-  .pwd-input { font-size: 16px; }
-  .pwd-error-text { font-size: 12px; }
-  .pwd-actions { gap: 12px; margin-top: 24px; }
-  .pwd-btn { padding: 12px 0; border-radius: 10px; }
-  .pwd-btn-text { font-size: 15px; }
-}
 </style>

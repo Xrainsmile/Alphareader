@@ -41,20 +41,23 @@
     </view>
 
     <!-- Empty State -->
-    <view v-if="!loading && reportsList.length === 0" class="empty-state">
-      <text class="empty-text">暂无复盘报告</text>
-    </view>
+    <EmptyState
+      v-if="!loading && reportsList.length === 0"
+      text="暂无复盘报告"
+      mobile-padding="160rpx 0"
+      desktop-padding="80px 0"
+    />
 
     <!-- Loading State -->
-    <view v-if="loading" class="empty-state">
-      <text class="empty-text">加载中...</text>
-    </view>
+    <EmptyState
+      v-if="loading"
+      text="加载中..."
+      mobile-padding="160rpx 0"
+      desktop-padding="80px 0"
+    />
 
     <!-- Footer -->
-    <view class="site-footer">
-      <text class="footer-icp" @click="onOpenIcp">蜀ICP备2026006985号</text>
-      <text class="footer-copy">© 2026 Rick</text>
-    </view>
+    <SiteFooter />
   </view>
 </template>
 
@@ -63,6 +66,8 @@ import { ref, onMounted } from 'vue'
 import { fetchReportsList } from '@/utils/api'
 import { parseFrontMatter } from '@/utils/markdown'
 import { rawReports } from '@/data/reports'
+import SiteFooter from '@/components/common/SiteFooter.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 const reportsList = ref([])
 const loading = ref(true)
@@ -136,11 +141,6 @@ const onShare = (item) => {
   // #endif
 }
 
-const onOpenIcp = () => {
-  // #ifdef H5
-  window.open('https://beian.miit.gov.cn/', '_blank')
-  // #endif
-}
 </script>
 
 <style scoped>
@@ -260,36 +260,6 @@ const onOpenIcp = () => {
   font-weight: 500;
 }
 
-/* ── Empty State ── */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 160rpx 0;
-}
-.empty-text {
-  font-size: 28rpx;
-  color: #b0b0be;
-}
-
-/* ── Footer ── */
-.site-footer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 48rpx 0 72rpx;
-  gap: 8rpx;
-}
-.footer-icp {
-  font-size: 22rpx;
-  color: #b0b0be;
-  text-decoration: underline;
-}
-.footer-copy {
-  font-size: 22rpx;
-  color: #b0b0be;
-}
 
 /* ═══════════════════════════════════════════════════════════
    PC / Tablet 适配 (≥768px)
@@ -365,21 +335,6 @@ const onOpenIcp = () => {
     font-size: 14px;
   }
 
-  /* Footer */
-  .site-footer {
-    padding: 32px 0 48px;
-    gap: 6px;
-  }
-  .footer-icp {
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .footer-icp:hover {
-    color: #8c8c9a;
-  }
-  .footer-copy {
-    font-size: 12px;
-  }
 }
 
 @media screen and (min-width: 1200px) {
