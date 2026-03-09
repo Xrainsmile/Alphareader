@@ -14,11 +14,11 @@
     调用 Embedding API 获取向量（提供商可通过 EMBEDDING_PROVIDER 环境变量切换：
     zhipu → 智谱 embedding-3/embedding-2，siliconflow → 硅基流动 BAAI/bge-m3 免费），
     计算余弦相似度，仅与过去 30 分钟内的短文本向量对比。
-    - 余弦相似度 > 0.85 → 判定重复（绝对去重区）
-    - 余弦相似度 0.78~0.85（灰色地带）→ 数值抗误杀检测：
+    - 余弦相似度 > 0.80 → 判定重复（绝对去重区）
+    - 余弦相似度 0.73~0.80（灰色地带）→ 数值抗误杀检测：
       提取核心数值实体，若数值集合不同 → 保留（同一事件的不同指标），
       否则判定重复。
-    - 余弦相似度 0.70~0.85 → 事件聚合区：放行但标记 related_to_url，
+    - 余弦相似度 0.70~0.80 → 事件聚合区：放行但标记 related_to_url，
       前端可据此将关联报道折叠展示。
     - 余弦相似度 ≤ 0.70 → 独立事件，正常放行。
     降级策略：若 API 调用失败，回退到 SequenceMatcher 标题相似度。
@@ -61,9 +61,9 @@ INDEX_TTL_SECONDS = 24 * 3600       # SimHash 索引滑动窗口：24 小时
 REDIS_SIMHASH_KEY = "alphareader:simhash_index"
 
 # ── 短文本语义通道阈值 ──
-EMBEDDING_COSINE_THRESHOLD = 0.85   # 余弦相似度 > 0.85 → 直接判重（绝对去重区）
+EMBEDDING_COSINE_THRESHOLD = 0.80   # 余弦相似度 > 0.80 → 直接判重（绝对去重区）
 EMBEDDING_CLUSTER_THRESHOLD = 0.70  # 余弦相似度 > 0.70 → 事件聚合区（放行但标记关联）
-EMBEDDING_GRAY_ZONE_LOW = 0.78      # 灰色地带下界：0.78~0.85 触发数值抗误杀
+EMBEDDING_GRAY_ZONE_LOW = 0.73      # 灰色地带下界：0.73~0.80 触发数值抗误杀
 SHORT_TEXT_TTL_SECONDS = 90 * 60    # Embedding 索引滑动窗口：90 分钟
 REDIS_EMBEDDING_KEY = "alphareader:embedding_index"
 
@@ -378,8 +378,8 @@ class NewsDeduplicator:
         仅用标题（非全文），有效识别跨源/跨语言的同一事件。
 
         双阈值策略同短文本通道：
-          cos > 0.85  → 去重丢弃
-          0.70~0.85   → 放行，标记 related_to_url
+          cos > 0.80  → 去重丢弃
+          0.70~0.80   → 放行，标记 related_to_url
           ≤ 0.70      → 独立事件
         """
         titles = [item.title for item in items]
@@ -512,11 +512,11 @@ class NewsDeduplicator:
         """使用 Embedding 向量对短文本做语义去重（双阈值事件聚合策略）。
 
         三个判定区间：
-          cos > 0.85          → 绝对去重区：拦截丢弃
-          0.70 < cos ≤ 0.85   → 事件聚合区：放行，但标记 related_to_url
+          cos > 0.80          → 绝对去重区：拦截丢弃
+          0.70 < cos ≤ 0.80   → 事件聚合区：放行，但标记 related_to_url
           cos ≤ 0.70          → 独立事件区：正常放行
 
-        0.78~0.85 灰色地带叠加数值抗误杀检测（保留原有能力）。
+        0.73~0.80 灰色地带叠加数值抗误杀检测（保留原有能力）。
         """
         now = time.time()
         cutoff = now - SHORT_TEXT_TTL_SECONDS
@@ -566,7 +566,7 @@ class NewsDeduplicator:
                             entry.source, entry.title[:40],
                         )
                 elif sim > EMBEDDING_CLUSTER_THRESHOLD:
-                    # ── 事件聚合区 (0.70~0.78)：放行但标记关联 ──
+                    # ── 事件聚合区 (0.70~0.73)：放行但标记关联 ──
                     if entry.url and cluster_url is None:
                         cluster_url = entry.url
                         logger.info(
