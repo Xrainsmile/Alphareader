@@ -4,14 +4,15 @@
 * **定位**：面向专业投资人的自动化金融情报系统，核心突出“高频”与“信噪比优先”。
 * **后端**：Python FastAPI (纯异步架构) + PostgreSQL 16 (asyncpg 驱动) + Redis 7。
 * **前端**：uni-app (Vue 3 组合式 API)。
-* **AI 依赖**：DeepSeek V3 (负责评分与翻译) + 智谱 Embedding-3 (负责语义去重)。
+* **AI 依赖**：DeepSeek V3 (负责评分与翻译) + Embedding API 多提供商 (负责语义去重，默认硅基流动 BAAI/bge-m3 免费，备选智谱)。
 
 ## 2. 核心业务闭环 (The Pipeline)
 数据流向严格遵循以下 4 步 (`backend/app/services/pipeline.py`)：
 1.  **Fetch (多源抓取)**：并发抓取 6 个信源 (财联社、华尔街见闻、MarketWatch 等)，通过 Redis SHA-256 URL 去重。
 2.  **Dedup (长短文本四层去重)** (`utils/deduplicator.py`)：
-    * 长文本 (>150字)：SimHash (汉明距离≤5) -> 标题包含比对 -> TF-IDF (余弦>0.65) -> 智谱语义 (余弦>0.85)。
-    * 短文本 (≤150字)：智谱语义直接比对 (90分钟窗口)。
+    * 长文本 (>150字)：SimHash (汉明距离≤5) -> 标题包含比对 -> TF-IDF (余弦>0.65) -> Embedding语义 (余弦>0.80)。
+    * 短文本 (≤150字)：Embedding语义直接比对 (90分钟窗口)，事件聚合区(0.70~0.80)标记 related_to_id。
+    * 前端聚合折叠：related_to_id 驱动父子分组，主卡片展示聚合热度(+0.2/子)，子卡片折叠显示。
 3.  **Filter (AI 评分翻译)**：多线程请求 DeepSeek，评分 < 6 分的数据丢弃。英文新闻自动翻译中英双语存储。
 4.  **Store (入库)**：PG `INSERT ... ON CONFLICT DO NOTHING`。
 
