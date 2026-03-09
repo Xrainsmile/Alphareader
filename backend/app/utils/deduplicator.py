@@ -13,10 +13,13 @@
   【短文本语义通道】长度 ≤ 150 字（金融快讯等）
     调用智谱 Embedding-3 API 获取 256 维向量，计算余弦相似度，
     仅与过去 30 分钟内的短文本向量对比。
-    - 余弦相似度 > 0.85 → 判定重复
+    - 余弦相似度 > 0.85 → 判定重复（绝对去重区）
     - 余弦相似度 0.78~0.85（灰色地带）→ 数值抗误杀检测：
       提取核心数值实体，若数值集合不同 → 保留（同一事件的不同指标），
       否则判定重复。
+    - 余弦相似度 0.70~0.85 → 事件聚合区：放行但标记 related_to_url，
+      前端可据此将关联报道折叠展示。
+    - 余弦相似度 ≤ 0.70 → 独立事件，正常放行。
     降级策略：若 API 调用失败，回退到 SequenceMatcher 标题相似度。
 
 存储方案：
@@ -57,7 +60,8 @@ INDEX_TTL_SECONDS = 24 * 3600       # SimHash 索引滑动窗口：24 小时
 REDIS_SIMHASH_KEY = "alphareader:simhash_index"
 
 # ── 短文本语义通道阈值 ──
-EMBEDDING_COSINE_THRESHOLD = 0.85   # 余弦相似度 > 0.85 → 直接判重
+EMBEDDING_COSINE_THRESHOLD = 0.85   # 余弦相似度 > 0.85 → 直接判重（绝对去重区）
+EMBEDDING_CLUSTER_THRESHOLD = 0.70  # 余弦相似度 > 0.70 → 事件聚合区（放行但标记关联）
 EMBEDDING_GRAY_ZONE_LOW = 0.78      # 灰色地带下界：0.78~0.85 触发数值抗误杀
 SHORT_TEXT_TTL_SECONDS = 90 * 60    # Embedding 索引滑动窗口：90 分钟
 REDIS_EMBEDDING_KEY = "alphareader:embedding_index"
@@ -184,12 +188,13 @@ class _IndexEntry:
 class _EmbeddingEntry:
     """短文本 Embedding 索引中的单条记录。
 
-    存储在 Redis Hash 中，key=title, value=JSON{"vec": [...], "src": "...", "ts": ...}。
+    存储在 Redis Hash 中，key=title, value=JSON{"vec": [...], "src": "...", "ts": ..., "url": "..."}。
     """
     vector: list[float]
     title: str
     source: str
     timestamp: float
+    url: str = ""  # 用于事件聚合时回溯关联新闻的 URL
 
 
 # ══════════════════════════════════════════════
@@ -325,11 +330,16 @@ class NewsDeduplicator:
         return unique, total_dropped
 
     async def _title_semantic_dedup(self, items: list) -> tuple[list, int]:
-        """Layer 4: 对长文本标题做 Embedding 语义去重。
+        """Layer 4: 对长文本标题做 Embedding 语义去重（含事件聚合）。
 
         用智谱 Embedding-3 获取标题向量，与 Embedding 索引中的近期标题
-        以及当前批次内部做余弦相似度比对。阈值复用短文本通道设置。
+        以及当前批次内部做余弦相似度比对。
         仅用标题（非全文），有效识别跨源/跨语言的同一事件。
+
+        双阈值策略同短文本通道：
+          cos > 0.85  → 去重丢弃
+          0.70~0.85   → 放行，标记 related_to_url
+          ≤ 0.70      → 独立事件
         """
         titles = [item.title for item in items]
         vectors = await _call_zhipu_embedding(titles)
@@ -348,6 +358,7 @@ class NewsDeduplicator:
         for i, item in enumerate(items):
             vec = vectors[i]
             is_dup = False
+            cluster_url: str | None = None
 
             # 与 Embedding 索引（含短文本历史）比对
             for entry in valid_emb_index:
@@ -362,11 +373,23 @@ class NewsDeduplicator:
                     break
                 elif sim > EMBEDDING_GRAY_ZONE_LOW:
                     title_text = self._get_clean_text(item)
-                    is_dup = self._number_safeguard(
+                    safeguard_dup = self._number_safeguard(
                         title_text, entry.title, sim, item, entry,
                     )
-                    if is_dup:
+                    if safeguard_dup:
+                        is_dup = True
                         break
+                    if entry.url and cluster_url is None:
+                        cluster_url = entry.url
+                elif sim > EMBEDDING_CLUSTER_THRESHOLD:
+                    if entry.url and cluster_url is None:
+                        cluster_url = entry.url
+                        logger.info(
+                            'L4 title-semantic event-cluster (cos=%.3f): '
+                            '[%s]"%s" → related_to [%s]"%s"',
+                            sim, item.source, item.title[:40],
+                            entry.source, entry.title[:40],
+                        )
 
             # 与当前批次已通过的幸存者比对
             if not is_dup:
@@ -384,15 +407,25 @@ class NewsDeduplicator:
                     elif sim > EMBEDDING_GRAY_ZONE_LOW:
                         kept_text = self._get_clean_text(kept)
                         title_text = self._get_clean_text(item)
-                        is_dup = self._number_safeguard(
+                        safeguard_dup = self._number_safeguard(
                             title_text, kept_text, sim, item, kept,
                         )
-                        if is_dup:
+                        if safeguard_dup:
+                            is_dup = True
                             break
+                        if kept.url and cluster_url is None:
+                            cluster_url = kept.url
+                    elif sim > EMBEDDING_CLUSTER_THRESHOLD:
+                        if kept.url and cluster_url is None:
+                            cluster_url = kept.url
 
             if is_dup:
                 dropped += 1
                 continue
+
+            # 写入事件聚合标记
+            if cluster_url is not None:
+                item.related_to_url = cluster_url
 
             # 通过去重，将标题向量加入 Embedding 索引（供后续批次使用）
             self._emb_index.append(_EmbeddingEntry(
@@ -400,6 +433,7 @@ class NewsDeduplicator:
                 title=item.title,
                 source=item.source,
                 timestamp=now,
+                url=getattr(item, "url", ""),
             ))
             survivors.append(item)
 
@@ -434,7 +468,15 @@ class NewsDeduplicator:
     def _dedup_short_text_semantic(
         self, items: list, texts: list[str], vectors: list[list[float]]
     ) -> tuple[list, int]:
-        """使用 Embedding 向量对短文本做语义去重。"""
+        """使用 Embedding 向量对短文本做语义去重（双阈值事件聚合策略）。
+
+        三个判定区间：
+          cos > 0.85          → 绝对去重区：拦截丢弃
+          0.70 < cos ≤ 0.85   → 事件聚合区：放行，但标记 related_to_url
+          cos ≤ 0.70          → 独立事件区：正常放行
+
+        0.78~0.85 灰色地带叠加数值抗误杀检测（保留原有能力）。
+        """
         now = time.time()
         cutoff = now - SHORT_TEXT_TTL_SECONDS
 
@@ -447,12 +489,17 @@ class NewsDeduplicator:
         for i, item in enumerate(items):
             vec = vectors[i]
             is_dup = False
+            cluster_url: str | None = None  # 事件聚合区匹配到的关联 URL
 
-            # ── 与 30 分钟索引比对 ──
+            # ── 与历史索引比对 ──
             for entry in valid_index:
                 sim = _cosine_sim(vec, entry.vector)
 
                 if sim > EMBEDDING_COSINE_THRESHOLD:
+                    # ── 绝对去重区 (>0.85) ──
+                    # 先做灰色地带数值抗误杀（0.78~0.85 区间已被此分支覆盖）
+                    if sim <= EMBEDDING_COSINE_THRESHOLD and sim > EMBEDDING_GRAY_ZONE_LOW:
+                        pass  # 不可能进入此分支，保留逻辑完整性
                     is_dup = True
                     logger.info(
                         'Short-text dup (cos=%.3f): [%s]"%s" ≈ [%s]"%s"',
@@ -461,12 +508,32 @@ class NewsDeduplicator:
                     )
                     break
                 elif sim > EMBEDDING_GRAY_ZONE_LOW:
-                    # 灰色地带 → 数值抗误杀
-                    is_dup = self._number_safeguard(
+                    # ── 灰色地带 (0.78~0.85)：数值抗误杀 ──
+                    safeguard_dup = self._number_safeguard(
                         texts[i], entry.title, sim, item, entry,
                     )
-                    if is_dup:
+                    if safeguard_dup:
+                        is_dup = True
                         break
+                    # 数值不同 → 保留，但仍属于事件聚合区
+                    if entry.url:
+                        cluster_url = entry.url
+                        logger.info(
+                            'Short-text event-cluster (cos=%.3f, gray-zone kept): '
+                            '[%s]"%s" → related_to [%s]"%s"',
+                            sim, item.source, item.title[:40],
+                            entry.source, entry.title[:40],
+                        )
+                elif sim > EMBEDDING_CLUSTER_THRESHOLD:
+                    # ── 事件聚合区 (0.70~0.78)：放行但标记关联 ──
+                    if entry.url and cluster_url is None:
+                        cluster_url = entry.url
+                        logger.info(
+                            'Short-text event-cluster (cos=%.3f): '
+                            '[%s]"%s" → related_to [%s]"%s"',
+                            sim, item.source, item.title[:40],
+                            entry.source, entry.title[:40],
+                        )
 
             # ── 与当前批次已通过的幸存者比对（防止同批次内重复）──
             if not is_dup:
@@ -484,15 +551,31 @@ class NewsDeduplicator:
                         break
                     elif sim > EMBEDDING_GRAY_ZONE_LOW:
                         kept_text = self._get_clean_text(kept)
-                        is_dup = self._number_safeguard(
+                        safeguard_dup = self._number_safeguard(
                             texts[i], kept_text, sim, item, kept,
                         )
-                        if is_dup:
+                        if safeguard_dup:
+                            is_dup = True
                             break
+                        if kept.url and cluster_url is None:
+                            cluster_url = kept.url
+                    elif sim > EMBEDDING_CLUSTER_THRESHOLD:
+                        if kept.url and cluster_url is None:
+                            cluster_url = kept.url
+                            logger.info(
+                                'Short-text batch event-cluster (cos=%.3f): '
+                                '[%s]"%s" → related_to [%s]"%s"',
+                                sim, item.source, item.title[:40],
+                                kept.source, kept.title[:40],
+                            )
 
             if is_dup:
                 dropped += 1
                 continue
+
+            # 写入事件聚合标记
+            if cluster_url is not None:
+                item.related_to_url = cluster_url
 
             # 通过去重，加入索引和幸存者列表
             self._emb_index.append(_EmbeddingEntry(
@@ -500,6 +583,7 @@ class NewsDeduplicator:
                 title=item.title,
                 source=item.source,
                 timestamp=now,
+                url=getattr(item, "url", ""),
             ))
             survivors.append(item)
 
@@ -776,6 +860,7 @@ class NewsDeduplicator:
                     title=title,
                     source=data["src"],
                     timestamp=ts,
+                    url=data.get("url", ""),
                 ))
             except (ValueError, KeyError, json.JSONDecodeError) as e:
                 logger.debug("Skipping malformed Embedding index entry: %s", e)
@@ -804,6 +889,7 @@ class NewsDeduplicator:
                 "vec": entry.vector,
                 "src": entry.source,
                 "ts": entry.timestamp,
+                "url": entry.url,
             })
             pipe.hset(tmp_key, entry.title, data)
             count += 1

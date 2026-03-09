@@ -69,9 +69,32 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
       单条失败不会回滚整个事务
     - 英文新闻使用翻译后的中文标题/摘要存入 title 和 ai_summary 字段
     - relevant_tickers 合并为 $TICKER 格式加入 tags 数组
+    - 事件聚合：将 related_to_url 转换为 related_to_id（查库获取已存在的新闻 ID）
     """
     if not items:
         return 0, []
+
+    # ── 预查询：批量将 related_to_url 转换为 related_to_id ──
+    related_urls = {
+        item.raw.related_to_url
+        for item in items
+        if getattr(item.raw, "related_to_url", None)
+    }
+    url_to_id: dict[str, str] = {}
+    if related_urls:
+        try:
+            async with async_session() as lookup_session:
+                from sqlalchemy import select as sa_select
+                stmt = sa_select(News.id, News.url).where(News.url.in_(related_urls))
+                result = await lookup_session.execute(stmt)
+                for row in result.all():
+                    url_to_id[row.url] = row.id
+            logger.info(
+                "Event-cluster URL→ID lookup: %d URLs queried, %d found",
+                len(related_urls), len(url_to_id),
+            )
+        except Exception as e:
+            logger.warning("Failed to lookup related_to URLs: %s", e)
 
     stored = 0
     errors = 0
@@ -92,25 +115,41 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                         tickers_as_tags = [f"${t}" for t in item.relevant_tickers]
                         tags = list(set((tags or []) + tickers_as_tags))
 
+                    # 事件聚合：related_to_url → related_to_id
+                    related_to_id = None
+                    raw_related_url = getattr(item.raw, "related_to_url", None)
+                    if raw_related_url:
+                        related_to_id = url_to_id.get(raw_related_url)
+
+                    values = dict(
+                        title=title,
+                        content=item.raw.content,
+                        source=item.raw.source,
+                        url=item.raw.url,
+                        published_at=item.raw.published_at,
+                        ai_score=item.score,
+                        ai_summary=summary,
+                        tags=tags,
+                    )
+                    if related_to_id is not None:
+                        values["related_to_id"] = related_to_id
+
                     stmt = (
                         pg_insert(News)
-                        .values(
-                            title=title,
-                            content=item.raw.content,
-                            source=item.raw.source,
-                            url=item.raw.url,
-                            published_at=item.raw.published_at,
-                            ai_score=item.score,
-                            ai_summary=summary,
-                            tags=tags,
-                        )
+                        .values(**values)
                         .on_conflict_do_nothing(index_elements=["url"])
                     )
                     result = await session.execute(stmt)
                     if result.rowcount and result.rowcount > 0:
                         stored += 1
                         stored_urls.append(item.raw.url)
-                        logger.debug("Stored: %s", item.raw.title[:60])
+                        if related_to_id:
+                            logger.debug(
+                                "Stored (event-cluster → %s): %s",
+                                related_to_id, item.raw.title[:60],
+                            )
+                        else:
+                            logger.debug("Stored: %s", item.raw.title[:60])
                     else:
                         # ON CONFLICT DO NOTHING — URL already in DB, still mark as seen
                         stored_urls.append(item.raw.url)

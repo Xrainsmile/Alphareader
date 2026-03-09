@@ -70,6 +70,8 @@ class RawNewsItem:
     source: str
     published_at: datetime | None = None
     tags: list[str] = field(default_factory=list)
+    # 事件聚合：当去重器判定为"同一事件的关联报道"时，记录更早报道的 URL
+    related_to_url: str | None = None
 
 
 def _hash_url(url: str) -> str:

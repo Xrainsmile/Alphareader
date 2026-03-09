@@ -173,6 +173,7 @@ async def list_news(
             "ranking_score": ranking_score,
             "ai_summary": n.ai_summary,
             "tags": n.tags,
+            "related_to_id": str(n.related_to_id) if n.related_to_id else None,
             "published_at": n.published_at.isoformat() if n.published_at else None,
             "created_at": n.created_at.isoformat() if n.created_at else None,
         })

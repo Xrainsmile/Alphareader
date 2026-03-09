@@ -47,6 +47,7 @@ scored AS (
         n.ai_score,
         n.ai_summary,
         n.tags,
+        n.related_to_id,
         n.published_at,
         n.created_at,
         -- 文本相关度: ts_rank_cd (Cover Density Ranking, 类 BM25)
@@ -205,6 +206,7 @@ async def search_news(
             "ai_summary": r["ai_summary"],
             "summary_highlighted": r["summary_highlighted"],
             "tags": r["tags"],
+            "related_to_id": str(r["related_to_id"]) if r["related_to_id"] else None,
             "published_at": r["published_at"].isoformat() if r["published_at"] else None,
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             "relevance_score": round(float(r["final_score"]), 6),
