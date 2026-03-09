@@ -902,7 +902,7 @@ class NewsDeduplicator:
                     continue
                 vec = data["vec"]
                 # 维度安全检查：跳过与当前模型维度不匹配的条目
-                if len(vec) != ZHIPU_EMBEDDING_DIMENSIONS:
+                if len(vec) != EMBEDDING_DIMENSIONS:
                     dim_mismatch_count += 1
                     continue
                 title = key.decode() if isinstance(key, bytes) else key
@@ -920,7 +920,7 @@ class NewsDeduplicator:
             logger.warning(
                 "Embedding model switched: discarded %d entries with mismatched dimensions "
                 "(current model=%s, dim=%d)",
-                dim_mismatch_count, ZHIPU_EMBEDDING_MODEL, ZHIPU_EMBEDDING_DIMENSIONS,
+                dim_mismatch_count, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS,
             )
 
         logger.info(
