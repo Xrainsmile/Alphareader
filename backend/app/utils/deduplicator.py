@@ -14,10 +14,12 @@
     调用 Embedding API 获取向量（提供商可通过 EMBEDDING_PROVIDER 环境变量切换：
     zhipu → 智谱 embedding-3/embedding-2，siliconflow → 硅基流动 BAAI/bge-m3 免费），
     计算余弦相似度，仅与过去 30 分钟内的短文本向量对比。
-    - 余弦相似度 > 0.80 → 判定重复（绝对去重区）
+    - 同源（same source）且余弦相似度 > 0.80 → 判定重复（真重复，直接丢弃）
+    - 跨源（different source）且余弦相似度 > 0.80 → 事件聚合：放行但标记 related_to_url
     - 余弦相似度 0.73~0.80（灰色地带）→ 数值抗误杀检测：
       提取核心数值实体，若数值集合不同 → 保留（同一事件的不同指标），
-      否则判定重复。
+      同源且数值相同 → 判定重复丢弃，
+      跨源且数值相同 → 事件聚合（放行但标记 related_to_url）。
     - 余弦相似度 0.70~0.80 → 事件聚合区：放行但标记 related_to_url，
       前端可据此将关联报道折叠展示。
     - 余弦相似度 ≤ 0.70 → 独立事件，正常放行。
@@ -371,16 +373,16 @@ class NewsDeduplicator:
         return unique, total_dropped
 
     async def _title_semantic_dedup(self, items: list) -> tuple[list, int]:
-        """Layer 4: 对长文本标题做 Embedding 语义去重（含事件聚合）。
+        """Layer 4: 对长文本标题做 Embedding 语义去重（含跨源聚合）。
 
         用 Embedding API 获取标题向量，与 Embedding 索引中的近期标题
         以及当前批次内部做余弦相似度比对。
         仅用标题（非全文），有效识别跨源/跨语言的同一事件。
 
-        双阈值策略同短文本通道：
-          cos > 0.80  → 去重丢弃
-          0.70~0.80   → 放行，标记 related_to_url
-          ≤ 0.70      → 独立事件
+        跨源聚合策略（与短文本通道一致）：
+          同源 + cos > 0.80  → 去重丢弃
+          跨源 + cos > 0.70  → 放行，标记 related_to_url
+          cos ≤ 0.70         → 独立事件
         """
         titles = [item.title for item in items]
         vectors = await _call_embedding(titles)
@@ -404,24 +406,41 @@ class NewsDeduplicator:
             # 与 Embedding 索引（含短文本历史）比对
             for entry in valid_emb_index:
                 sim = _cosine_sim(vec, entry.vector)
+                same_source = (item.source == entry.source)
+
                 if sim > EMBEDDING_COSINE_THRESHOLD:
-                    is_dup = True
-                    logger.info(
-                        'L4 title-semantic dup (cos=%.3f): [%s]"%s" ≈ [%s]"%s"',
-                        sim, item.source, item.title[:40],
-                        entry.source, entry.title[:40],
-                    )
-                    break
+                    if same_source:
+                        is_dup = True
+                        logger.info(
+                            'L4 title-semantic same-source dup (cos=%.3f): [%s]"%s" ≈ [%s]"%s"',
+                            sim, item.source, item.title[:40],
+                            entry.source, entry.title[:40],
+                        )
+                        break
+                    else:
+                        if entry.url and cluster_url is None:
+                            cluster_url = entry.url
+                            logger.info(
+                                'L4 title-semantic cross-source cluster (cos=%.3f): '
+                                '[%s]"%s" → related_to [%s]"%s"',
+                                sim, item.source, item.title[:40],
+                                entry.source, entry.title[:40],
+                            )
                 elif sim > EMBEDDING_GRAY_ZONE_LOW:
                     title_text = self._get_clean_text(item)
                     safeguard_dup = self._number_safeguard(
                         title_text, entry.title, sim, item, entry,
                     )
                     if safeguard_dup:
-                        is_dup = True
-                        break
-                    if entry.url and cluster_url is None:
-                        cluster_url = entry.url
+                        if same_source:
+                            is_dup = True
+                            break
+                        else:
+                            if entry.url and cluster_url is None:
+                                cluster_url = entry.url
+                    else:
+                        if entry.url and cluster_url is None:
+                            cluster_url = entry.url
                 elif sim > EMBEDDING_CLUSTER_THRESHOLD:
                     if entry.url and cluster_url is None:
                         cluster_url = entry.url
@@ -437,14 +456,21 @@ class NewsDeduplicator:
                 for j, kept in enumerate(survivors):
                     kept_idx = items.index(kept)
                     sim = _cosine_sim(vec, vectors[kept_idx])
+                    same_source = (item.source == kept.source)
+
                     if sim > EMBEDDING_COSINE_THRESHOLD:
-                        is_dup = True
-                        logger.info(
-                            'L4 title-semantic batch dup (cos=%.3f): [%s]"%s" ≈ [%s]"%s"',
-                            sim, item.source, item.title[:40],
-                            kept.source, kept.title[:40],
-                        )
-                        break
+                        if same_source:
+                            is_dup = True
+                            logger.info(
+                                'L4 title-semantic batch same-source dup (cos=%.3f): '
+                                '[%s]"%s" ≈ [%s]"%s"',
+                                sim, item.source, item.title[:40],
+                                kept.source, kept.title[:40],
+                            )
+                            break
+                        else:
+                            if kept.url and cluster_url is None:
+                                cluster_url = kept.url
                     elif sim > EMBEDDING_GRAY_ZONE_LOW:
                         kept_text = self._get_clean_text(kept)
                         title_text = self._get_clean_text(item)
@@ -452,10 +478,15 @@ class NewsDeduplicator:
                             title_text, kept_text, sim, item, kept,
                         )
                         if safeguard_dup:
-                            is_dup = True
-                            break
-                        if kept.url and cluster_url is None:
-                            cluster_url = kept.url
+                            if same_source:
+                                is_dup = True
+                                break
+                            else:
+                                if kept.url and cluster_url is None:
+                                    cluster_url = kept.url
+                        else:
+                            if kept.url and cluster_url is None:
+                                cluster_url = kept.url
                     elif sim > EMBEDDING_CLUSTER_THRESHOLD:
                         if kept.url and cluster_url is None:
                             cluster_url = kept.url
@@ -509,14 +540,14 @@ class NewsDeduplicator:
     def _dedup_short_text_semantic(
         self, items: list, texts: list[str], vectors: list[list[float]]
     ) -> tuple[list, int]:
-        """使用 Embedding 向量对短文本做语义去重（双阈值事件聚合策略）。
+        """使用 Embedding 向量对短文本做语义去重（跨源聚合策略）。
 
-        三个判定区间：
-          cos > 0.80          → 绝对去重区：拦截丢弃
-          0.70 < cos ≤ 0.80   → 事件聚合区：放行，但标记 related_to_url
-          cos ≤ 0.70          → 独立事件区：正常放行
+        核心策略：同源去重，跨源聚合。
+          同源 + cos > 0.80  → 真重复，丢弃
+          跨源 + cos > 0.70  → 同一事件多源报道，放行但标记 related_to_url
+          cos ≤ 0.70         → 独立事件，正常放行
 
-        0.73~0.80 灰色地带叠加数值抗误杀检测（保留原有能力）。
+        0.73~0.80 灰色地带叠加数值抗误杀检测。
         """
         now = time.time()
         cutoff = now - SHORT_TEXT_TTL_SECONDS
@@ -535,36 +566,57 @@ class NewsDeduplicator:
             # ── 与历史索引比对 ──
             for entry in valid_index:
                 sim = _cosine_sim(vec, entry.vector)
+                same_source = (item.source == entry.source)
 
                 if sim > EMBEDDING_COSINE_THRESHOLD:
-                    # ── 绝对去重区 (>0.85) ──
-                    # 先做灰色地带数值抗误杀（0.78~0.85 区间已被此分支覆盖）
-                    if sim <= EMBEDDING_COSINE_THRESHOLD and sim > EMBEDDING_GRAY_ZONE_LOW:
-                        pass  # 不可能进入此分支，保留逻辑完整性
-                    is_dup = True
-                    logger.info(
-                        'Short-text dup (cos=%.3f): [%s]"%s" ≈ [%s]"%s"',
-                        sim, item.source, item.title[:40],
-                        entry.source, entry.title[:40],
-                    )
-                    break
+                    if same_source:
+                        # ── 同源 + 高相似度 → 真重复，丢弃 ──
+                        is_dup = True
+                        logger.info(
+                            'Short-text same-source dup (cos=%.3f): [%s]"%s" ≈ [%s]"%s"',
+                            sim, item.source, item.title[:40],
+                            entry.source, entry.title[:40],
+                        )
+                        break
+                    else:
+                        # ── 跨源 + 高相似度 → 同一事件，标记聚合 ──
+                        if entry.url and cluster_url is None:
+                            cluster_url = entry.url
+                            logger.info(
+                                'Short-text cross-source cluster (cos=%.3f): '
+                                '[%s]"%s" → related_to [%s]"%s"',
+                                sim, item.source, item.title[:40],
+                                entry.source, entry.title[:40],
+                            )
                 elif sim > EMBEDDING_GRAY_ZONE_LOW:
-                    # ── 灰色地带 (0.78~0.85)：数值抗误杀 ──
+                    # ── 灰色地带 (0.73~0.80)：数值抗误杀 ──
                     safeguard_dup = self._number_safeguard(
                         texts[i], entry.title, sim, item, entry,
                     )
                     if safeguard_dup:
-                        is_dup = True
-                        break
-                    # 数值不同 → 保留，但仍属于事件聚合区
-                    if entry.url:
-                        cluster_url = entry.url
-                        logger.info(
-                            'Short-text event-cluster (cos=%.3f, gray-zone kept): '
-                            '[%s]"%s" → related_to [%s]"%s"',
-                            sim, item.source, item.title[:40],
-                            entry.source, entry.title[:40],
-                        )
+                        if same_source:
+                            is_dup = True
+                            break
+                        else:
+                            # 跨源 + 数值相同 → 聚合而非丢弃
+                            if entry.url and cluster_url is None:
+                                cluster_url = entry.url
+                                logger.info(
+                                    'Short-text cross-source cluster (cos=%.3f, gray-zone): '
+                                    '[%s]"%s" → related_to [%s]"%s"',
+                                    sim, item.source, item.title[:40],
+                                    entry.source, entry.title[:40],
+                                )
+                    else:
+                        # 数值不同 → 保留，但仍属于事件聚合区
+                        if entry.url and cluster_url is None:
+                            cluster_url = entry.url
+                            logger.info(
+                                'Short-text event-cluster (cos=%.3f, gray-zone kept): '
+                                '[%s]"%s" → related_to [%s]"%s"',
+                                sim, item.source, item.title[:40],
+                                entry.source, entry.title[:40],
+                            )
                 elif sim > EMBEDDING_CLUSTER_THRESHOLD:
                     # ── 事件聚合区 (0.70~0.73)：放行但标记关联 ──
                     if entry.url and cluster_url is None:
@@ -581,25 +633,42 @@ class NewsDeduplicator:
                 for j, kept in enumerate(survivors):
                     kept_idx = items.index(kept)
                     sim = _cosine_sim(vec, vectors[kept_idx])
+                    same_source = (item.source == kept.source)
 
                     if sim > EMBEDDING_COSINE_THRESHOLD:
-                        is_dup = True
-                        logger.info(
-                            'Short-text batch dup (cos=%.3f): [%s]"%s" ≈ [%s]"%s"',
-                            sim, item.source, item.title[:40],
-                            kept.source, kept.title[:40],
-                        )
-                        break
+                        if same_source:
+                            is_dup = True
+                            logger.info(
+                                'Short-text batch same-source dup (cos=%.3f): [%s]"%s" ≈ [%s]"%s"',
+                                sim, item.source, item.title[:40],
+                                kept.source, kept.title[:40],
+                            )
+                            break
+                        else:
+                            # 跨源 → 聚合
+                            if kept.url and cluster_url is None:
+                                cluster_url = kept.url
+                                logger.info(
+                                    'Short-text batch cross-source cluster (cos=%.3f): '
+                                    '[%s]"%s" → related_to [%s]"%s"',
+                                    sim, item.source, item.title[:40],
+                                    kept.source, kept.title[:40],
+                                )
                     elif sim > EMBEDDING_GRAY_ZONE_LOW:
                         kept_text = self._get_clean_text(kept)
                         safeguard_dup = self._number_safeguard(
                             texts[i], kept_text, sim, item, kept,
                         )
                         if safeguard_dup:
-                            is_dup = True
-                            break
-                        if kept.url and cluster_url is None:
-                            cluster_url = kept.url
+                            if same_source:
+                                is_dup = True
+                                break
+                            else:
+                                if kept.url and cluster_url is None:
+                                    cluster_url = kept.url
+                        else:
+                            if kept.url and cluster_url is None:
+                                cluster_url = kept.url
                     elif sim > EMBEDDING_CLUSTER_THRESHOLD:
                         if kept.url and cluster_url is None:
                             cluster_url = kept.url
