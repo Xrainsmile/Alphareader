@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -133,6 +134,12 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                     )
                     if related_to_id is not None:
                         values["related_to_id"] = related_to_id
+                    if item.sentiment_score is not None:
+                        values["sentiment_score"] = item.sentiment_score
+                        values["surprise_factor"] = item.surprise_factor
+                        values["catalyst_type"] = item.catalyst_type
+                        values["sentiment_entity"] = item.sentiment_entity
+                        values["sentiment_reasoning"] = item.sentiment_reasoning
 
                     stmt = (
                         pg_insert(News)
@@ -167,6 +174,52 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
         logger.warning("⚠️ %d item(s) failed to store", errors)
     logger.info("Stored %d new scored items to DB (%d total processed)", stored, len(stored_urls))
     return stored, stored_urls
+
+
+async def _enrich_sentiment(items: list[ScoredNewsItem]) -> list[ScoredNewsItem]:
+    """Step 3.5: 并发调用情绪分析 LLM，填充 ScoredNewsItem 的情绪字段。
+
+    - 只对 related_to_url is None（NEW 状态）的条目调用 LLM
+    - 使用 asyncio.gather 并发，单条失败不影响其他条目
+    - 失败条目保持情绪字段为 None，不阻断后续入库
+    """
+    from app.services.sentiment_pipeline import (
+        analyze_sentiment_and_surprise_with_llm,
+        _build_news_text_for_llm,
+        _parse_sentiment_result,
+    )
+
+    async def _enrich_one(item: ScoredNewsItem) -> ScoredNewsItem:
+        # RELATED 条目（related_to_url 非空）跳过 LLM
+        if getattr(item.raw, "related_to_url", None) is not None:
+            return item
+        try:
+            news_data = {
+                "title": item.raw.title,
+                "content": item.raw.content or "",
+                "source": item.raw.source,
+            }
+            news_text = _build_news_text_for_llm(news_data)
+            raw_result = await analyze_sentiment_and_surprise_with_llm(news_text)
+            sentiment = _parse_sentiment_result(raw_result)
+            item.sentiment_score = sentiment.sentiment_score
+            item.surprise_factor = sentiment.surprise_factor
+            item.catalyst_type = sentiment.catalyst_type
+            item.sentiment_entity = sentiment.entity
+            item.sentiment_reasoning = sentiment.reasoning
+        except Exception as e:
+            logger.warning("Sentiment enrichment failed for '%s': %s", item.raw.title[:40], e)
+        return item
+
+    results = await asyncio.gather(*[_enrich_one(item) for item in items], return_exceptions=True)
+    enriched: list[ScoredNewsItem] = []
+    for i, res in enumerate(results):
+        if isinstance(res, Exception):
+            logger.warning("Sentiment gather exception for item %d: %s", i, res)
+            enriched.append(items[i])
+        else:
+            enriched.append(res)
+    return enriched
 
 
 async def run_pipeline() -> dict:
@@ -247,6 +300,12 @@ async def run_pipeline() -> dict:
     score_distribution = {str(k): v for k, v in sorted(score_counter.items())}
     for src_name in by_source:
         by_source[src_name]["passed"] = source_pass_counter.get(src_name, 0)
+
+    # Step 3.5: 情绪分析（NEW 状态新闻逐条调用，RELATED 跳过）
+    try:
+        scored_items = await _enrich_sentiment(scored_items)
+    except Exception as e:
+        logger.warning("Sentiment enrichment failed, skipping: %s", e)
 
     # Step 4: Store to DB
     try:

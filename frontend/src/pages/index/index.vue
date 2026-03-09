@@ -106,6 +106,13 @@
                   <text class="relevance-value">{{ formatRelevance(item.relevance_score) }}</text>
                 </view>
               </template>
+              <template v-if="item.sentiment_score != null">
+                <text class="meta-dot">·</text>
+                <view class="sentiment-badge" :class="sentimentClass(item.sentiment_score)">
+                  <text class="sentiment-icon">{{ sentimentIcon(item.sentiment_score) }}</text>
+                  <text class="sentiment-value">{{ item.sentiment_score > 0 ? '+' : '' }}{{ item.sentiment_score }}</text>
+                </view>
+              </template>
             </view>
           </view>
         </view>
@@ -274,6 +281,13 @@
                   <view class="gravity-badge" :class="gravityClass(boostedGravity(group))">
                     <text class="gravity-icon">⚡</text>
                     <text class="gravity-value">{{ formatGravity(boostedGravity(group)) }}</text>
+                  </view>
+                </template>
+                <template v-if="group.sentiment_score != null">
+                  <text class="meta-dot">·</text>
+                  <view class="sentiment-badge" :class="sentimentClass(group.sentiment_score)">
+                    <text class="sentiment-icon">{{ sentimentIcon(group.sentiment_score) }}</text>
+                    <text class="sentiment-value">{{ group.sentiment_score > 0 ? '+' : '' }}{{ group.sentiment_score }}</text>
                   </view>
                 </template>
               </view>
@@ -793,6 +807,22 @@ ${newsBlock}
       if (score >= 0.3) return 'gravity-medium'
       if (score >= 0.05) return 'gravity-normal'
       return 'gravity-low'
+    },
+
+    sentimentClass(score) {
+      if (score >= 3)  return 'sentiment-bull'
+      if (score >= 1)  return 'sentiment-mild-bull'
+      if (score === 0) return 'sentiment-neutral'
+      if (score >= -2) return 'sentiment-mild-bear'
+      return 'sentiment-bear'
+    },
+
+    sentimentIcon(score) {
+      if (score >= 3)  return '▲'
+      if (score >= 1)  return '△'
+      if (score === 0) return '—'
+      if (score >= -2) return '▽'
+      return '▼'
     },
 
     // ── 搜索相关方法 ──
@@ -1686,6 +1716,21 @@ ${newsBlock}
   color: #8e8e93;
 }
 
+/* ── Sentiment Badge ── */
+.sentiment-badge { display:flex; align-items:center; gap:4rpx; padding:2rpx 12rpx; border-radius:16rpx; }
+.sentiment-icon  { font-size:18rpx; }
+.sentiment-value { font-size:20rpx; font-weight:600; font-family:'SF Pro Display',-apple-system,sans-serif; }
+.sentiment-bull      { background:rgba(255,59,48,0.12); }
+.sentiment-bull .sentiment-value,.sentiment-bull .sentiment-icon { color:#ff3b30; }
+.sentiment-mild-bull { background:rgba(255,149,0,0.10); }
+.sentiment-mild-bull .sentiment-value,.sentiment-mild-bull .sentiment-icon { color:#ff9500; }
+.sentiment-neutral   { background:rgba(142,142,147,0.10); }
+.sentiment-neutral .sentiment-value,.sentiment-neutral .sentiment-icon { color:#8e8e93; }
+.sentiment-mild-bear { background:rgba(52,199,89,0.07); }
+.sentiment-mild-bear .sentiment-value,.sentiment-mild-bear .sentiment-icon { color:#5ac778; }
+.sentiment-bear      { background:rgba(52,199,89,0.12); }
+.sentiment-bear .sentiment-value,.sentiment-bear .sentiment-icon { color:#34c759; }
+
 /* ── Load More ── */
 .load-more {
   display: flex;
@@ -2033,6 +2078,10 @@ ${newsBlock}
   .load-more-text {
     font-size: 13px;
   }
+
+  /* ── Sentiment Badge PC ── */
+  .sentiment-badge { gap:3px; padding:1px 8px; border-radius:10px; }
+  .sentiment-icon,.sentiment-value { font-size:11px; }
 
 }
 

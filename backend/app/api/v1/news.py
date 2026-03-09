@@ -176,6 +176,10 @@ async def list_news(
             "related_to_id": str(n.related_to_id) if n.related_to_id else None,
             "published_at": n.published_at.isoformat() if n.published_at else None,
             "created_at": n.created_at.isoformat() if n.created_at else None,
+            "sentiment_score": n.sentiment_score,
+            "surprise_factor": n.surprise_factor,
+            "catalyst_type": n.catalyst_type,
+            "sentiment_entity": n.sentiment_entity,
         })
 
     # If SQL-level gravity sort wasn't available, sort in Python

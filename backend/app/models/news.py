@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, SmallInteger, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,11 @@ class News(Base):
         nullable=True,
         index=True,
     )
+    sentiment_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    surprise_factor: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    catalyst_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sentiment_entity: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    sentiment_reasoning: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

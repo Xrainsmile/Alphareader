@@ -196,6 +196,11 @@ class ScoredNewsItem:
     tags: list[str]
     chinese_title: str = ""
     relevant_tickers: list[str] = field(default_factory=list)
+    sentiment_score: int | None = None
+    surprise_factor: int | None = None
+    catalyst_type: str | None = None
+    sentiment_entity: str | None = None
+    sentiment_reasoning: str | None = None
 
 
 def _build_user_prompt(batch: list[RawNewsItem], is_english: bool) -> str:
