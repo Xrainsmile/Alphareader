@@ -20,9 +20,9 @@
       提取核心数值实体，若数值集合不同 → 保留（同一事件的不同指标），
       同源且数值相同 → 判定重复丢弃，
       跨源且数值相同 → 事件聚合（放行但标记 related_to_url）。
-    - 余弦相似度 0.70~0.80 → 事件聚合区：放行但标记 related_to_url，
+    - 余弦相似度 0.67~0.80 → 事件聚合区：放行但标记 related_to_url，
       前端可据此将关联报道折叠展示。
-    - 余弦相似度 ≤ 0.70 → 独立事件，正常放行。
+    - 余弦相似度 ≤ 0.67 → 独立事件，正常放行。
     降级策略：若 API 调用失败，回退到 SequenceMatcher 标题相似度。
 
 存储方案：
@@ -64,7 +64,7 @@ REDIS_SIMHASH_KEY = "alphareader:simhash_index"
 
 # ── 短文本语义通道阈值 ──
 EMBEDDING_COSINE_THRESHOLD = 0.80   # 余弦相似度 > 0.80 → 直接判重（绝对去重区）
-EMBEDDING_CLUSTER_THRESHOLD = 0.70  # 余弦相似度 > 0.70 → 事件聚合区（放行但标记关联）
+EMBEDDING_CLUSTER_THRESHOLD = 0.67  # 余弦相似度 > 0.67 → 事件聚合区（放行但标记关联）
 EMBEDDING_GRAY_ZONE_LOW = 0.73      # 灰色地带下界：0.73~0.80 触发数值抗误杀
 SHORT_TEXT_TTL_SECONDS = 90 * 60    # Embedding 索引滑动窗口：90 分钟
 REDIS_EMBEDDING_KEY = "alphareader:embedding_index"
@@ -382,7 +382,7 @@ class NewsDeduplicator:
         跨源聚合策略（与短文本通道一致）：
           同源 + cos > 0.80  → 去重丢弃
           跨源 + cos > 0.70  → 放行，标记 related_to_url
-          cos ≤ 0.70         → 独立事件
+          cos ≤ 0.67         → 独立事件
         """
         titles = [item.title for item in items]
         vectors = await _call_embedding(titles)
@@ -545,7 +545,7 @@ class NewsDeduplicator:
         核心策略：同源去重，跨源聚合。
           同源 + cos > 0.80  → 真重复，丢弃
           跨源 + cos > 0.70  → 同一事件多源报道，放行但标记 related_to_url
-          cos ≤ 0.70         → 独立事件，正常放行
+          cos ≤ 0.67         → 独立事件，正常放行
 
         0.73~0.80 灰色地带叠加数值抗误杀检测。
         """

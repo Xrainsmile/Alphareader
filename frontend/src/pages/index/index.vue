@@ -372,7 +372,7 @@ export default {
       promptCopied: false,
       expandedGroups: {},   // 关联报道折叠/展开状态：{ [parentId]: true/false }
       scoreOptions: [5, 6, 7, 8, 9],
-      cnSources: ['财联社', '华尔街见闻'],
+      cnSources: ['财联社'],
       enSources: ['MarketWatch', 'Seeking Alpha', 'TechCrunch', 'Finnhub'],
       sortTabs: [
         { value: 'hot', label: 'Gravity' },

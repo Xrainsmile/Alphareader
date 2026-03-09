@@ -3,7 +3,7 @@
 职责：从多个中英文金融信源并发抓取新闻，返回去重后的原始新闻列表。
 
 当前活跃信源（6 个）：
-  中文：财联社 / 华尔街见闻（通过 JSON API）
+  中文：财联社（通过 JSON API）
   英文：MarketWatch / Seeking Alpha / TechCrunch（通过 RSS/Atom XML）
         Finnhub（通过 JSON API，需 API Key）
 
@@ -149,14 +149,14 @@ def _parse_sina(data: dict) -> list[RawNewsItem]:
 def _parse_wallstreetcn(data: dict) -> list[RawNewsItem]:
     """解析华尔街见闻实时快讯 API
     数据路径: data.items[] → 取 title/content_text/uri/display_time
-    URL 格式: https://wallstreetcn.com/live/{uri}
+    URL 格式: https://wallstreetcn.com/{uri}  (uri 已含完整路径，如 livenews/3066594)
     """
     items: list[RawNewsItem] = []
     for entry in data.get("data", {}).get("items", []):
         title = entry.get("title", "") or ""
         content_text = entry.get("content_text", "") or title
         uri = entry.get("uri", "")
-        url = f"https://wallstreetcn.com/live/{uri}" if uri else ""
+        url = f"https://wallstreetcn.com/{uri}" if uri else ""
         ts = entry.get("display_time")
         published = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
         if not title and content_text:
@@ -416,13 +416,7 @@ FEED_SOURCES: list[FeedSource] = [
         url="https://www.cls.cn/nodeapi/updateTelegraphList?app=CailianpressWeb&os=web&sv=8.4.6&rn=30",
         parser=_parse_cls,
     ),
-    FeedSource(
-        name="华尔街见闻",
-        url="https://api-one.wallstcn.com/apiv1/content/lives?channel=global-channel&limit=30",
-        parser=_parse_wallstreetcn,
-    ),
-    # 同花顺、东方财富公告、东方财富快讯、第一财经 已移除（2026-02-11）
-    # 新浪财经、CNBC World、CNBC US Markets 已移除（2026-02-19）
+    # 华尔街见闻已移除（2026-03-09，内容与财联社高度重叠）
     # ── International Sources (RSS/Atom XML) ──
     FeedSource(
         name="MarketWatch",
