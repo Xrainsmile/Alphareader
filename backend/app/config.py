@@ -50,6 +50,7 @@ class Settings(BaseSettings):
 
     # ── 智谱 AI（短文本 Embedding 去重）──
     ZHIPU_API_KEY: str = ""                                         # 智谱 API Key (https://open.bigmodel.cn)
+    ZHIPU_EMBEDDING_MODEL: str = "embedding-3"                      # Embedding 模型：embedding-3（可自定义维度）或 embedding-2（固定1024维）
 
     # ── DeepSeek AI 评分配置 ──
     DEEPSEEK_API_KEY: str = ""                                      # API 密钥
