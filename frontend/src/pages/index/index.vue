@@ -227,58 +227,91 @@
       </view>
     </view>
 
-    <!-- 新闻列表 -->
+    <!-- 新闻列表（聚合模式） -->
     <view class="news-list">
       <view v-if="loading && newsList.length === 0" class="loading-container">
         <text class="loading-text">加载中...</text>
       </view>
 
-      <view v-else-if="newsList.length === 0" class="empty-container">
+      <view v-else-if="groupedNews.length === 0" class="empty-container">
         <text class="empty-text">暂无符合条件的新闻</text>
       </view>
 
       <view v-else class="card-wrapper">
         <view
-          v-for="(item, idx) in newsList"
-          :key="item.id"
-          class="news-card"
-          :class="{ 'news-card-last': idx === newsList.length - 1 }"
-          :data-news-id="item.id"
-          @click="onOpenUrl(item.url, item.id)"
+          v-for="(group, idx) in groupedNews"
+          :key="group.id"
+          class="news-card-group"
+          :class="{ 'news-card-group-last': idx === groupedNews.length - 1 }"
         >
-          <!-- Score Badge -->
-          <view class="score-badge" :class="scoreClass(item.ai_score)">
-            <text class="score-num">{{ formatScore(item.ai_score) }}</text>
-          </view>
-
-          <view class="news-body">
-            <text class="news-title">{{ item.title }}</text>
-            <text class="news-summary">{{ item.ai_summary }}</text>
-
-            <!-- Tags -->
-            <view v-if="item.tags && item.tags.length" class="news-tags">
-              <text v-for="tag in item.tags" :key="tag" class="news-tag news-tag-clickable" @click.stop="onTagSearch(tag)">{{ tag }}</text>
+          <!-- ═══ 主卡片 ═══ -->
+          <view
+            class="news-card"
+            :data-news-id="group.id"
+            @click="onOpenUrl(group.url, group.id)"
+          >
+            <!-- Score Badge -->
+            <view class="score-badge" :class="scoreClass(group.ai_score)">
+              <text class="score-num">{{ formatScore(group.ai_score) }}</text>
             </view>
 
-            <view class="news-meta">
-              <text class="meta-source">{{ item.source }}</text>
-              <text class="meta-dot">·</text>
-              <text class="meta-time">{{ formatTime(item.created_at) }}</text>
-              <!-- Hacker Gravity 指标 (hot 模式下显示) -->
-              <template v-if="currentSort === 'hot' && item.ranking_score != null">
+            <view class="news-body">
+              <text class="news-title">{{ group.title }}</text>
+              <text class="news-summary">{{ group.ai_summary }}</text>
+
+              <!-- Tags -->
+              <view v-if="group.tags && group.tags.length" class="news-tags">
+                <text v-for="tag in group.tags" :key="tag" class="news-tag news-tag-clickable" @click.stop="onTagSearch(tag)">{{ tag }}</text>
+              </view>
+
+              <view class="news-meta">
+                <text class="meta-source">{{ group.source }}</text>
                 <text class="meta-dot">·</text>
-                <view class="gravity-badge" :class="gravityClass(item.ranking_score)">
-                  <text class="gravity-icon">⚡</text>
-                  <text class="gravity-value">{{ formatGravity(item.ranking_score) }}</text>
+                <text class="meta-time">{{ formatTime(group.created_at) }}</text>
+                <!-- Hacker Gravity 指标 (hot 模式下显示)，含聚合热度加成 -->
+                <template v-if="currentSort === 'hot' && group.ranking_score != null">
+                  <text class="meta-dot">·</text>
+                  <view class="gravity-badge" :class="gravityClass(boostedGravity(group))">
+                    <text class="gravity-icon">⚡</text>
+                    <text class="gravity-value">{{ formatGravity(boostedGravity(group)) }}</text>
+                  </view>
+                </template>
+              </view>
+            </view>
+          </view>
+
+          <!-- ═══ 关联报道折叠区 ═══ -->
+          <view v-if="group.children && group.children.length" class="related-section">
+            <view class="related-toggle" @click.stop="toggleRelated(group.id)">
+              <text class="related-toggle-text">关联报道 ({{ group.children.length }}条)</text>
+              <text class="related-toggle-arrow" :class="{ 'related-toggle-arrow-up': expandedGroups[group.id] }">›</text>
+            </view>
+
+            <!-- 展开的子卡片列表 -->
+            <view v-if="expandedGroups[group.id]" class="related-list">
+              <view
+                v-for="child in group.children"
+                :key="child.id"
+                class="related-item"
+                @click.stop="onOpenUrl(child.url, child.id)"
+              >
+                <text class="related-bullet">•</text>
+                <view class="related-item-body">
+                  <text class="related-item-title">{{ child.title }}</text>
+                  <view class="related-item-meta">
+                    <text class="related-item-source">{{ child.source }}</text>
+                    <text class="meta-dot">·</text>
+                    <text class="related-item-time">{{ formatTime(child.created_at) }}</text>
+                  </view>
                 </view>
-              </template>
+              </view>
             </view>
           </view>
         </view>
       </view>
 
       <!-- 加载更多状态 -->
-      <view v-if="newsList.length > 0" class="load-more">
+      <view v-if="groupedNews.length > 0" class="load-more">
         <text v-if="loadingMore" class="load-more-text">正在加载更多... ⏳</text>
         <text v-else-if="noMore" class="load-more-text">— 没有更多了 —</text>
       </view>
@@ -323,6 +356,7 @@ export default {
       tmpSource: '',
       tmpScore: 5,
       promptCopied: false,
+      expandedGroups: {},   // 关联报道折叠/展开状态：{ [parentId]: true/false }
       scoreOptions: [5, 6, 7, 8, 9],
       cnSources: ['财联社', '华尔街见闻'],
       enSources: ['MarketWatch', 'Seeking Alpha', 'TechCrunch', 'Finnhub'],
@@ -356,6 +390,59 @@ export default {
   },
 
   computed: {
+    /**
+     * 将扁平的 newsList 转换为「父子嵌套」结构
+     * - 主新闻（related_to_id 为 null）作为顶层节点
+     * - 关联新闻（related_to_id 有值）塞入对应主新闻的 children 数组
+     * - 找不到父新闻的关联新闻自动提升为独立主新闻
+     */
+    groupedNews() {
+      const list = this.newsList
+      if (!list || !list.length) return []
+
+      const parentMap = new Map()   // id → group object
+      const orphans = []            // 找不到父节点的关联新闻
+
+      // 第一轮：收集所有主新闻
+      for (const item of list) {
+        if (!item.related_to_id) {
+          parentMap.set(item.id, { ...item, children: [] })
+        }
+      }
+
+      // 第二轮：把子新闻挂到父节点
+      for (const item of list) {
+        if (item.related_to_id) {
+          const parent = parentMap.get(item.related_to_id)
+          if (parent) {
+            parent.children.push(item)
+          } else {
+            // 父新闻不在当前页 → 提升为独立卡片
+            orphans.push({ ...item, children: [] })
+          }
+        }
+      }
+
+      // 按原始顺序输出：主新闻保持 newsList 中的相对顺序
+      const result = []
+      const addedIds = new Set()
+      for (const item of list) {
+        if (!item.related_to_id && parentMap.has(item.id) && !addedIds.has(item.id)) {
+          result.push(parentMap.get(item.id))
+          addedIds.add(item.id)
+        }
+      }
+      // 孤儿节点追加到末尾
+      for (const o of orphans) {
+        if (!addedIds.has(o.id)) {
+          result.push(o)
+          addedIds.add(o.id)
+        }
+      }
+
+      return result
+    },
+
     sortLabel() {
       const tab = this.sortTabs.find(t => t.value === this.currentSort)
       return tab ? tab.label : ''
@@ -407,12 +494,28 @@ export default {
   },
 
   methods: {
+    /** 切换关联报道折叠/展开 */
+    toggleRelated(parentId) {
+      this.expandedGroups = {
+        ...this.expandedGroups,
+        [parentId]: !this.expandedGroups[parentId],
+      }
+    },
+
+    /** 聚合热度计算：base + children * 0.2 */
+    boostedGravity(group) {
+      const base = group.ranking_score || 0
+      const boost = (group.children && group.children.length) ? group.children.length * 0.2 : 0
+      return base + boost
+    },
+
     /** 重置列表并加载第一页 */
     async resetAndLoad() {
       this.newsList = []
       this.offset = 0
       this.noMore = false
       this.loading = true
+      this.expandedGroups = {}
       try {
         const data = await fetchNews({
           limit: PAGE_SIZE,
@@ -1327,11 +1430,21 @@ ${newsBlock}
   overflow: hidden;
 }
 
+/* ── News Card Group (聚合卡片容器) ── */
+.news-card-group {
+  border-bottom: 1rpx solid #f0f0f2;
+}
+.news-card-group-last {
+  border-bottom: none;
+}
+.news-card-group .news-card {
+  border-bottom: none;
+}
+
 /* ── News Card ── */
 .news-card {
   display: flex;
   padding: 32rpx 28rpx;
-  border-bottom: 1rpx solid #f0f0f2;
   position: relative;
   transition: background-color 0.15s;
   cursor: pointer;
@@ -1339,8 +1452,91 @@ ${newsBlock}
 .news-card:active {
   background-color: #fafafa;
 }
-.news-card-last {
-  border-bottom: none;
+
+/* ── 关联报道折叠区 ── */
+.related-section {
+  padding: 0 28rpx 20rpx;
+}
+.related-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 12rpx 20rpx;
+  cursor: pointer;
+  border-radius: 12rpx;
+  transition: background-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.related-toggle:active {
+  background: rgba(0, 0, 0, 0.04);
+}
+.related-toggle-text {
+  font-size: 24rpx;
+  color: #8c8c9a;
+  font-weight: 500;
+}
+.related-toggle-arrow {
+  font-size: 24rpx;
+  color: #b0b0be;
+  transform: rotate(90deg);
+  transition: transform 0.25s ease;
+}
+.related-toggle-arrow-up {
+  transform: rotate(-90deg);
+}
+
+/* ── 关联报道子列表 ── */
+.related-list {
+  margin: 8rpx 0 4rpx 20rpx;
+  padding-left: 20rpx;
+  border-left: 3rpx solid #e8e8ed;
+}
+.related-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 14rpx 12rpx;
+  gap: 12rpx;
+  cursor: pointer;
+  border-radius: 8rpx;
+  transition: background-color 0.15s;
+}
+.related-item:active {
+  background: rgba(0, 0, 0, 0.03);
+}
+.related-bullet {
+  font-size: 24rpx;
+  color: #b0b0be;
+  flex-shrink: 0;
+  line-height: 1.5;
+}
+.related-item-body {
+  flex: 1;
+  min-width: 0;
+}
+.related-item-title {
+  font-size: 26rpx;
+  color: #3a3a4a;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-family: 'PingFang SC', 'SF Pro Text', -apple-system, sans-serif;
+}
+.related-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-top: 6rpx;
+}
+.related-item-source {
+  font-size: 20rpx;
+  color: #8c8c9a;
+  font-weight: 500;
+}
+.related-item-time {
+  font-size: 20rpx;
+  color: #b0b0be;
 }
 
 /* ── Score Badge ── */
@@ -1721,6 +1917,51 @@ ${newsBlock}
   }
   .news-card:active {
     background-color: #f5f6f8;
+  }
+
+  /* ── 关联报道 (PC) ── */
+  .related-section {
+    padding: 0 24px 14px;
+  }
+  .related-toggle {
+    padding: 7px 14px;
+    border-radius: 8px;
+    gap: 4px;
+  }
+  .related-toggle:hover {
+    background: rgba(0, 0, 0, 0.03);
+  }
+  .related-toggle-text {
+    font-size: 13px;
+  }
+  .related-toggle-arrow {
+    font-size: 13px;
+  }
+  .related-list {
+    margin: 4px 0 2px 14px;
+    padding-left: 14px;
+    border-left-width: 2px;
+  }
+  .related-item {
+    padding: 8px 10px;
+    gap: 8px;
+    border-radius: 6px;
+  }
+  .related-item:hover {
+    background: rgba(0, 0, 0, 0.025);
+  }
+  .related-bullet {
+    font-size: 13px;
+  }
+  .related-item-title {
+    font-size: 14px;
+  }
+  .related-item-source,
+  .related-item-time {
+    font-size: 11px;
+  }
+  .related-item-meta .meta-dot {
+    font-size: 11px;
   }
 
   /* ── Score Badge ── */
