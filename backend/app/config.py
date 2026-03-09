@@ -5,6 +5,7 @@
   - 日志：LOG_LEVEL / LOG_FORMAT
   - 跨域：CORS_ORIGINS
   - 智谱 AI：短文本 Embedding 去重 API 密钥
+  - 硅基流动 SiliconFlow：免费 Embedding API（BAAI/bge-m3）
   - DeepSeek AI：API 密钥/地址/模型/批次大小/分数阈值/重试次数
   - 调度器：Pipeline 运行时间范围
   - 告警：Webhook URL（支持飞书/钉钉/企微/Slack）
@@ -48,9 +49,17 @@ class Settings(BaseSettings):
     # ── Finnhub 市场新闻 ──
     FINNHUB_API_KEY: str = ""                                       # Finnhub API Token (https://finnhub.io)
 
+    # ── Embedding 去重 — 提供商切换 ──
+    # 可选值："zhipu"（智谱 AI）或 "siliconflow"（硅基流动，免费）
+    EMBEDDING_PROVIDER: str = "siliconflow"
+
     # ── 智谱 AI（短文本 Embedding 去重）──
     ZHIPU_API_KEY: str = ""                                         # 智谱 API Key (https://open.bigmodel.cn)
     ZHIPU_EMBEDDING_MODEL: str = "embedding-3"                      # Embedding 模型：embedding-3（可自定义维度）或 embedding-2（固定1024维）
+
+    # ── 硅基流动 SiliconFlow（免费 Embedding）──
+    SILICONFLOW_API_KEY: str = ""                                   # SiliconFlow API Key (https://cloud.siliconflow.cn)
+    SILICONFLOW_EMBEDDING_MODEL: str = "BAAI/bge-m3"               # 免费模型：BAAI/bge-m3(1024维) / BAAI/bge-large-zh-v1.5(1024维)
 
     # ── DeepSeek AI 评分配置 ──
     DEEPSEEK_API_KEY: str = ""                                      # API 密钥
