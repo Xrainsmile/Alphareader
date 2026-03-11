@@ -39,3 +39,10 @@ backend/app/services/data/
 
 # Redis data
 redisdata/
+
+# Data files (large binary/parquet/csv, not suitable for Git)
+data/ema_snapshots/*.parquet
+data/ema_snapshots/*.csv
+data/ema_snapshots/*.log
+data/ema_snapshots/.progress_api.json
+data/watchlists/
