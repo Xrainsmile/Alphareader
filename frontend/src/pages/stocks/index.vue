@@ -153,98 +153,108 @@
       </view>
 
       <!-- VCP 筛选器 -->
-      <view class="vcp-filter-bar">
-        <view class="vcp-filter-toggle" @click="vcpFilterExpanded = !vcpFilterExpanded">
-          <text class="vcp-filter-icon">🔍</text>
-          <text class="vcp-filter-label">筛选</text>
-          <text v-if="vcpSelIndustries.length + vcpSelConcepts.length > 0" class="vcp-filter-badge">{{ vcpSelIndustries.length + vcpSelConcepts.length }}</text>
-          <text class="vcp-filter-arrow" :class="{ 'arrow-up': vcpFilterExpanded }">▾</text>
-        </view>
-        <text v-if="vcpSelIndustries.length + vcpSelConcepts.length > 0" class="vcp-filter-clear" @click.stop="clearVcpFilters">清除</text>
-      </view>
-
-      <!-- 筛选器展开区域 -->
-      <view v-if="vcpFilterExpanded" class="vcp-filter-panel">
-        <!-- 行业筛选 -->
-        <view class="vcp-filter-section">
-          <view class="vcp-filter-header" @click="vcpIndDropdown = !vcpIndDropdown">
-            <text class="vcp-filter-title">行业</text>
-            <text v-if="vcpSelIndustries.length > 0" class="vcp-filter-count">已选 {{ vcpSelIndustries.length }}</text>
-            <text class="vcp-filter-arrow" :class="{ 'arrow-up': vcpIndDropdown }">▾</text>
+      <view class="vcp-filters">
+        <!-- 行业搜索栏 -->
+        <view class="vcp-search-section">
+          <view class="vcp-search-bar" :class="{ 'vcp-search-bar-focus': vcpIndFocused }" @click="vcpIndDropdown = true">
+            <view class="vcp-search-input-wrap">
+              <text class="vcp-search-icon">🔍</text>
+              <input
+                class="vcp-search-input"
+                type="text"
+                v-model="vcpIndSearch"
+                placeholder="搜索行业..."
+                @focus="vcpIndFocused = true; vcpIndDropdown = true"
+                @blur="vcpIndFocused = false"
+                @click.stop
+              />
+              <text v-if="vcpSelIndustries.length > 0" class="vcp-search-badge">{{ vcpSelIndustries.length }}</text>
+              <view v-if="vcpIndSearch" class="vcp-search-clear" @click.stop="vcpIndSearch = ''">
+                <text class="vcp-search-clear-icon">×</text>
+              </view>
+            </view>
           </view>
-          <view v-if="vcpIndDropdown" class="vcp-filter-dropdown">
-            <input
-              class="vcp-filter-search"
-              v-model="vcpIndSearch"
-              placeholder="搜索行业..."
-              @click.stop
-            />
-            <scroll-view scroll-y class="vcp-filter-options">
+          <!-- 行业下拉列表 -->
+          <view v-if="vcpIndDropdown" class="vcp-dropdown">
+            <scroll-view scroll-y class="vcp-dropdown-scroll">
               <view
                 v-for="ind in filteredIndustries"
                 :key="ind"
-                class="vcp-filter-option"
-                :class="{ 'option-selected': vcpSelIndustries.includes(ind) }"
+                class="vcp-dropdown-item"
+                :class="{ 'vcp-dropdown-item-active': vcpSelIndustries.includes(ind) }"
                 @click.stop="toggleIndustry(ind)"
               >
-                <text class="option-check">{{ vcpSelIndustries.includes(ind) ? '✓' : '' }}</text>
-                <text class="option-text">{{ ind }}</text>
+                <text class="vcp-dropdown-check">{{ vcpSelIndustries.includes(ind) ? '✓' : '' }}</text>
+                <text class="vcp-dropdown-text">{{ ind }}</text>
               </view>
-              <view v-if="filteredIndustries.length === 0" class="vcp-filter-empty">
+              <view v-if="filteredIndustries.length === 0" class="vcp-dropdown-empty">
                 <text>无匹配行业</text>
               </view>
             </scroll-view>
           </view>
-          <!-- 已选标签 -->
-          <view v-if="vcpSelIndustries.length > 0" class="vcp-selected-tags">
+          <!-- 行业已选标签 -->
+          <view v-if="vcpSelIndustries.length > 0" class="vcp-tags">
             <text
               v-for="ind in vcpSelIndustries"
               :key="ind"
-              class="vcp-sel-tag"
+              class="vcp-tag"
               @click.stop="toggleIndustry(ind)"
             >{{ ind }} ✕</text>
           </view>
         </view>
 
-        <!-- 概念板块筛选 -->
-        <view class="vcp-filter-section">
-          <view class="vcp-filter-header" @click="vcpConDropdown = !vcpConDropdown">
-            <text class="vcp-filter-title">概念板块</text>
-            <text v-if="vcpSelConcepts.length > 0" class="vcp-filter-count">已选 {{ vcpSelConcepts.length }}</text>
-            <text class="vcp-filter-arrow" :class="{ 'arrow-up': vcpConDropdown }">▾</text>
+        <!-- 概念搜索栏 -->
+        <view class="vcp-search-section">
+          <view class="vcp-search-bar" :class="{ 'vcp-search-bar-focus': vcpConFocused }" @click="vcpConDropdown = true">
+            <view class="vcp-search-input-wrap">
+              <text class="vcp-search-icon">🔍</text>
+              <input
+                class="vcp-search-input"
+                type="text"
+                v-model="vcpConSearch"
+                placeholder="搜索概念板块..."
+                @focus="vcpConFocused = true; vcpConDropdown = true"
+                @blur="vcpConFocused = false"
+                @click.stop
+              />
+              <text v-if="vcpSelConcepts.length > 0" class="vcp-search-badge">{{ vcpSelConcepts.length }}</text>
+              <view v-if="vcpConSearch" class="vcp-search-clear" @click.stop="vcpConSearch = ''">
+                <text class="vcp-search-clear-icon">×</text>
+              </view>
+            </view>
           </view>
-          <view v-if="vcpConDropdown" class="vcp-filter-dropdown">
-            <input
-              class="vcp-filter-search"
-              v-model="vcpConSearch"
-              placeholder="搜索概念板块..."
-              @click.stop
-            />
-            <scroll-view scroll-y class="vcp-filter-options">
+          <!-- 概念下拉列表 -->
+          <view v-if="vcpConDropdown" class="vcp-dropdown">
+            <scroll-view scroll-y class="vcp-dropdown-scroll">
               <view
                 v-for="con in filteredConcepts"
                 :key="con"
-                class="vcp-filter-option"
-                :class="{ 'option-selected': vcpSelConcepts.includes(con) }"
+                class="vcp-dropdown-item"
+                :class="{ 'vcp-dropdown-item-active': vcpSelConcepts.includes(con) }"
                 @click.stop="toggleConcept(con)"
               >
-                <text class="option-check">{{ vcpSelConcepts.includes(con) ? '✓' : '' }}</text>
-                <text class="option-text">{{ con }}</text>
+                <text class="vcp-dropdown-check">{{ vcpSelConcepts.includes(con) ? '✓' : '' }}</text>
+                <text class="vcp-dropdown-text">{{ con }}</text>
               </view>
-              <view v-if="filteredConcepts.length === 0" class="vcp-filter-empty">
+              <view v-if="filteredConcepts.length === 0" class="vcp-dropdown-empty">
                 <text>无匹配概念</text>
               </view>
             </scroll-view>
           </view>
-          <!-- 已选标签 -->
-          <view v-if="vcpSelConcepts.length > 0" class="vcp-selected-tags">
+          <!-- 概念已选标签 -->
+          <view v-if="vcpSelConcepts.length > 0" class="vcp-tags">
             <text
               v-for="con in vcpSelConcepts"
               :key="con"
-              class="vcp-sel-tag"
+              class="vcp-tag"
               @click.stop="toggleConcept(con)"
             >{{ con }} ✕</text>
           </view>
+        </view>
+
+        <!-- 清除全部按钮 -->
+        <view v-if="vcpSelIndustries.length + vcpSelConcepts.length > 0" class="vcp-clear-all" @click="clearVcpFilters">
+          <text class="vcp-clear-all-text">清除全部筛选 ({{ vcpSelIndustries.length + vcpSelConcepts.length }})</text>
         </view>
       </view>
 
@@ -683,7 +693,8 @@ const vcpExpandedIdx = ref(-1)
 let vcpLoaded = false
 
 // ── VCP 筛选器 ──
-const vcpFilterExpanded = ref(false)
+const vcpIndFocused = ref(false)     // 行业搜索焦点态
+const vcpConFocused = ref(false)     // 概念搜索焦点态
 const vcpIndustryOptions = ref([])   // 行业枚举
 const vcpConceptOptions = ref([])    // 概念枚举
 const vcpSelIndustries = ref([])     // 已选行业
@@ -1199,27 +1210,44 @@ const goToDetail = (id) => {
    VCP 策略样式
    ═══════════════════════════════════════════════════════ */
 
-/* VCP 筛选器 */
-.vcp-filter-bar {
+/* VCP 筛选器 — 胶囊搜索栏风格 */
+.vcp-filters {
+  margin: 8rpx 0 12rpx;
+}
+.vcp-search-section {
+  margin-bottom: 12rpx;
+  position: relative;
+}
+.vcp-search-section:last-of-type { margin-bottom: 0; }
+.vcp-search-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12rpx 20rpx;
+}
+.vcp-search-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
   background: #ffffff;
-  border-bottom: 1rpx solid #f0f0f5;
+  border-radius: 36rpx;
+  padding: 16rpx 24rpx;
+  border: 2rpx solid #e8e8ed;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
-.vcp-filter-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  padding: 8rpx 16rpx;
-  border-radius: 20rpx;
-  background: #f5f5fa;
-  cursor: pointer;
+.vcp-search-bar-focus .vcp-search-input-wrap {
+  border-color: #4285f4;
+  box-shadow: 0 2rpx 12rpx rgba(66, 133, 244, 0.15);
 }
-.vcp-filter-icon { font-size: 24rpx; }
-.vcp-filter-label { font-size: 24rpx; color: #3c3c43; font-weight: 500; }
-.vcp-filter-badge {
+.vcp-search-icon { font-size: 28rpx; margin-right: 12rpx; flex-shrink: 0; }
+.vcp-search-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #1a1a2e;
+  background: transparent;
+  border: none;
+  outline: none;
+  line-height: 1.4;
+}
+.vcp-search-badge {
   background: #007aff;
   color: #fff;
   font-size: 20rpx;
@@ -1230,106 +1258,91 @@ const goToDetail = (id) => {
   border-radius: 16rpx;
   padding: 0 8rpx;
   font-weight: 600;
+  margin-left: 8rpx;
+  flex-shrink: 0;
 }
-.vcp-filter-arrow { font-size: 20rpx; color: #8e8e93; transition: transform 0.2s; }
-.vcp-filter-arrow.arrow-up { transform: rotate(180deg); }
-.vcp-filter-clear {
-  font-size: 24rpx;
-  color: #007aff;
-  cursor: pointer;
-  padding: 8rpx 16rpx;
-}
+.vcp-search-clear { padding: 4rpx 8rpx; margin-left: 8rpx; flex-shrink: 0; cursor: pointer; }
+.vcp-search-clear-icon { font-size: 32rpx; color: #b0b0be; font-weight: 500; }
 
-.vcp-filter-panel {
-  background: #ffffff;
-  padding: 12rpx 20rpx 20rpx;
-  border-bottom: 1rpx solid #e8e8ed;
-}
-.vcp-filter-section {
-  margin-bottom: 16rpx;
-}
-.vcp-filter-section:last-child { margin-bottom: 0; }
-.vcp-filter-header {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  padding: 10rpx 0;
-  cursor: pointer;
-}
-.vcp-filter-title {
-  font-size: 26rpx;
-  font-weight: 600;
-  color: #1c1c1e;
-}
-.vcp-filter-count {
-  font-size: 22rpx;
-  color: #007aff;
-  font-weight: 500;
-}
-.vcp-filter-dropdown {
+/* 下拉选项列表 */
+.vcp-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 100;
   margin-top: 8rpx;
-  border: 1rpx solid #e8e8ed;
-  border-radius: 12rpx;
-  overflow: hidden;
-  background: #fafafa;
-}
-.vcp-filter-search {
-  width: 100%;
-  padding: 14rpx 16rpx;
-  font-size: 24rpx;
-  border: none;
-  border-bottom: 1rpx solid #e8e8ed;
   background: #ffffff;
-  outline: none;
-  box-sizing: border-box;
+  border: 2rpx solid #e8e8ed;
+  border-radius: 16rpx;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.1);
+  overflow: hidden;
 }
-.vcp-filter-options {
-  max-height: 360rpx;
+.vcp-dropdown-scroll {
+  max-height: 400rpx;
 }
-.vcp-filter-option {
+.vcp-dropdown-item {
   display: flex;
   align-items: center;
-  gap: 10rpx;
-  padding: 14rpx 16rpx;
+  gap: 12rpx;
+  padding: 18rpx 24rpx;
   cursor: pointer;
   transition: background 0.15s;
 }
-.vcp-filter-option:active { background: #e8e8ed; }
-.option-selected { background: #f0f5ff; }
-.option-selected .option-text { color: #007aff; font-weight: 500; }
-.option-check {
-  width: 32rpx;
-  font-size: 24rpx;
+.vcp-dropdown-item:active { background: #f0f0f5; }
+.vcp-dropdown-item-active { background: #f0f5ff; }
+.vcp-dropdown-item-active .vcp-dropdown-text { color: #007aff; font-weight: 500; }
+.vcp-dropdown-check {
+  width: 36rpx;
+  font-size: 26rpx;
   color: #007aff;
   font-weight: 700;
   text-align: center;
+  flex-shrink: 0;
 }
-.option-text { font-size: 24rpx; color: #3c3c43; }
-.vcp-filter-empty {
-  padding: 20rpx 16rpx;
+.vcp-dropdown-text { font-size: 28rpx; color: #3c3c43; }
+.vcp-dropdown-empty {
+  padding: 24rpx;
   text-align: center;
-  font-size: 24rpx;
+  font-size: 26rpx;
   color: #8e8e93;
 }
 
-.vcp-selected-tags {
+/* 已选标签 */
+.vcp-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 8rpx;
+  gap: 10rpx;
   margin-top: 10rpx;
+  padding: 0 8rpx;
 }
-.vcp-sel-tag {
+.vcp-tag {
   display: inline-flex;
   align-items: center;
-  padding: 6rpx 16rpx;
+  padding: 8rpx 18rpx;
   background: #e8f0fe;
   color: #007aff;
-  font-size: 22rpx;
-  border-radius: 16rpx;
+  font-size: 24rpx;
+  border-radius: 20rpx;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.vcp-tag:active { background: #d0e0f8; }
+
+/* 清除全部 */
+.vcp-clear-all {
+  display: flex;
+  justify-content: center;
+  margin-top: 12rpx;
+  padding: 8rpx 0;
+}
+.vcp-clear-all-text {
+  font-size: 24rpx;
+  color: #007aff;
   cursor: pointer;
   font-weight: 500;
 }
-.vcp-sel-tag:active { background: #d0e0f8; }
 
 /* VCP 表头 */
 .vcp-table-header {
@@ -1890,25 +1903,26 @@ const goToDetail = (id) => {
   .arrow-icon { font-size: 22px; }
 
   /* VCP 策略 PC 适配 */
-  .vcp-filter-bar { padding: 8px 16px; }
-  .vcp-filter-toggle { padding: 6px 14px; gap: 6px; border-radius: 16px; }
-  .vcp-filter-icon { font-size: 14px; }
-  .vcp-filter-label { font-size: 13px; }
-  .vcp-filter-badge { font-size: 11px; min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px; }
-  .vcp-filter-clear { font-size: 13px; }
-  .vcp-filter-panel { padding: 8px 16px 14px; }
-  .vcp-filter-title { font-size: 14px; }
-  .vcp-filter-count { font-size: 12px; }
-  .vcp-filter-search { padding: 8px 12px; font-size: 13px; }
-  .vcp-filter-options { max-height: 200px; }
-  .vcp-filter-option { padding: 8px 12px; gap: 6px; }
-  .vcp-filter-option:hover { background: #f0f0f5; }
-  .option-check { width: 18px; font-size: 13px; }
-  .option-text { font-size: 13px; }
-  .vcp-filter-empty { font-size: 13px; }
-  .vcp-selected-tags { gap: 6px; margin-top: 6px; }
-  .vcp-sel-tag { padding: 3px 10px; font-size: 12px; border-radius: 10px; }
-  .vcp-sel-tag:hover { background: #d0e0f8; }
+  .vcp-filters { margin: 6px 0 10px; }
+  .vcp-search-section { margin-bottom: 8px; }
+  .vcp-search-input-wrap { border-radius: 22px; padding: 10px 18px; border-width: 1px; }
+  .vcp-search-bar-focus .vcp-search-input-wrap { box-shadow: 0 1px 8px rgba(66, 133, 244, 0.15); }
+  .vcp-search-icon { font-size: 15px; margin-right: 8px; }
+  .vcp-search-input { font-size: 14px; }
+  .vcp-search-badge { font-size: 11px; min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px; border-radius: 10px; margin-left: 6px; }
+  .vcp-search-clear-icon { font-size: 18px; }
+  .vcp-dropdown { margin-top: 4px; border-radius: 10px; border-width: 1px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1); }
+  .vcp-dropdown-scroll { max-height: 220px; }
+  .vcp-dropdown-item { padding: 10px 16px; gap: 8px; }
+  .vcp-dropdown-item:hover { background: #f0f0f5; }
+  .vcp-dropdown-check { width: 20px; font-size: 14px; }
+  .vcp-dropdown-text { font-size: 14px; }
+  .vcp-dropdown-empty { font-size: 13px; padding: 14px; }
+  .vcp-tags { gap: 6px; margin-top: 6px; padding: 0 6px; }
+  .vcp-tag { padding: 4px 12px; font-size: 12px; border-radius: 12px; }
+  .vcp-tag:hover { background: #d0e0f8; }
+  .vcp-clear-all { margin-top: 8px; }
+  .vcp-clear-all-text { font-size: 13px; }
 
   .vcp-table-header { padding: 12px 12px; border-radius: 12px 12px 0 0; border-bottom-width: 1px; }
   .vth { font-size: 12px; }
