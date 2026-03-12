@@ -1,10 +1,15 @@
 """Alphareader — A 股数据获取模块（异步版）。
 
 职责：
-  - 从 akshare 获取 A 股股票列表和前复权日线行情
+  - 优先通过腾讯财经 API 获取 A 股前复权日线行情（速度快、稳定）
+  - akshare 作为备选数据源（当腾讯 API 失败时降级使用）
   - 数据清洗（剔除停牌、去重）
   - 持久化到 PostgreSQL（stock_daily_quote 表）
   - 智能缓存：当天已有数据则跳过下载
+
+数据源优先级：
+  1. 腾讯财经 API（日K线、实时行情）— 轻量、无需 akshare 依赖
+  2. akshare（东方财富）— 功能全面，但依赖重、偶尔不稳定
 
 核心逻辑：
   akshare 为同步库，通过 asyncio.to_thread() 在线程池中执行，
@@ -408,8 +413,8 @@ async def get_all_stock_data(force_refresh: bool = False) -> pd.DataFrame:
     流程：
       1. 检查 PostgreSQL 是否已有当天数据
       2. 若有效则直接从数据库加载返回
-      3. 否则尝试 akshare 在线获取
-      4. akshare 失败则降级到腾讯财经 API
+      3. 否则优先使用腾讯财经 API 在线获取（速度快、稳定）
+      4. 腾讯失败则降级到 akshare
       5. 清洗 → 写入 PostgreSQL → 返回
 
     Args:
@@ -432,35 +437,39 @@ async def get_all_stock_data(force_refresh: bool = False) -> pd.DataFrame:
                         db_data["股票代码"].nunique())
             return db_data
 
-    # 方式 1：akshare
+    # 方式 1（优先）：腾讯财经 API — 速度更快、更稳定
     raw_data = pd.DataFrame()
     try:
-        stock_list = await fetch_stock_list()
-        raw_data = await fetch_all_stocks_hist(stock_list)
+        db_list = await fetch_stock_list_from_db()
+        if not db_list.empty:
+            codes = db_list["代码"].tolist()
+            names = dict(zip(db_list["代码"], db_list["名称"]))
+            # 分批拉取并写入 DB（内存友好）
+            await fetch_all_stocks_tencent(codes, names)
+            # 数据已写入 DB，从数据库加载
+            raw_data = await load_from_db()
+            if not raw_data.empty:
+                stock_count = (
+                    raw_data["股票代码"].nunique() if "股票代码" in raw_data.columns
+                    else raw_data["ts_code"].nunique() if "ts_code" in raw_data.columns
+                    else 0
+                )
+                logger.info("腾讯财经 API 数据已写入 DB 并加载，共 %d 只股票", stock_count)
+                return raw_data  # 已经是 clean 过的数据，直接返回
     except Exception as e:
-        logger.warning("akshare 获取行情失败: %s", e)
+        logger.warning("腾讯财经 API 获取行情失败: %s", e)
 
-    # 方式 2：腾讯财经 API（当 akshare 完全失败或数据过少）
-    if raw_data.empty or raw_data["股票代码"].nunique() < 100:
-        logger.info("akshare 数据不足（%d 只），尝试腾讯财经 API...",
-                     raw_data["股票代码"].nunique() if not raw_data.empty else 0)
+    # 方式 2（备选）：akshare（当腾讯 API 完全失败或数据过少时）
+    if raw_data.empty or (
+        "股票代码" in raw_data.columns and raw_data["股票代码"].nunique() < 100
+    ):
+        logger.info("腾讯财经数据不足（%d 只），尝试 akshare...",
+                     raw_data["股票代码"].nunique() if not raw_data.empty and "股票代码" in raw_data.columns else 0)
         try:
-            # 从数据库获取已有股票代码列表
-            db_list = await fetch_stock_list_from_db()
-            if not db_list.empty:
-                codes = db_list["代码"].tolist()
-                names = dict(zip(db_list["代码"], db_list["名称"]))
-                # 分批拉取并写入 DB（内存友好，不返回大 DataFrame）
-                await fetch_all_stocks_tencent(codes, names)
-                # 数据已写入 DB，从数据库加载
-                raw_data = await load_from_db()
-                if not raw_data.empty:
-                    logger.info("腾讯财经 API 数据已写入 DB 并加载，共 %d 只股票",
-                                raw_data["股票代码"].nunique() if "股票代码" in raw_data.columns
-                                else raw_data["ts_code"].nunique() if "ts_code" in raw_data.columns else 0)
-                    return raw_data  # 已经是 clean 过的数据，直接返回
+            stock_list = await fetch_stock_list()
+            raw_data = await fetch_all_stocks_hist(stock_list)
         except Exception as e:
-            logger.warning("腾讯财经 API 也失败: %s", e)
+            logger.warning("akshare 也失败: %s", e)
 
     clean = clean_data(raw_data)
 
@@ -904,6 +913,67 @@ _spot_cache: dict[str, float] = {}   # 短期缓存：{ts_code: latest_price}
 _spot_cache_ts: float = 0.0          # 缓存时间戳
 
 
+def _sync_fetch_tencent_spot_prices(codes: list[str]) -> dict[str, float]:
+    """通过腾讯财经 HTTP 接口批量获取实时行情（不复权最新价）。
+
+    接口: http://qt.gtimg.cn/q=sh600000,sz000001,...
+    返回格式: v_sh600000="1~贵州茅台~600519~...~当前价~..."
+    每次最多约 80 个代码，分批请求。
+
+    Returns: {纯数字代码: 最新价}
+    """
+    import urllib.request
+
+    if not codes:
+        return {}
+
+    prices: dict[str, float] = {}
+    BATCH = 80  # 腾讯单次请求上限
+
+    tc_codes_map: dict[str, str] = {}  # tc_code -> raw_code
+    for c in codes:
+        tc = _tencent_code(c)
+        tc_codes_map[tc] = c
+
+    tc_list = list(tc_codes_map.keys())
+
+    for i in range(0, len(tc_list), BATCH):
+        batch = tc_list[i:i + BATCH]
+        url = f"http://qt.gtimg.cn/q={','.join(batch)}"
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://finance.qq.com",
+            })
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                text = resp.read().decode("gbk", errors="replace")
+
+            for line in text.strip().split("\n"):
+                line = line.strip().rstrip(";")
+                if not line or '="' not in line:
+                    continue
+                # v_sh600000="1~贵州茅台~600519~当前价~..."
+                eq_pos = line.index("=")
+                var_name = line[:eq_pos].replace("v_", "")  # sh600000
+                fields_str = line[eq_pos + 2:]  # 去掉 ="
+                if fields_str.endswith('"'):
+                    fields_str = fields_str[:-1]
+                fields = fields_str.split("~")
+                # 字段[3] = 当前价
+                if len(fields) >= 4 and var_name in tc_codes_map:
+                    try:
+                        price = float(fields[3])
+                        if price > 0:
+                            prices[tc_codes_map[var_name]] = price
+                    except (ValueError, IndexError):
+                        pass
+        except Exception as e:
+            logger.debug("腾讯实时行情批次请求失败: %s", e)
+            continue
+
+    return prices
+
+
 def _sync_fetch_spot_prices() -> dict[str, float]:
     """同步获取 A 股 + ETF 实时行情（不复权最新价），返回 {代码: 最新价}。"""
     prices: dict[str, float] = {}
@@ -993,10 +1063,12 @@ async def get_unadjusted_close(codes: list[str]) -> dict[str, float]:
 async def get_realtime_prices(codes: list[str], timeout: float = 30.0) -> dict[str, float]:
     """获取指定代码列表的实时不复权价格。
 
-    使用短期缓存（5 分钟），避免频繁调用 akshare。
+    优先使用腾讯财经 HTTP 接口（轻量、快速），失败后 fallback 到 akshare。
+    使用短期缓存（5 分钟），避免频繁调用。
+
     Args:
         codes: 股票/ETF 代码列表
-        timeout: 超时秒数（默认 30s），防止 akshare 卡死拖垮进程
+        timeout: 超时秒数（默认 30s）
     Returns: {ts_code: latest_price}
     """
     import time
@@ -1010,19 +1082,40 @@ async def get_realtime_prices(codes: list[str], timeout: float = 30.0) -> dict[s
         if len(result) == len(codes):
             return result
 
-    # 重新获取（带超时保护）
+    # 方式 1（优先）：腾讯财经实时行情 — 轻量、不依赖 akshare
     try:
-        _spot_cache = await asyncio.wait_for(
+        tencent_prices = await asyncio.wait_for(
+            asyncio.to_thread(_sync_fetch_tencent_spot_prices, codes),
+            timeout=timeout,
+        )
+        if tencent_prices:
+            _spot_cache.update(tencent_prices)
+            _spot_cache_ts = now
+            logger.info("腾讯实时行情已刷新，共 %d 只标的", len(tencent_prices))
+            result = {c: _spot_cache[c] for c in codes if c in _spot_cache}
+            if len(result) == len(codes):
+                return result
+            # 部分代码未覆盖，继续 fallback
+            missing = [c for c in codes if c not in _spot_cache]
+            logger.info("腾讯实时行情缺少 %d 只，尝试 akshare 补充", len(missing))
+    except asyncio.TimeoutError:
+        logger.warning("腾讯实时行情超时 (%.0fs)，尝试 akshare", timeout)
+    except Exception as e:
+        logger.warning("腾讯实时行情异常: %s，尝试 akshare", e)
+
+    # 方式 2（备选）：akshare 全量实时行情
+    try:
+        akshare_prices = await asyncio.wait_for(
             asyncio.to_thread(_sync_fetch_spot_prices),
             timeout=timeout,
         )
+        _spot_cache.update(akshare_prices)
         _spot_cache_ts = now
-        logger.info("实时行情已刷新，共 %d 只标的", len(_spot_cache))
+        logger.info("akshare 实时行情已刷新，共 %d 只标的", len(akshare_prices))
     except asyncio.TimeoutError:
-        logger.warning("实时行情拉取超时 (%.0fs)，使用缓存或跳过", timeout)
-        # 超时后返回已有缓存（如果有的话）
+        logger.warning("akshare 实时行情拉取超时 (%.0fs)，使用缓存或跳过", timeout)
     except Exception as e:
-        logger.warning("实时行情拉取异常: %s", e)
+        logger.warning("akshare 实时行情拉取异常: %s", e)
 
     return {c: _spot_cache[c] for c in codes if c in _spot_cache}
 
@@ -1036,8 +1129,9 @@ async def backfill_quotes(
     end_date: str,
     batch_size: int = 200,
 ) -> dict:
-    """回填指定日期范围的历史行情数据（使用 akshare）。
+    """回填指定日期范围的历史行情数据。
 
+    优先使用腾讯财经 API（更快），失败的个股再用 akshare 补充。
     逐只股票拉取指定日期范围的前复权日线，分批写入 DB。
     服务器内存有限，采用分批写入策略。
 
@@ -1050,6 +1144,15 @@ async def backfill_quotes(
         {"total_stocks": N, "total_records": N, "failed": N}
     """
     import gc
+
+    # 计算回溯天数（腾讯 API 需要天数参数）
+    from datetime import datetime as _dt
+    try:
+        d_start = _dt.strptime(start_date, "%Y%m%d")
+        d_end = _dt.strptime(end_date, "%Y%m%d")
+        backfill_days = max((d_end - d_start).days + 30, 60)  # 多拉 30 天确保覆盖
+    except ValueError:
+        backfill_days = 365
 
     # 获取股票列表
     db_list = await fetch_stock_list_from_db()
@@ -1066,7 +1169,7 @@ async def backfill_quotes(
     total = len(codes)
 
     logger.info(
-        "开始回填历史行情: %s ~ %s，共 %d 只股票",
+        "开始回填历史行情: %s ~ %s，共 %d 只股票（优先腾讯财经 API）",
         start_date, end_date, total,
     )
 
@@ -1082,14 +1185,21 @@ async def backfill_quotes(
                 idx, total, idx / total * 100, total_records,
             )
 
-        df = await asyncio.to_thread(
-            _sync_fetch_single_stock_hist, code, start_date, end_date
-        )
+        # 优先腾讯财经 API
+        df = await asyncio.to_thread(_sync_fetch_tencent_kline, code, backfill_days)
         if df is not None and not df.empty:
             df["名称"] = names.get(code, "")
             batch_dfs.append(df)
         else:
-            failed += 1
+            # 腾讯失败则 fallback 到 akshare
+            df = await asyncio.to_thread(
+                _sync_fetch_single_stock_hist, code, start_date, end_date
+            )
+            if df is not None and not df.empty:
+                df["名称"] = names.get(code, "")
+                batch_dfs.append(df)
+            else:
+                failed += 1
 
         # 分批写入 DB
         if len(batch_dfs) >= batch_size:
@@ -1103,7 +1213,7 @@ async def backfill_quotes(
             batch_dfs = []
             gc.collect()
 
-        await _async_sleep_with_jitter()
+        await asyncio.sleep(0.3 + random.uniform(0, 0.2))  # 腾讯 API 间隔更短
 
     # 最后一批
     if batch_dfs:

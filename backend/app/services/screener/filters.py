@@ -27,13 +27,17 @@
   └──────────────────────────────────────────────────────────────┘
 
   ┌────────────────────────────────────────────────────────────┐
-  │ 基本面过滤器 (4 层条件)                                       │
+  │ 基本面过滤器 (宽松模式)                                         │
   ├──────────────────────────────────────────────────────────────┤
   │ ① 财务防雷（一票否决）：                                       │
   │   - 净利润连续 2 期为负 且 最新营收 < 1 亿 → 剔除              │
   │   - 经营性现金流长期为负 且 净利润极高 → 剔除                   │
-  │ ② 营收驱动：最新季度营收同比 > 20%                             │
-  │ ③ EPS 环比加速：EPS_Q0 > EPS_Q-1 > EPS_Q-2                   │
+  │ ② 商誉防雷：商誉占净资产比例 ≥ 30% → 剔除                     │
+  │ ③ 宽松条件（满足任一即可）：                                    │
+  │   - 最新季度扣非净利润 > 0（至少赚钱）                          │
+  │   - 营收同比降幅 < 10%（业务未断崖崩溃）                        │
+  │ [暂时注释] ④ 营收驱动：营收同比 > 20%                           │
+  │ [暂时注释] ⑤ EPS 环比加速：Q0 > Q-1 > Q-2                      │
   └──────────────────────────────────────────────────────────────┘
 """
 
@@ -358,10 +362,11 @@ class MinerviniScreener:
         logger.info("B2 箱体突破 (90%%分位): %d 通过", len(merged))
 
         # B3: 放量确认 — Volume > MA(Volume, 50日) × 1.5
-        mask_b3 = merged["latest_volume"] > merged["avg_vol_50"] * cfg.volume_ratio
-        merged = merged[mask_b3 | merged["avg_vol_50"].isna()]
+        # [暂时注释] 放宽条件，不要求放量
+        # mask_b3 = merged["latest_volume"] > merged["avg_vol_50"] * cfg.volume_ratio
+        # merged = merged[mask_b3 | merged["avg_vol_50"].isna()]
         self._stats["B3_volume_surge"] = len(merged)
-        logger.info("B3 放量确认 (≥1.5x): %d 通过", len(merged))
+        logger.info("B3 放量确认 (≥1.5x): [已跳过] %d 只直接通过", len(merged))
 
         if merged.empty:
             logger.warning("Stage2 条件 B 已过滤完所有股票")
@@ -402,14 +407,15 @@ class MinerviniScreener:
         )
 
         # C2: 活跃基因 — 20 日内至少 1 根涨幅≥7% 的大阳线
-        yang_df = _check_big_yang_line(
-            ohlcv_subset2, window=cfg.big_yang_window, threshold=cfg.big_yang_threshold,
-        )
-        merged = merged.merge(yang_df, on="ts_code", how="left")
-        mask_c2 = merged["has_big_yang"] == True  # noqa: E712
-        merged = merged[mask_c2 | merged["has_big_yang"].isna()]
+        # [暂时注释] 放宽条件，不要求大阳线
+        # yang_df = _check_big_yang_line(
+        #     ohlcv_subset2, window=cfg.big_yang_window, threshold=cfg.big_yang_threshold,
+        # )
+        # merged = merged.merge(yang_df, on="ts_code", how="left")
+        # mask_c2 = merged["has_big_yang"] == True  # noqa: E712
+        # merged = merged[mask_c2 | merged["has_big_yang"].isna()]
         self._stats["C2_big_yang"] = len(merged)
-        logger.info("C2 大阳线活跃 (%d日内≥%.0f%%): %d 通过", cfg.big_yang_window, cfg.big_yang_threshold, len(merged))
+        logger.info("C2 大阳线活跃 (%d日内≥%.0f%%): [已跳过] %d 只直接通过", cfg.big_yang_window, cfg.big_yang_threshold, len(merged))
 
         self._stats["stage2_final"] = len(merged)
         logger.info("━━━ Stage2 最终通过: %d 只 ━━━", len(merged))
@@ -429,11 +435,19 @@ class FundamentalFilterConfig:
     min_revenue_for_loss: float = 1e8       # 净利润连亏时最低营收（1 亿元）
     cashflow_fraud_threshold: float = -0.5  # 经营现金流/净利润比值下限
 
-    # 营收驱动
-    min_revenue_yoy: float = 20.0           # 最新季度营收同比增长下限（%）
+    # [暂时注释] 营收驱动（后续可能恢复）
+    # min_revenue_yoy: float = 20.0           # 最新季度营收同比增长下限（%）
 
-    # EPS 环比加速
-    eps_acceleration: bool = True           # 是否启用 EPS 环比加速检查
+    # 基本面宽松条件（满足任一即可）
+    #   条件 A: 最新季度扣非净利润 > 0（至少是个赚钱的公司）
+    #   条件 B: 营业收入同比降幅 < 10%（业务没有断崖式崩溃）
+    max_revenue_decline: float = -10.0      # 营收同比增长下限（%），低于此视为崩溃
+
+    # 商誉防雷
+    max_goodwill_ratio: float = 0.30        # 商誉占净资产比例上限（30%）
+
+    # [暂时注释] EPS 环比加速（后续可能恢复）
+    # eps_acceleration: bool = True           # 是否启用 EPS 环比加速检查
 
 
 class FundamentalFilter:
@@ -451,12 +465,23 @@ class FundamentalFilter:
     def filter_stats(self) -> dict[str, int]:
         return self._stats
 
-    def apply(self, fundamental_df: pd.DataFrame, candidate_codes: set[str]) -> set[str]:
+    def apply(
+        self,
+        fundamental_df: pd.DataFrame,
+        candidate_codes: set[str],
+        financial_details_df: pd.DataFrame | None = None,
+    ) -> set[str]:
         """执行基本面过滤。
 
+        新条件（满足任一即可）：
+          A) 最新季度扣非净利润 > 0（至少是个赚钱的公司）
+          B) 营业收入同比降幅 < 10%（业务没有断崖式崩溃）
+        商誉防雷：商誉占净资产比例 >= 30% 则剔除
+
         Args:
-            fundamental_df: 合并后的多季度业绩数据
+            fundamental_df: 合并后的多季度业绩数据（stock_yjbb_em）
             candidate_codes: 技术面筛选后的股票代码集合
+            financial_details_df: 扣非净利润/商誉/净资产数据（stock_financial_abstract）
 
         Returns:
             通过基本面筛选的股票代码集合
@@ -481,20 +506,44 @@ class FundamentalFilter:
         # ── 按股票代码分组，按报告期排序 ──
         fdf = fdf.sort_values(["股票代码", "report_date"], ascending=[True, False])
 
+        # ── 构建扣非净利润/商誉/净资产快查表 ──
+        detail_map: dict[str, dict] = {}
+        if financial_details_df is not None and not financial_details_df.empty:
+            for _, row in financial_details_df.iterrows():
+                code = row.get("股票代码", "")
+                if code:
+                    detail_map[code] = {
+                        "deducted_profit": row.get("deducted_profit"),
+                        "goodwill": row.get("goodwill", 0.0),
+                        "net_assets": row.get("net_assets"),
+                    }
+
         passed = set()
         failed_reasons: dict[str, str] = {}
+        goodwill_killed = 0
 
         for code in candidate_codes:
             stock_data = fdf[fdf["股票代码"] == code]
+            detail = detail_map.get(code, {})
 
-            if stock_data.empty:
+            # ── 商誉防雷：商誉占净资产 >= 30% 则剔除 ──
+            goodwill = detail.get("goodwill", 0.0) or 0.0
+            net_assets = detail.get("net_assets")
+            if (pd.notna(net_assets) and net_assets > 0
+                    and goodwill / net_assets >= cfg.max_goodwill_ratio):
+                ratio = goodwill / net_assets * 100
+                failed_reasons[code] = f"商誉占净资产{ratio:.1f}%>={cfg.max_goodwill_ratio*100:.0f}%"
+                goodwill_killed += 1
+                continue
+
+            if stock_data.empty and not detail:
                 # 无基本面数据的股票不一票否决，但降权记录
                 logger.debug("基本面数据缺失: %s，放行但标记", code)
                 passed.add(code)
                 continue
 
             try:
-                ok, reason = self._check_single_stock(stock_data, code)
+                ok, reason = self._check_single_stock(stock_data, code, detail)
                 if ok:
                     passed.add(code)
                 else:
@@ -505,29 +554,38 @@ class FundamentalFilter:
                 passed.add(code)
 
         self._stats["F1_anti_fraud"] = len(candidate_codes) - len(failed_reasons)
+        self._stats["goodwill_killed"] = goodwill_killed
         self._stats["fundamental_passed"] = len(passed)
         self._stats["fundamental_failed"] = len(failed_reasons)
 
         if failed_reasons:
-            logger.info("基本面淘汰 %d 只: %s",
-                        len(failed_reasons),
+            logger.info("基本面淘汰 %d 只（含商誉 %d 只）: %s",
+                        len(failed_reasons), goodwill_killed,
                         list(failed_reasons.items())[:10])
 
         logger.info("━━━ 基本面最终通过: %d/%d ━━━", len(passed), len(candidate_codes))
         return passed
 
-    def _check_single_stock(self, data: pd.DataFrame, code: str) -> tuple[bool, str]:
+    def _check_single_stock(self, data: pd.DataFrame, code: str, detail: dict | None = None) -> tuple[bool, str]:
         """对单只股票执行基本面检查。
+
+        条件（满足任一即可）：
+          A) 最新季度扣非净利润 > 0（至少是个赚钱的公司）
+          B) 营业收入同比降幅 < 10%（业务没有断崖式崩溃）
 
         Returns:
             (通过, 失败原因)
         """
         cfg = self.config
+        detail = detail or {}
+
+        if data.empty:
+            return True, ""
+
         rows = data.head(3)  # 最近 3 个季度（已按日期降序）
 
         q0 = rows.iloc[0] if len(rows) >= 1 else None  # 最新季度
         q1 = rows.iloc[1] if len(rows) >= 2 else None  # 上一季度
-        q2 = rows.iloc[2] if len(rows) >= 3 else None  # 再上一季度
 
         # ── 防雷1: 净利润连续两期为负 且 营收 < 1 亿 ──
         if q0 is not None and q1 is not None:
@@ -547,19 +605,48 @@ class FundamentalFilter:
                     and cf / max(eps, 0.01) < cfg.cashflow_fraud_threshold):
                 return False, "经营现金流为负但EPS很高(疑似造假)"
 
-        # ── 营收驱动: 最新季度营收同比 > 20% ──
-        if q0 is not None:
-            rev_yoy = q0.get("revenue_yoy")
-            if pd.notna(rev_yoy) and rev_yoy < cfg.min_revenue_yoy:
-                return False, f"营收同比增长{rev_yoy:.1f}%<{cfg.min_revenue_yoy}%"
+        # ── [暂时注释] 营收驱动: 最新季度营收同比 > 20% ──
+        # if q0 is not None:
+        #     rev_yoy = q0.get("revenue_yoy")
+        #     if pd.notna(rev_yoy) and rev_yoy < cfg.min_revenue_yoy:
+        #         return False, f"营收同比增长{rev_yoy:.1f}%<{cfg.min_revenue_yoy}%"
 
-        # ── EPS 环比加速: EPS_Q0 > EPS_Q-1 > EPS_Q-2 ──
-        if cfg.eps_acceleration and q0 is not None and q1 is not None and q2 is not None:
-            eps0 = q0.get("eps")
-            eps1 = q1.get("eps")
-            eps2 = q2.get("eps")
-            if pd.notna(eps0) and pd.notna(eps1) and pd.notna(eps2):
-                if not (eps0 > eps1 > eps2):
-                    return False, f"EPS未加速({eps0:.3f}<={eps1:.3f}<={eps2:.3f})"
+        # ── [暂时注释] EPS 环比加速: EPS_Q0 > EPS_Q-1 > EPS_Q-2 ──
+        # q2 = rows.iloc[2] if len(rows) >= 3 else None  # 再上一季度
+        # if cfg.eps_acceleration and q0 is not None and q1 is not None and q2 is not None:
+        #     eps0 = q0.get("eps")
+        #     eps1 = q1.get("eps")
+        #     eps2 = q2.get("eps")
+        #     if pd.notna(eps0) and pd.notna(eps1) and pd.notna(eps2):
+        #         if not (eps0 > eps1 > eps2):
+        #             return False, f"EPS未加速({eps0:.3f}<={eps1:.3f}<={eps2:.3f})"
 
-        return True, ""
+        # ── 宽松基本面条件（满足任一即可） ──
+        # 条件 A: 扣非净利润 > 0
+        deducted_profit = detail.get("deducted_profit")
+        cond_a = pd.notna(deducted_profit) and deducted_profit > 0
+
+        # 条件 B: 营收同比降幅 < 10%（即 revenue_yoy > -10%）
+        rev_yoy = q0.get("revenue_yoy") if q0 is not None else None
+        cond_b = pd.notna(rev_yoy) and rev_yoy > cfg.max_revenue_decline
+
+        if cond_a or cond_b:
+            return True, ""
+
+        # 两个条件都不满足
+        reasons = []
+        if pd.notna(deducted_profit):
+            reasons.append(f"扣非净利润{deducted_profit/1e8:.2f}亿≤0")
+        else:
+            reasons.append("扣非净利润数据缺失")
+        if pd.notna(rev_yoy):
+            reasons.append(f"营收同比{rev_yoy:.1f}%≤{cfg.max_revenue_decline}%")
+        else:
+            reasons.append("营收同比数据缺失")
+
+        # 如果两个数据都缺失，放行（防御性）
+        if not pd.notna(deducted_profit) and not pd.notna(rev_yoy):
+            logger.debug("基本面数据全缺失: %s，放行", code)
+            return True, ""
+
+        return False, " & ".join(reasons)

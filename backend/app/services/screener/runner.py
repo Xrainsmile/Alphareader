@@ -89,10 +89,16 @@ def parse_args() -> argparse.Namespace:
 
     # 基本面过滤器参数
     fund = parser.add_argument_group("基本面过滤器参数")
-    fund.add_argument("--min-revenue-yoy", type=float, default=20.0,
-                      help="最低营收同比增长%%（默认 20.0）")
-    fund.add_argument("--no-eps-check", action="store_true",
-                      help="禁用 EPS 环比加速检查")
+    # [暂时注释] 营收驱动（后续可能恢复）
+    # fund.add_argument("--min-revenue-yoy", type=float, default=20.0,
+    #                   help="最低营收同比增长%%（默认 20.0）")
+    # [暂时注释] EPS 环比加速（后续可能恢复）
+    # fund.add_argument("--no-eps-check", action="store_true",
+    #                   help="禁用 EPS 环比加速检查")
+    fund.add_argument("--max-revenue-decline", type=float, default=-10.0,
+                      help="营收同比降幅下限%%（默认 -10.0，低于此剔除）")
+    fund.add_argument("--max-goodwill-ratio", type=float, default=0.30,
+                      help="商誉占净资产比例上限（默认 0.30 = 30%%）")
     fund.add_argument("--no-fundamental", action="store_true",
                       help="完全跳过基本面过滤")
 
@@ -118,14 +124,16 @@ async def main():
     )
 
     fundamental_config = FundamentalFilterConfig(
-        min_revenue_yoy=args.min_revenue_yoy,
-        eps_acceleration=not args.no_eps_check,
+        # [暂时注释] 旧条件，后续可能恢复
+        # min_revenue_yoy=args.min_revenue_yoy,
+        # eps_acceleration=not args.no_eps_check,
+        max_revenue_decline=args.max_revenue_decline,
+        max_goodwill_ratio=args.max_goodwill_ratio,
     )
 
     # 如果跳过基本面，设一个极宽松的配置
     if args.no_fundamental:
-        fundamental_config.min_revenue_yoy = -9999
-        fundamental_config.eps_acceleration = False
+        fundamental_config.max_revenue_decline = -9999
 
     pipeline = ScreenerPipeline(
         stage2_config=stage2_config,

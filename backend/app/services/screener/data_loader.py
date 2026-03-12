@@ -440,3 +440,134 @@ class DataLoader:
 
         logger.info("load_price_extremes: %d 只股票的极值统计", len(df))
         return df
+
+    # ================================================================
+    # 7. 逐股获取扣非净利润、商誉、净资产（用于基本面过滤）
+    # ================================================================
+
+    async def load_financial_details(
+        self,
+        codes: list[str] | set[str],
+        quarter_date: str | None = None,
+    ) -> pd.DataFrame:
+        """通过 akshare stock_financial_abstract 逐股获取关键财务指标。
+
+        获取字段：扣非净利润、商誉、股东权益合计(净资产)。
+        该接口按股票逐只查询，仅对 Stage2 通过的少量候选股调用。
+
+        Args:
+            codes: 需要查询的股票代码列表
+            quarter_date: 指定报告期（YYYYMMDD），None 则自动取最近季度
+
+        Returns:
+            DataFrame: 股票代码, deducted_profit, goodwill, net_assets
+        """
+        if quarter_date is None:
+            quarters = self._recent_quarter_dates(n=1)
+            quarter_date = quarters[0] if quarters else "20240930"
+
+        codes_list = list(codes)
+        logger.info(
+            "load_financial_details: 查询 %d 只股票的扣非净利润/商誉/净资产（报告期 %s）",
+            len(codes_list), quarter_date,
+        )
+
+        results = []
+        failed = 0
+
+        for i, code in enumerate(codes_list):
+            if i > 0 and i % 20 == 0:
+                logger.info("load_financial_details: 进度 %d/%d", i, len(codes_list))
+
+            try:
+                row = await asyncio.to_thread(self._sync_fetch_financial_abstract, code, quarter_date)
+                if row is not None:
+                    results.append(row)
+                else:
+                    # 接口无数据，填充默认值
+                    results.append({
+                        "股票代码": code,
+                        "deducted_profit": float("nan"),
+                        "goodwill": 0.0,
+                        "net_assets": float("nan"),
+                    })
+            except Exception as e:
+                logger.debug("load_financial_details: %s 查询异常: %s", code, e)
+                results.append({
+                    "股票代码": code,
+                    "deducted_profit": float("nan"),
+                    "goodwill": 0.0,
+                    "net_assets": float("nan"),
+                })
+                failed += 1
+
+            # 请求间隔，避免被封
+            await asyncio.sleep(0.15)
+
+        logger.info(
+            "load_financial_details: 完成 %d 只，失败 %d 只",
+            len(results), failed,
+        )
+
+        if not results:
+            return pd.DataFrame(columns=["股票代码", "deducted_profit", "goodwill", "net_assets"])
+
+        df = pd.DataFrame(results)
+        # 商誉 NaN 转 0（无商誉的公司视为 0）
+        df["goodwill"] = pd.to_numeric(df["goodwill"], errors="coerce").fillna(0.0)
+        df["deducted_profit"] = pd.to_numeric(df["deducted_profit"], errors="coerce")
+        df["net_assets"] = pd.to_numeric(df["net_assets"], errors="coerce")
+
+        return df
+
+    @staticmethod
+    def _sync_fetch_financial_abstract(code: str, quarter_date: str) -> dict | None:
+        """同步调用 akshare 获取单只股票的财务摘要关键指标。
+
+        Args:
+            code: 6 位股票代码
+            quarter_date: 报告期 YYYYMMDD
+
+        Returns:
+            包含 deducted_profit, goodwill, net_assets 的 dict，或 None
+        """
+        import akshare as ak
+
+        try:
+            df = ak.stock_financial_abstract(symbol=code)
+            if df is None or df.empty:
+                return None
+
+            result = {"股票代码": code}
+
+            # 从常用指标中提取目标行
+            targets = {
+                "扣非净利润": "deducted_profit",
+                "商誉": "goodwill",
+                "股东权益合计(净资产)": "net_assets",
+            }
+
+            for cn_name, en_key in targets.items():
+                row = df[(df["选项"] == "常用指标") & (df["指标"] == cn_name)]
+                if not row.empty:
+                    val = row.iloc[0].get(quarter_date)
+                    if val is not None and str(val).strip() not in ("", "nan", "None"):
+                        try:
+                            result[en_key] = float(val)
+                        except (ValueError, TypeError):
+                            result[en_key] = float("nan")
+                    else:
+                        result[en_key] = float("nan")
+                else:
+                    result[en_key] = float("nan")
+
+            # 商誉 NaN 视为 0
+            import math
+            if math.isnan(result.get("goodwill", 0.0) or 0.0):
+                result["goodwill"] = 0.0
+
+            return result
+
+        except Exception as e:
+            logger.debug("_sync_fetch_financial_abstract(%s) 异常: %s", code, e)
+            return None

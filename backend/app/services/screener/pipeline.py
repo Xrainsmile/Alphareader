@@ -208,10 +208,23 @@ class ScreenerPipeline:
             result["errors"].append(f"Fundamentals: {e}")
         logger.info("Step 5 基本面数据拉取完成 [%.1fs]", time.time() - step_start)
 
+        # ── Step 5.5: 拉取扣非净利润、商誉、净资产（逐股查询）──
+        step_start = time.time()
+        financial_details_df = pd.DataFrame()
+        try:
+            financial_details_df = await self.loader.load_financial_details(candidate_codes)
+            result["stats"]["financial_details_count"] = len(financial_details_df)
+        except Exception as e:
+            logger.warning("Step 5.5 扣非净利润/商誉数据拉取失败: %s，继续基本面过滤", e)
+            result["errors"].append(f"FinancialDetails: {e}")
+        logger.info("Step 5.5 扣非净利润/商誉数据拉取完成 [%.1fs]", time.time() - step_start)
+
         # ── Step 6: 基本面过滤 ──
         step_start = time.time()
         try:
-            final_codes = self.fundamental_filter.apply(fundamental_df, candidate_codes)
+            final_codes = self.fundamental_filter.apply(
+                fundamental_df, candidate_codes, financial_details_df,
+            )
             result["stats"].update(self.fundamental_filter.filter_stats)
             result["stats"]["final_count"] = len(final_codes)
         except Exception as e:
@@ -469,9 +482,10 @@ class ScreenerPipeline:
             ("A3 逼近前高≤15%", stats.get("A3_near_high", "-")),
             ("B1 站上筹码峰值", stats.get("B1_above_poc", "-")),
             ("B2 箱体突破90%", stats.get("B2_breakout", "-")),
-            ("B3 放量≥1.5x", stats.get("B3_volume_surge", "-")),
+            ("B3 放量≥1.5x[跳过]", stats.get("B3_volume_surge", "-")),
             ("C1 VCP-NRC收敛", stats.get("C1_vcp_contraction", "-")),
-            ("C2 大阳线活跃", stats.get("C2_big_yang", "-")),
+            ("C2 大阳线[跳过]", stats.get("C2_big_yang", "-")),
+            ("商誉防雷(≥30%)", f'-{stats["goodwill_killed"]}' if stats.get("goodwill_killed") else "0"),
             ("基本面通过", stats.get("fundamental_passed", "-")),
         ]
         print("\n  ┌─ 量化漏斗 ─────────────────────┐")
