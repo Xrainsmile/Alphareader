@@ -16,6 +16,8 @@ async def get_sandbox_stock_list(
     holding_only: bool,
 ) -> dict:
     query = select(SandboxStock).order_by(desc(SandboxStock.updated_at))
+    # 模拟仓列表默认只显示短线策略（swing），排除价投标的
+    query = query.where(SandboxStock.strategy == "swing")
     if status:
         query = query.where(SandboxStock.status == status)
     else:

@@ -563,3 +563,114 @@ async def get_vcp_watchlist(
         date=query_date,
         items=items,
     )
+
+
+# ── 价投策略白名单 ──
+
+class ValueStockItem(BaseModel):
+    """价投白名单单条记录。"""
+    id: int
+    ts_code: str
+    name: str | None = None
+    status: str  # watching / holding
+    reason: str | None = None
+    industry: str | None = None
+    concepts: str | None = None
+    current_price: float | None = None
+    futu_url: str | None = None
+    added_at: str | None = None
+
+
+class ValueWatchlistResponse(BaseModel):
+    """价投白名单响应。"""
+    count: int
+    items: list[ValueStockItem]
+
+
+@router.get("/value_watchlist", response_model=ValueWatchlistResponse)
+async def get_value_watchlist():
+    """查询价投策略白名单。
+
+    返回所有 strategy='value' 且未退出的观察池股票，
+    附带行业、概念板块（从最新 WatchlistDaily 或行情表获取）。
+    """
+    from sqlalchemy import select, desc as sa_desc
+
+    from app.database import async_session
+    from app.models.sandbox import SandboxStock
+    from app.models.screener import WatchlistDaily
+    from app.models.stock import StockDailyQuote
+
+    async with async_session() as session:
+        # 查询所有价投策略标的（排除已退出）
+        stmt = (
+            select(SandboxStock)
+            .where(SandboxStock.strategy == "value")
+            .where(SandboxStock.status != "exited")
+            .order_by(sa_desc(SandboxStock.updated_at))
+        )
+        result = await session.execute(stmt)
+        stocks = result.scalars().all()
+
+        if not stocks:
+            return ValueWatchlistResponse(count=0, items=[])
+
+        ts_codes = [s.ts_code for s in stocks]
+
+        # 尝试从最新 WatchlistDaily 获取行业和概念信息
+        from sqlalchemy import func as sa_func
+        max_date_q = await session.execute(
+            select(sa_func.max(WatchlistDaily.run_date))
+        )
+        latest_date = max_date_q.scalar()
+
+        watchlist_map: dict[str, dict] = {}
+        if latest_date:
+            wl_result = await session.execute(
+                select(WatchlistDaily)
+                .where(WatchlistDaily.run_date == latest_date)
+                .where(WatchlistDaily.ts_code.in_(ts_codes))
+            )
+            for wl in wl_result.scalars().all():
+                watchlist_map[wl.ts_code] = {
+                    "industry": wl.industry,
+                    "concepts": wl.concepts,
+                    "current_price": wl.current_price,
+                }
+
+        # 对于 WatchlistDaily 中没有的标的，从行情表获取最新收盘价
+        missing_codes = [c for c in ts_codes if c not in watchlist_map]
+        quote_map: dict[str, float] = {}
+        if missing_codes:
+            for code in missing_codes:
+                q_result = await session.execute(
+                    select(StockDailyQuote.close)
+                    .where(StockDailyQuote.ts_code == code)
+                    .order_by(sa_desc(StockDailyQuote.trade_date))
+                    .limit(1)
+                )
+                price = q_result.scalar()
+                if price is not None:
+                    quote_map[code] = float(price)
+
+    items = []
+    for s in stocks:
+        wl_info = watchlist_map.get(s.ts_code, {})
+        price = wl_info.get("current_price")
+        if price is None:
+            price = quote_map.get(s.ts_code)
+
+        items.append(ValueStockItem(
+            id=s.id,
+            ts_code=s.ts_code,
+            name=s.name,
+            status=s.status,
+            reason=s.reason,
+            industry=wl_info.get("industry"),
+            concepts=wl_info.get("concepts"),
+            current_price=price,
+            futu_url=_generate_futu_url(s.ts_code),
+            added_at=s.added_at.isoformat() if s.added_at else None,
+        ))
+
+    return ValueWatchlistResponse(count=len(items), items=items)

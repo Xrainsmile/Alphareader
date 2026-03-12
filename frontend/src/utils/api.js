@@ -151,6 +151,13 @@ export function fetchVCPFilters() {
   return request('/api/v1/stocks/vcp_watchlist/filters')
 }
 
+/**
+ * 获取价投策略白名单
+ */
+export function fetchValueWatchlist() {
+  return request('/api/v1/stocks/value_watchlist')
+}
+
 // ── Sandbox API（模拟仓）──
 
 /**

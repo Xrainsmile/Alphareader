@@ -17,6 +17,13 @@
     </view>
     <view
       class="tab-item"
+      :class="{ 'tab-active': activeTab === 'value' }"
+      @click="$emit('select-value')"
+    >
+      <text class="tab-text">价投</text>
+    </view>
+    <view
+      class="tab-item"
       :class="{ 'tab-active': activeTab === 'sandbox' }"
       @click="$emit('select-sandbox')"
     >
@@ -33,7 +40,7 @@ defineProps({
   },
 })
 
-defineEmits(['select-rs', 'select-vcp', 'select-sandbox'])
+defineEmits(['select-rs', 'select-vcp', 'select-value', 'select-sandbox'])
 </script>
 
 <style scoped>

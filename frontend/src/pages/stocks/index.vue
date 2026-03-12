@@ -5,6 +5,7 @@
       :active-tab="activeTab"
       @select-rs="onSelectRs"
       @select-vcp="onSelectVcp"
+      @select-value="onSelectValue"
       @select-sandbox="switchToSandbox"
     />
 
@@ -288,6 +289,116 @@
     </template>
 
     <!-- ═══════════════════════════════════════════════════════
+         价投策略 Tab
+         ═══════════════════════════════════════════════════════ -->
+    <template v-if="activeTab === 'value'">
+      <view class="stocks-header">
+        <text class="stocks-title">价投策略</text>
+        <text class="stocks-subtitle">巴菲特式价值投资 · Value Investing</text>
+      </view>
+
+      <view class="info-bar">
+        <text class="info-date">共 {{ valueFilteredList.length }}/{{ valueList.length }} 只</text>
+      </view>
+
+      <!-- 价投筛选器 — 行业搜索 -->
+      <view v-if="valueIndDropdown" class="vcp-overlay" @click="valueIndDropdown = false"></view>
+
+      <view class="vcp-filters">
+        <view class="vcp-search-section">
+          <view class="vcp-search-bar" :class="{ 'vcp-search-bar-focus': valueIndDropdown }" @click.stop="valueIndDropdown = !valueIndDropdown">
+            <view class="vcp-search-input-wrap">
+              <text class="vcp-search-icon">🔍</text>
+              <input
+                class="vcp-search-input"
+                type="text"
+                v-model="valueSearch"
+                placeholder="搜索代码/名称..."
+                @focus="valueIndDropdown = false"
+                @click.stop
+              />
+              <view v-if="valueSearch" class="vcp-search-clear" @click.stop="valueSearch = ''">
+                <text class="vcp-search-clear-icon">×</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 价投表格头 -->
+      <view class="vcp-table-header">
+        <text class="vth vth-rank">#</text>
+        <text class="vth vth-name">名称/代码</text>
+        <text class="vth vth-price">收盘价</text>
+        <text class="vth vth-flow">状态</text>
+        <text class="vth vth-action">交易</text>
+      </view>
+
+      <EmptyState v-if="valueLoading" text="加载中..." bg="#ffffff" radius="0 0 16rpx 16rpx" />
+      <EmptyState v-else-if="valueFilteredList.length === 0" :text="valueList.length === 0 ? '暂无价投标的' : '无匹配结果'" bg="#ffffff" radius="0 0 16rpx 16rpx" />
+      <view v-else class="stock-list">
+        <view
+          v-for="(item, idx) in valueFilteredList"
+          :key="item.ts_code"
+          class="vcp-row"
+          :class="{ 'stock-row-alt': idx % 2 === 1 }"
+          @click="valueExpandedIdx = valueExpandedIdx === idx ? -1 : idx"
+        >
+          <!-- 主行：核心信息 -->
+          <view class="vcp-row-main">
+            <view class="col vcp-col-rank"><text class="rank-num" :class="rankClass(idx)">{{ idx + 1 }}</text></view>
+            <view class="col vcp-col-name">
+              <text class="stock-name">{{ item.name || item.ts_code }}</text>
+              <text class="stock-code">{{ item.ts_code }}{{ item.industry ? ' · ' + item.industry : '' }}</text>
+            </view>
+            <view class="col vcp-col-price"><text class="close-price">{{ formatPrice(item.current_price) }}</text></view>
+            <view class="col vcp-col-flow">
+              <view class="value-status-badge" :class="'value-status-' + item.status">
+                <text class="value-status-text">{{ item.status === 'holding' ? '持仓' : '观察' }}</text>
+              </view>
+            </view>
+            <view class="col vcp-col-action">
+              <!-- #ifdef H5 -->
+              <a :href="item.futu_url" class="futu-link" @click.stop>
+                <text class="futu-icon">📈</text>
+              </a>
+              <!-- #endif -->
+            </view>
+          </view>
+
+          <!-- 题材标签行 -->
+          <view v-if="item.concepts" class="vcp-row-concepts">
+            <text
+              v-for="tag in item.concepts.split(', ').slice(0, 4)"
+              :key="tag"
+              class="concept-tag"
+            >{{ tag }}</text>
+          </view>
+
+          <!-- 展开行：详情 -->
+          <view v-if="valueExpandedIdx === idx" class="vcp-expand">
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">行业</text>
+              <text class="vcp-expand-val">{{ item.industry || '--' }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">题材</text>
+              <text class="vcp-expand-val vcp-concepts">{{ item.concepts || '--' }}</text>
+            </view>
+            <view v-if="item.reason" class="vcp-expand-row">
+              <text class="vcp-expand-label">投资理由</text>
+              <text class="vcp-expand-val vcp-business">{{ item.reason }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">加入时间</text>
+              <text class="vcp-expand-val">{{ item.added_at ? item.added_at.split('T')[0] : '--' }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </template>
+
+    <!-- ═══════════════════════════════════════════════════════
          模拟仓 Tab
          ═══════════════════════════════════════════════════════ -->
     <template v-if="activeTab === 'sandbox'">
@@ -531,11 +642,12 @@ import StocksTabBar from '@/components/stocks/StocksTabBar.vue'
 import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { fetchRSRating, searchStocks, fetchVCPWatchlist, fetchVCPFilters, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
+import { fetchRSRating, searchStocks, fetchVCPWatchlist, fetchVCPFilters, fetchValueWatchlist, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
 
 const activeTab = ref('vcp')
 const onSelectRs = () => { activeTab.value = 'rs' }
 const onSelectVcp = () => { activeTab.value = 'vcp'; if (!vcpLoaded) { vcpLoaded = true; loadVCPData(); loadVCPFilters() } }
+const onSelectValue = () => { activeTab.value = 'value'; if (!valueLoaded) { valueLoaded = true; loadValueData() } }
 
 // ═══════════════════════════════════════════════════════
 // RS Rating
@@ -725,6 +837,40 @@ const formatPctVal = (v) => {
   return (n >= 0 ? '+' : '') + n.toFixed(1) + '%'
 }
 const pctValClass = (v) => v == null ? '' : v > 0 ? 'val-up' : v < 0 ? 'val-down' : ''
+
+// ═══════════════════════════════════════════════════════
+// 价投策略
+// ═══════════════════════════════════════════════════════
+
+const valueList = ref([])
+const valueLoading = ref(false)
+const valueExpandedIdx = ref(-1)
+const valueSearch = ref('')
+const valueIndDropdown = ref(false)
+let valueLoaded = false
+
+const valueFilteredList = computed(() => {
+  const kw = valueSearch.value.trim().toLowerCase()
+  if (!kw) return valueList.value
+  return valueList.value.filter(item => {
+    const code = (item.ts_code || '').toLowerCase()
+    const name = (item.name || '').toLowerCase()
+    return code.includes(kw) || name.includes(kw)
+  })
+})
+
+const loadValueData = async () => {
+  valueLoading.value = true
+  try {
+    const data = await fetchValueWatchlist()
+    valueList.value = data.items || []
+  } catch (e) {
+    console.error('加载价投白名单失败:', e)
+    uni.showToast({ title: '加载失败', icon: 'none' })
+  } finally {
+    valueLoading.value = false
+  }
+}
 
 // ═══════════════════════════════════════════════════════
 // 模拟仓
@@ -1356,6 +1502,17 @@ const goToDetail = (id) => {
   -webkit-line-clamp: 3; -webkit-box-orient: vertical;
 }
 
+/* 价投状态徽章 */
+.value-status-badge {
+  padding: 4rpx 14rpx; border-radius: 10rpx;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.value-status-text { font-size: 22rpx; font-weight: 600; }
+.value-status-holding { background: rgba(52, 199, 89, 0.12); }
+.value-status-holding .value-status-text { color: #34c759; }
+.value-status-watching { background: rgba(59, 130, 246, 0.1); }
+.value-status-watching .value-status-text { color: #3b82f6; }
+
 /* ═══════════════════════════════════════════════════════
    模拟仓样式
    ═══════════════════════════════════════════════════════ */
@@ -1836,6 +1993,10 @@ const goToDetail = (id) => {
   .vcp-expand { padding: 8px 14px 12px 46px; }
   .vcp-expand-label { font-size: 12px; min-width: 72px; }
   .vcp-expand-val { font-size: 12px; }
+
+  /* 价投状态徽章 PC */
+  .value-status-badge { padding: 2px 10px; border-radius: 6px; }
+  .value-status-text { font-size: 12px; }
 
 }
 

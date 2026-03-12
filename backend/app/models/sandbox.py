@@ -47,6 +47,9 @@ class SandboxStock(Base):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="watching"
     )  # watching / holding / exited
+    strategy: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="swing", server_default="swing"
+    )  # swing（短线模拟仓） / value（价投）
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # 加入观察池的理由
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

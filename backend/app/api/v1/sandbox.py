@@ -50,6 +50,7 @@ class StockCreate(BaseModel):
     ts_code: str = Field(..., max_length=10)
     name: str = Field("", max_length=32)
     reason: str | None = None
+    strategy: str = Field("swing", pattern=r"^(swing|value)$")
 
 class AnalysisCreate(BaseModel):
     stock_id: int
@@ -430,6 +431,7 @@ async def admin_add_stock(
         ts_code=body.ts_code,
         name=body.name,
         reason=body.reason,
+        strategy=body.strategy,
     )
     db.add(stock)
     await db.commit()
