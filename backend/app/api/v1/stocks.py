@@ -413,17 +413,14 @@ class VCPWatchlistResponse(BaseModel):
 
 
 def _generate_futu_url(ts_code: str) -> str:
-    """根据 A 股代码生成富途牛牛报价页 URL Scheme 链接。
+    """根据 A 股代码生成富途牛牛网页版报价链接。
 
-    ftnn://quote/市场ID/股票代码/
-    市场ID: 港股=1, 美股=2, 沪市=3, 深市=4
+    格式: https://www.futunn.com/stock/{code}-{market}
+    沪市(6开头) → -SH, 深市(0/3开头) → -SZ
     """
     code = ts_code.replace(".SZ", "").replace(".SH", "").strip()
-    if code.startswith("6"):
-        market_id = "3"  # 沪市
-    else:
-        market_id = "4"  # 深市
-    return f"ftnn://quote/{market_id}/{code}/"
+    market = "SH" if code.startswith("6") else "SZ"
+    return f"https://www.futunn.com/stock/{code}-{market}"
 
 
 @router.get("/vcp_watchlist", response_model=VCPWatchlistResponse)
