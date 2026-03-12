@@ -318,6 +318,7 @@ async def sandbox_stock_list(
     discipline: str | None = Query(None, pattern=r"^(retain|gray|research|churn)$", deprecated=True),
     q: str | None = Query(None, max_length=20, description="搜索：代码或名称"),
     holding_only: bool = Query(False, description="仅显示持仓票"),
+    strategy: str | None = Query(None, pattern=r"^(swing|value)$", description="筛选策略：swing 或 value"),
     db: AsyncSession = Depends(get_db),
 ):
     """观察池列表，附最新一条推演摘要。支持搜索、仅持仓。
@@ -328,6 +329,7 @@ async def sandbox_stock_list(
         status=status,
         q=q,
         holding_only=holding_only,
+        strategy=strategy,
     )
 
 
@@ -411,6 +413,44 @@ def _require_admin(dash_token: str = Cookie(None)):
     """验证 Dashboard cookie，复用现有认证机制。"""
     if settings.DASHBOARD_PASSWORD and not _verify_token(dash_token or ""):
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+# ── 价投标的录入 ──
+
+
+class ValueStockAdd(BaseModel):
+    ts_code: str = Field(..., max_length=10)
+    name: str = Field("", max_length=32)
+    reason: str | None = None
+
+
+@router.post("/admin/value-stocks")
+async def add_value_stock(
+    body: ValueStockAdd,
+    _=Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """添加价投标的（Dashboard cookie 认证）。"""
+    existing = await db.execute(
+        select(SandboxStock).where(
+            SandboxStock.ts_code == body.ts_code,
+            SandboxStock.status != "exited",
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"{body.ts_code} 已在观察池中")
+
+    stock = SandboxStock(
+        ts_code=body.ts_code,
+        name=body.name,
+        reason=body.reason,
+        strategy="value",
+    )
+    db.add(stock)
+    await db.commit()
+    await db.refresh(stock)
+    logger.info("Added value stock: %s %s", stock.ts_code, stock.name)
+    return {"ok": True, "id": stock.id, "ts_code": stock.ts_code, "name": stock.name}
 
 
 @router.post("/admin/stocks")

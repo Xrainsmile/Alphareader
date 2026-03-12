@@ -106,6 +106,7 @@ tr:hover td{background:#f8f8fc}
   <div class="tab active" onclick="switchTab('stocks')">观察池</div>
   <div class="tab" onclick="switchTab('analysis')">录入推演</div>
   <div class="tab" onclick="switchTab('trade')">录入交易</div>
+  <div class="tab" onclick="switchTab('value')">录入价投</div>
   <div class="tab" onclick="switchTab('nav')">净值计算</div>
 </div>
 
@@ -267,6 +268,37 @@ tr:hover td{background:#f8f8fc}
   </div>
 </div>
 
+<!-- ═══ 录入价投 Tab ═══ -->
+<div id="section-value" class="section">
+  <div class="card">
+    <h3>添加价投标的</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+      搜索股票代码或名称，选中后录入价值投资标的。价投标的不会出现在模拟仓观察池的 swing 列表中，仅显示在前端「价投」Tab。
+    </p>
+    <div class="form-row">
+      <div class="form-group">
+        <label>搜索股票</label>
+        <div class="stock-picker" id="picker-value">
+          <input placeholder="输入代码或名称搜索..." oninput="onPickerInput(this,'picker-value')" onfocus="onPickerFocus('picker-value')">
+          <div class="sp-dropdown"></div>
+          <div class="sp-selected"></div>
+        </div>
+      </div>
+      <div class="form-group" style="flex:2"><label>投资理由</label><textarea id="value-reason" rows="2" placeholder="描述价值投资逻辑..."></textarea></div>
+    </div>
+    <div class="form-row">
+      <button class="btn btn-primary" onclick="addValueStock()">录入价投</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>已录入价投标的</h3>
+    <table>
+      <thead><tr><th>代码</th><th>名称</th><th>状态</th><th>投资理由</th><th>加入时间</th><th>操作</th></tr></thead>
+      <tbody id="valueBody"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- ═══ 净值计算 Tab ═══ -->
 <div id="section-nav" class="section">
   <div class="card">
@@ -292,9 +324,10 @@ let allStocks=[];
 const pickerState={};  // {pickerId: {ts_code, name, stock_id}}
 
 function switchTab(name){
-  const tabs=['stocks','analysis','trade','nav'];
+  const tabs=['stocks','analysis','trade','value','nav'];
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',tabs[i]===name)});
   document.querySelectorAll('.section').forEach((s,i)=>{s.classList.toggle('active',tabs[i]===name)});
+  if(name==='value') loadValueStocks();
 }
 
 function showToast(msg,ok=true){
@@ -680,6 +713,45 @@ async function computeNav(){
     </div>${detailHtml}`;
     showToast('NAV计算完成');
   }catch(e){div.innerHTML=`<span style="color:var(--red)">${e.message}</span>`;showToast(e.message,false)}
+}
+
+// ── 价投 ──
+
+async function addValueStock(){
+  const picked=pickerState['picker-value'];
+  if(!picked){showToast('请先搜索并选择股票',false);return;}
+  const reason=document.getElementById('value-reason').value.trim();
+  try{
+    await api('/admin/value-stocks',{method:'POST',body:{ts_code:picked.ts_code,name:picked.name,reason:reason||null}});
+    showToast(`${picked.ts_code} ${picked.name} 已录入价投`);
+    clearPicker('picker-value');
+    document.getElementById('value-reason').value='';
+    loadValueStocks();
+  }catch(e){showToast(e.message,false)}
+}
+
+async function loadValueStocks(){
+  const body=document.getElementById('valueBody');
+  try{
+    const d=await api('/stocks?strategy=value');
+    const items=d.items||[];
+    if(!items.length){body.innerHTML='<tr><td colspan="6" class="empty">暂无价投标的</td></tr>';return;}
+    body.innerHTML=items.map(s=>`<tr>
+      <td>${s.ts_code}</td><td>${s.name}</td><td>${statusBadge(s.status)}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(s.reason||'').replace(/"/g,'&quot;')}">${s.reason||'-'}</td>
+      <td>${fmtDate(s.added_at)}</td>
+      <td>${s.status!=='exited'?`<button class="btn btn-danger btn-sm" onclick="removeValueStock(${s.id})">退出</button>`:'-'}</td>
+    </tr>`).join('');
+  }catch(e){body.innerHTML='<tr><td colspan="6" class="empty">加载失败</td></tr>'}
+}
+
+async function removeValueStock(id){
+  if(!confirm('确认退出该价投标的？')) return;
+  try{
+    await api(`/admin/stocks/${id}`,{method:'DELETE'});
+    showToast('已标记退出');
+    loadValueStocks();
+  }catch(e){showToast(e.message,false)}
 }
 
 // ── Init ──
