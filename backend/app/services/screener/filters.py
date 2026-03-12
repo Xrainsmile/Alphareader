@@ -190,7 +190,7 @@ class Stage2FilterConfig:
     quantile_close_window: int = 60         # 箱体窗口（交易日）
 
     # 条件 C: 形态收敛与资金活跃度
-    vcp_atr_ratio: float = 0.8              # ATR(20) ≤ MA(ATR(60), 60) * 0.8
+    vcp_atr_ratio: float = 0.9              # ATR(20) ≤ MA(ATR(60), 60) * 0.9
     big_yang_threshold: float = 7.0         # 大阳线涨幅阈值（%）
     big_yang_window: int = 20               # 大阳线检测窗口
 
@@ -331,7 +331,7 @@ class MinerviniScreener:
         mask_c1 = merged["atr_20"] <= merged["atr_60"] * cfg.vcp_atr_ratio
         merged = merged[mask_c1 | merged["atr_20"].isna() | merged["atr_60"].isna()]
         self._stats["C1_vcp_contraction"] = len(merged)
-        logger.info("C1 VCP 波动收缩 (ATR20≤ATR60*0.8): %d 通过", len(merged))
+        logger.info("C1 VCP 波动收缩 (ATR20≤ATR60*%.2f): %d 通过", cfg.vcp_atr_ratio, len(merged))
 
         # C2: 活跃基因 — 20 日内至少 1 根涨幅≥7% 的大阳线
         yang_df = _check_big_yang_line(

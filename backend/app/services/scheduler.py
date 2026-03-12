@@ -34,6 +34,7 @@ from app.services.notifier import send_alert
 from app.services.indicators import compute_and_save_rs_rating
 from app.services.data_fetcher import incremental_update_quotes
 from app.services.sandbox_nav import compute_nav_core
+from app.services.screener.pipeline import ScreenerPipeline
 
 logger = logging.getLogger("alphareader.scheduler")
 
@@ -193,6 +194,30 @@ async def _sandbox_nav_job():
         raise
 
 
+async def _screener_job():
+    """Screener 每日选股 — 每个交易日 15:40 触发。
+
+    比 sandbox_nav (15:35) 延后 5 分钟，避免同时占用资源。
+    结果自动写入数据库（ScreenerRun + WatchlistDaily）。
+    """
+    try:
+        logger.info("Screener job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        pipeline = ScreenerPipeline()
+        result = await pipeline.run()
+
+        final_count = result.get("stats", {}).get("final_count", 0)
+        logger.info("Screener job completed: %d stocks in watchlist", final_count)
+        return {"status": "ok", "count": final_count}
+    except Exception as e:
+        logger.exception("Screener job failed: %s", e)
+        await send_alert(
+            "🔴 Screener Job Failed",
+            f"{type(e).__name__}: {e}",
+        )
+        raise
+
+
 def start_scheduler():
     """注册 Cron 定时任务并启动调度器。
 
@@ -295,6 +320,22 @@ def start_scheduler():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
+    # ── Screener 每日选股（交易日 15:40，比 NAV 晚 5 分钟）──
+    scheduler.add_job(
+        _screener_job,
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="15",
+            minute="40",
+            timezone=settings.TIMEZONE,
+        ),
+        id="screener_daily",
+        name=f"Daily Screener (Mon-Fri 15:40 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
     scheduler.start()
 
     alert_status = "enabled" if settings.ALERT_WEBHOOK_URL else "disabled"
@@ -316,6 +357,10 @@ def start_scheduler():
     sb_job2 = scheduler.get_job("sandbox_nav_1535")
     sb_next2 = sb_job2.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if sb_job2 and sb_job2.next_run_time else "N/A"
     logger.info("Sandbox NAV scheduled Mon-Fri 11:35 (next: %s) & 15:35 (next: %s)", sb_next1, sb_next2)
+
+    sc_job = scheduler.get_job("screener_daily")
+    sc_next = sc_job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if sc_job and sc_job.next_run_time else "N/A"
+    logger.info("Screener scheduled Mon-Fri 15:40 (next: %s)", sc_next)
 
 
 def stop_scheduler():

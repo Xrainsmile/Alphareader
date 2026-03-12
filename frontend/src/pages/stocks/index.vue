@@ -4,6 +4,7 @@
     <StocksTabBar
       :active-tab="activeTab"
       @select-rs="onSelectRs"
+      @select-vcp="onSelectVcp"
       @select-sandbox="switchToSandbox"
     />
 
@@ -132,6 +133,101 @@
           </view>
         </view>
       </template>
+    </template>
+
+    <!-- ═══════════════════════════════════════════════════════
+         VCP 策略 Tab
+         ═══════════════════════════════════════════════════════ -->
+    <template v-if="activeTab === 'vcp'">
+      <view class="stocks-header">
+        <text class="stocks-title">VCP 策略</text>
+        <text class="stocks-subtitle">波动收缩形态 · Volatility Contraction Pattern</text>
+        <view class="rs-desc" :class="{ 'rs-desc-expanded': vcpDescExpanded }" @click="vcpDescExpanded = !vcpDescExpanded">
+          <text class="rs-desc-text">VCP（波动收缩形态）由 Mark Minervini 提出，核心逻辑是当股票经历一段上升趋势后，价格波动幅度逐次收窄（如 20% → 10% → 5%），同时成交量萎缩，说明市场的供给侧（卖方）在不断衰竭。当股价在极度收缩的区间内向上突破时，往往伴随大级别行情的启动。本系统每日从 5000+ A 股中筛选出满足 Stage2 趋势模板 + VCP 形态收敛 + 基本面过关的候选股票池。</text>
+        </view>
+      </view>
+
+      <view class="info-bar">
+        <text class="info-date">数据日期: {{ vcpDate || '--' }}</text>
+        <text class="info-date">共 {{ vcpList.length }} 只</text>
+      </view>
+
+      <!-- VCP 表格头 -->
+      <view class="vcp-table-header">
+        <text class="vth vth-rank">#</text>
+        <text class="vth vth-name">名称/代码</text>
+        <text class="vth vth-price">收盘价</text>
+        <text class="vth vth-vcp">VCP</text>
+        <text class="vth vth-eps">EPS%</text>
+        <text class="vth vth-rev">营收%</text>
+        <text class="vth vth-action">交易</text>
+      </view>
+
+      <EmptyState v-if="vcpLoading" text="加载中..." bg="#ffffff" radius="0 0 16rpx 16rpx" />
+      <EmptyState v-else-if="vcpList.length === 0" text="暂无白名单数据" bg="#ffffff" radius="0 0 16rpx 16rpx" />
+      <view v-else class="stock-list">
+        <view
+          v-for="(item, idx) in vcpList"
+          :key="item.ts_code"
+          class="vcp-row"
+          :class="{ 'stock-row-alt': idx % 2 === 1 }"
+          @click="vcpExpandedIdx = vcpExpandedIdx === idx ? -1 : idx"
+        >
+          <!-- 主行：核心数据 -->
+          <view class="vcp-row-main">
+            <view class="col vcp-col-rank"><text class="rank-num" :class="rankClass(idx)">{{ idx + 1 }}</text></view>
+            <view class="col vcp-col-name">
+              <text class="stock-name">{{ item.name || item.ts_code }}</text>
+              <text class="stock-code">{{ item.ts_code }}</text>
+            </view>
+            <view class="col vcp-col-price"><text class="close-price">{{ formatPrice(item.current_price) }}</text></view>
+            <view class="col vcp-col-vcp">
+              <view class="vcp-badge" :class="vcpClass(item.vcp_score)">
+                <text class="vcp-val">{{ formatVcp(item.vcp_score) }}</text>
+              </view>
+            </view>
+            <view class="col vcp-col-eps">
+              <text class="eps-val" :class="pctValClass(item.eps_growth)">{{ formatPctVal(item.eps_growth) }}</text>
+            </view>
+            <view class="col vcp-col-rev">
+              <text class="eps-val" :class="pctValClass(item.revenue_yoy)">{{ formatPctVal(item.revenue_yoy) }}</text>
+            </view>
+            <view class="col vcp-col-action">
+              <!-- #ifdef H5 -->
+              <a :href="item.futu_url" class="futu-link" @click.stop>
+                <text class="futu-icon">📈</text>
+              </a>
+              <!-- #endif -->
+            </view>
+          </view>
+
+          <!-- 展开行：详细信息 -->
+          <view v-if="vcpExpandedIdx === idx" class="vcp-expand">
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">行业</text>
+              <text class="vcp-expand-val">{{ item.industry || '--' }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">题材</text>
+              <text class="vcp-expand-val vcp-concepts">{{ item.concepts || '--' }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">主力净流入</text>
+              <text class="vcp-expand-val" :class="pctValClass(item.fund_flow_net)">
+                {{ item.fund_flow_net != null ? (item.fund_flow_net >= 0 ? '+' : '') + item.fund_flow_net.toFixed(2) + '万' : '--' }}
+              </text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">主营业务</text>
+              <text class="vcp-expand-val vcp-business">{{ item.main_business || '--' }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">EMA</text>
+              <text class="vcp-expand-val">20d: {{ formatPrice(item.ema20) }}　50d: {{ formatPrice(item.ema50) }}　120d: {{ formatPrice(item.ema120) }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
     </template>
 
     <!-- ═══════════════════════════════════════════════════════
@@ -378,10 +474,11 @@ import StocksTabBar from '@/components/stocks/StocksTabBar.vue'
 import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { fetchRSRating, searchStocks, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
+import { fetchRSRating, searchStocks, fetchVCPWatchlist, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
 
 const activeTab = ref('rs')
 const onSelectRs = () => { activeTab.value = 'rs' }
+const onSelectVcp = () => { activeTab.value = 'vcp'; if (!vcpLoaded) { vcpLoaded = true; loadVCPData() } }
 
 // ═══════════════════════════════════════════════════════
 // RS Rating
@@ -462,6 +559,44 @@ const formatChange = (v) => {
 const changeClass = (v) => v == null ? 'change-flat' : v > 0 ? 'change-up' : v < 0 ? 'change-down' : 'change-flat'
 const rankClass = (idx) => idx < 3 ? 'rank-top' : idx < 10 ? 'rank-high' : ''
 const rsClass = (rating) => rating >= 90 ? 'rs-hot' : rating >= 70 ? 'rs-warm' : rating >= 50 ? 'rs-normal' : 'rs-cool'
+
+// ═══════════════════════════════════════════════════════
+// VCP 策略
+// ═══════════════════════════════════════════════════════
+
+const vcpList = ref([])
+const vcpDate = ref('')
+const vcpLoading = ref(false)
+const vcpDescExpanded = ref(false)
+const vcpExpandedIdx = ref(-1)
+let vcpLoaded = false
+
+const loadVCPData = async () => {
+  vcpLoading.value = true
+  try {
+    const data = await fetchVCPWatchlist({})
+    vcpList.value = data.items || []
+    vcpDate.value = data.date || ''
+  } catch (e) {
+    console.error('加载 VCP 白名单失败:', e)
+    uni.showToast({ title: '加载失败', icon: 'none' })
+  } finally {
+    vcpLoading.value = false
+  }
+}
+
+const formatVcp = (v) => v == null ? '--' : (v * 100).toFixed(1) + '%'
+const vcpClass = (v) => {
+  if (v == null) return 'vcp-level-none'
+  const pct = v * 100
+  return pct >= 50 ? 'vcp-level-hot' : pct >= 30 ? 'vcp-level-warm' : pct >= 10 ? 'vcp-level-normal' : 'vcp-level-cool'
+}
+const formatPctVal = (v) => {
+  if (v == null) return '--'
+  const n = Number(v)
+  return (n >= 0 ? '+' : '') + n.toFixed(1) + '%'
+}
+const pctValClass = (v) => v == null ? '' : v > 0 ? 'val-up' : v < 0 ? 'val-down' : ''
 
 // ═══════════════════════════════════════════════════════
 // 模拟仓
@@ -880,6 +1015,109 @@ const goToDetail = (id) => {
 .rs-warm { background: linear-gradient(135deg, #ff9500, #ffb340); }
 .rs-normal { background: linear-gradient(135deg, #f0b429, #d4981e); }
 .rs-cool { background: linear-gradient(135deg, #8e8e93, #a8a8ae); }
+
+/* ═══════════════════════════════════════════════════════
+   VCP 策略样式
+   ═══════════════════════════════════════════════════════ */
+
+/* VCP 表头 */
+.vcp-table-header {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 16rpx;
+  background: #ffffff;
+  border-radius: 16rpx 16rpx 0 0;
+  border-bottom: 2rpx solid #f0f0f2;
+}
+.vth { font-size: 22rpx; color: #8c8c9a; font-weight: 600; }
+.vth-rank { width: 50rpx; text-align: center; }
+.vth-name { flex: 1; padding-left: 8rpx; }
+.vth-price { width: 120rpx; text-align: right; }
+.vth-vcp { width: 110rpx; text-align: center; }
+.vth-eps { width: 110rpx; text-align: right; }
+.vth-rev { width: 110rpx; text-align: right; }
+.vth-action { width: 60rpx; text-align: center; }
+
+/* VCP 行 */
+.vcp-row {
+  background: #ffffff;
+  border-bottom: 1rpx solid #f8f8fa;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.vcp-row:last-child { border-bottom: none; }
+.vcp-row-main {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 16rpx;
+}
+.vcp-col-rank { width: 50rpx; align-items: center; }
+.vcp-col-name { flex: 1; padding-left: 8rpx; }
+.vcp-col-price { width: 120rpx; align-items: flex-end; }
+.vcp-col-vcp { width: 110rpx; align-items: center; }
+.vcp-col-eps { width: 110rpx; align-items: flex-end; }
+.vcp-col-rev { width: 110rpx; align-items: flex-end; }
+.vcp-col-action { width: 60rpx; align-items: center; }
+
+/* VCP badge */
+.vcp-badge {
+  padding: 4rpx 12rpx; border-radius: 8rpx;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.vcp-val {
+  font-size: 22rpx; font-weight: 700; color: #ffffff;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+}
+.vcp-level-hot { background: linear-gradient(135deg, #ff3b30, #ff6b5a); }
+.vcp-level-warm { background: linear-gradient(135deg, #ff9500, #ffb340); }
+.vcp-level-normal { background: linear-gradient(135deg, #34c759, #5dd67a); }
+.vcp-level-cool { background: linear-gradient(135deg, #8e8e93, #a8a8ae); }
+.vcp-level-none { background: #e8e8ed; }
+.vcp-level-none .vcp-val { color: #8c8c9a; }
+
+/* EPS / 营收 数值 */
+.eps-val {
+  font-size: 24rpx; font-weight: 600; color: #1a1a2e;
+  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+}
+.val-up { color: #ff3b30; }
+.val-down { color: #34c759; }
+
+/* 富途链接 */
+.futu-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 52rpx; height: 44rpx; border-radius: 8rpx;
+  background: rgba(66, 133, 244, 0.08);
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.futu-link:hover { background: rgba(66, 133, 244, 0.18); }
+.futu-icon { font-size: 24rpx; }
+
+/* 展开行 */
+.vcp-expand {
+  padding: 12rpx 20rpx 18rpx 66rpx;
+  background: #f8fafc;
+  border-top: 1rpx solid #f0f0f2;
+}
+.vcp-expand-row {
+  display: flex; gap: 12rpx; margin-bottom: 10rpx; align-items: baseline;
+}
+.vcp-expand-row:last-child { margin-bottom: 0; }
+.vcp-expand-label {
+  font-size: 22rpx; color: #8c8c9a; font-weight: 500; white-space: nowrap; min-width: 120rpx;
+}
+.vcp-expand-val {
+  font-size: 22rpx; color: #4a4a5a; line-height: 1.5; flex: 1;
+}
+.vcp-concepts {
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.vcp-business {
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+  -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+}
 
 /* ═══════════════════════════════════════════════════════
    模拟仓样式
@@ -1320,6 +1558,36 @@ const goToDetail = (id) => {
   .sb-highlight-icon { font-size: 9px; }
   .sb-highlight-text { font-size: 12px; }
   .arrow-icon { font-size: 22px; }
+
+  /* VCP 策略 PC 适配 */
+  .vcp-table-header { padding: 12px 12px; border-radius: 12px 12px 0 0; border-bottom-width: 1px; }
+  .vth { font-size: 12px; }
+  .vth-rank { width: 32px; }
+  .vth-name { padding-left: 6px; }
+  .vth-price { width: 80px; }
+  .vth-vcp { width: 70px; }
+  .vth-eps { width: 72px; }
+  .vth-rev { width: 72px; }
+  .vth-action { width: 40px; }
+
+  .vcp-row-main { padding: 12px 12px; }
+  .vcp-row:hover { background-color: #f5f7fa; }
+  .vcp-col-rank { width: 32px; }
+  .vcp-col-name { padding-left: 6px; }
+  .vcp-col-price { width: 80px; }
+  .vcp-col-vcp { width: 70px; }
+  .vcp-col-eps { width: 72px; }
+  .vcp-col-rev { width: 72px; }
+  .vcp-col-action { width: 40px; }
+
+  .vcp-badge { padding: 2px 8px; border-radius: 5px; }
+  .vcp-val { font-size: 12px; }
+  .eps-val { font-size: 13px; }
+  .futu-link { width: 32px; height: 26px; border-radius: 5px; }
+  .futu-icon { font-size: 14px; }
+  .vcp-expand { padding: 8px 14px 12px 46px; }
+  .vcp-expand-label { font-size: 12px; min-width: 72px; }
+  .vcp-expand-val { font-size: 12px; }
 
 }
 

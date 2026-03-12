@@ -7,7 +7,7 @@
   4. Stage2 趋势过滤器（技术面 8 项条件）
   5. 拉取基本面数据（akshare 批量接口）
   6. 基本面过滤器（防雷 + 营收 + EPS 加速）
-  7. 输出白名单 JSON + 控制台打印
+  7. 输出白名单 JSON + 写入数据库 + 控制台打印
 
 设计原则：
   - 每步独立 try/except，单步失败不崩溃
@@ -24,6 +24,9 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
+
+from app.database import async_session
+from app.models.screener import ScreenerRun, WatchlistDaily
 
 from .data_loader import DataLoader
 from .filters import (
@@ -103,6 +106,19 @@ class ScreenerPipeline:
             return result
         logger.info("Step 1 OHLCV 加载完成 [%.1fs]", time.time() - step_start)
 
+        # ── Step 1.5: 剔除 ST 股票 ──
+        st_codes: set[str] = set()
+        try:
+            st_codes = await self._load_st_codes()
+            if st_codes:
+                before = ohlcv["ts_code"].nunique()
+                ohlcv = ohlcv[~ohlcv["ts_code"].isin(st_codes)]
+                after = ohlcv["ts_code"].nunique()
+                result["stats"]["st_removed"] = before - after
+                logger.info("剔除 ST 股票: %d 只 (%d → %d)", before - after, before, after)
+        except Exception as e:
+            logger.warning("ST 股票剔除异常（不影响后续流程）: %s", e)
+
         # ── Step 2: 加载/更新 EMA ──
         step_start = time.time()
         try:
@@ -128,6 +144,13 @@ class ScreenerPipeline:
             else:
                 logger.info("EMA 快照已是最新 (%s)", ema_date)
 
+            # 从 EMA 中也剔除 ST 股票
+            if st_codes:
+                code_col = "Code" if "Code" in ema_df.columns else "ts_code"
+                ema_before = len(ema_df)
+                ema_df = ema_df[~ema_df[code_col].isin(st_codes)]
+                logger.info("EMA 剔除 ST: %d → %d", ema_before, len(ema_df))
+
             result["stats"]["ema_stocks"] = len(ema_df)
         except Exception as e:
             logger.error("Step 2 EMA 加载/更新异常: %s", e, exc_info=True)
@@ -142,6 +165,11 @@ class ScreenerPipeline:
             if extremes.empty:
                 result["errors"].append("价格极值计算失败")
                 return result
+            # 从 extremes 中也剔除 ST 股票
+            if st_codes:
+                ext_before = len(extremes)
+                extremes = extremes[~extremes["ts_code"].isin(st_codes)]
+                logger.info("Extremes 剔除 ST: %d → %d", ext_before, len(extremes))
             result["stats"]["extremes_stocks"] = len(extremes)
         except Exception as e:
             logger.error("Step 3 价格极值计算异常: %s", e, exc_info=True)
@@ -195,8 +223,19 @@ class ScreenerPipeline:
         watchlist = self._build_watchlist(
             final_codes, stage2_passed, fundamental_df, ema_df,
         )
-        result["watchlist"] = watchlist
         result["stats"]["output_count"] = len(watchlist)
+
+        # ── Step 7.5: 补充行业/题材/主营/资金流向 ──
+        if watchlist and not self.dry_run:
+            step_start = time.time()
+            try:
+                from .enricher import enrich_watchlist
+                watchlist = await enrich_watchlist(watchlist)
+                logger.info("Step 7.5 数据补充完成 [%.1fs]", time.time() - step_start)
+            except Exception as e:
+                logger.warning("Step 7.5 数据补充异常（不影响后续流程）: %s", e)
+
+        result["watchlist"] = watchlist
 
         # 保存文件
         if not self.dry_run and watchlist:
@@ -207,11 +246,41 @@ class ScreenerPipeline:
 
         duration = time.time() - pipeline_start
         result["duration_sec"] = round(duration, 1)
+
+        # ── 写入数据库 ──
+        if not self.dry_run:
+            await self._save_to_db(result, pipeline_start, duration)
+
         logger.info("=" * 60)
         logger.info("Daily Screener 完成 | 耗时 %.1fs | 白名单 %d 只", duration, len(watchlist))
         logger.info("=" * 60)
 
         return result
+
+    async def _load_st_codes(self) -> set[str]:
+        """从数据库中查询最新交易日名称包含 ST 的股票代码。
+
+        匹配规则：股票简称包含 'ST'（覆盖 *ST、ST 两种情况）。
+        仅查最新交易日，避免历史上曾 ST 但已摘帽的股票被误杀。
+
+        Returns:
+            ST 股票的 ts_code 集合
+        """
+        from sqlalchemy import text as sa_text
+
+        sql = sa_text("""
+            SELECT DISTINCT ts_code
+            FROM stock_daily_quote
+            WHERE trade_date = (SELECT MAX(trade_date) FROM stock_daily_quote)
+              AND name LIKE '%ST%'
+        """)
+
+        async with async_session() as session:
+            result = await session.execute(sql)
+            codes = {row[0] for row in result}
+
+        logger.info("_load_st_codes: 发现 %d 只 ST 股票", len(codes))
+        return codes
 
     def _build_watchlist(
         self,
@@ -285,6 +354,89 @@ class ScreenerPipeline:
 
         logger.info("白名单已保存: %s (%d 只)", filepath, len(watchlist))
 
+    async def _save_to_db(self, result: dict, pipeline_start: float, duration: float):
+        """将运行记录和白名单写入数据库。
+
+        同一天重跑策略：
+          - screener_runs: 始终追加（保留每次运行的审计记录，方便调参对比）
+          - watchlist_daily: 先删除当天旧数据再写入，保证唯一约束不冲突，
+            且白名单始终反映最新一次运行的结果。
+          - 两步操作在同一事务内，保证原子性。
+
+        失败时仅记录日志，不影响整体 pipeline 结果。
+        """
+        from datetime import timezone
+
+        from sqlalchemy import delete
+
+        today = date.today()
+        started = datetime.fromtimestamp(pipeline_start, tz=timezone.utc)
+        finished = datetime.now(tz=timezone.utc)
+        stats = result.get("stats", {})
+        errors = result.get("errors", [])
+        watchlist = result.get("watchlist", [])
+
+        # 判断状态
+        if errors and not watchlist:
+            status = "failed"
+        elif errors:
+            status = "partial"
+        else:
+            status = "success"
+
+        try:
+            async with async_session() as db:
+                # 写入运行记录（始终追加，保留审计日志）
+                run = ScreenerRun(
+                    run_date=today,
+                    started_at=started,
+                    finished_at=finished,
+                    duration_sec=round(duration, 1),
+                    total_input=stats.get("total_input", 0) or stats.get("ohlcv_stocks", 0),
+                    stage2_passed=stats.get("stage2_passed", 0),
+                    fundamental_passed=stats.get("fundamental_passed", 0),
+                    final_count=stats.get("final_count", len(watchlist)),
+                    stats=stats,
+                    errors=errors,
+                    status=status,
+                )
+                db.add(run)
+                await db.flush()  # 获取 run.id
+
+                # 清除当天旧白名单（若存在），再写入新数据
+                deleted = await db.execute(
+                    delete(WatchlistDaily).where(WatchlistDaily.run_date == today)
+                )
+                if deleted.rowcount:
+                    logger.info("清除当天旧白名单: %d 条", deleted.rowcount)
+
+                # 写入白名单条目
+                for item in watchlist:
+                    entry = WatchlistDaily(
+                        run_date=today,
+                        ts_code=item["ticker"],
+                        name=item.get("name"),
+                        current_price=item.get("current_price"),
+                        ema20=item.get("ema20"),
+                        ema50=item.get("ema50"),
+                        ema120=item.get("ema120"),
+                        vcp_score=item.get("vcp_score"),
+                        eps_growth=item.get("eps_growth"),
+                        revenue_yoy=item.get("revenue_yoy"),
+                        industry=item.get("industry"),
+                        concepts=item.get("concepts"),
+                        main_business=item.get("main_business"),
+                        fund_flow_net=item.get("fund_flow_net"),
+                        run_id=run.id,
+                    )
+                    db.add(entry)
+
+                await db.commit()
+                logger.info("已写入数据库: ScreenerRun#%d + %d 条白名单", run.id, len(watchlist))
+
+        except Exception as e:
+            logger.error("数据库写入失败（不影响 pipeline 结果）: %s", e, exc_info=True)
+
     def _print_summary(self, result: dict):
         """打印漏斗过滤汇总到控制台。"""
         stats = result["stats"]
@@ -297,6 +449,7 @@ class ScreenerPipeline:
         # 漏斗统计
         funnel = [
             ("全市场输入", stats.get("total_input", "-")),
+            ("剔除ST", f'-{stats["st_removed"]}' if stats.get("st_removed") else "0"),
             ("A1 均线多头排列", stats.get("A1_ema_trend", "-")),
             ("A2 脱离底部≥30%", stats.get("A2_bottom_rebound", "-")),
             ("A3 逼近前高≤15%", stats.get("A3_near_high", "-")),

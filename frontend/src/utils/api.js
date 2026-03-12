@@ -109,7 +109,7 @@ export function fetchReportDetail(id) {
   return request(`/api/v1/reports/${id}`)
 }
 
-// ── Stocks API（RS Rating 排行榜使用）──
+// ── Stocks API（RS Rating + VCP 排行榜使用）──
 
 /**
  * 获取 RS Rating 排行榜
@@ -131,6 +131,17 @@ export function searchStocks(params = {}) {
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join('&')
   return request(`/api/v1/stocks/search${query ? '?' + query : ''}`)
+}
+
+/**
+ * 获取 VCP 策略白名单
+ */
+export function fetchVCPWatchlist(params = {}) {
+  const query = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return request(`/api/v1/stocks/vcp_watchlist${query ? '?' + query : ''}`)
 }
 
 // ── Sandbox API（模拟仓）──

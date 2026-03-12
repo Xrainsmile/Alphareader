@@ -102,8 +102,8 @@ async def main():
     args = parse_args()
     setup_logging(args.log_level)
 
-    from .filters import FundamentalFilterConfig, Stage2FilterConfig
-    from .pipeline import ScreenerPipeline
+    from app.services.screener.filters import FundamentalFilterConfig, Stage2FilterConfig
+    from app.services.screener.pipeline import ScreenerPipeline
 
     # 组装配置
     stage2_config = Stage2FilterConfig(

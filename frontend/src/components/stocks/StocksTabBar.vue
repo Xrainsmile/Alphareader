@@ -9,6 +9,13 @@
     </view>
     <view
       class="tab-item"
+      :class="{ 'tab-active': activeTab === 'vcp' }"
+      @click="$emit('select-vcp')"
+    >
+      <text class="tab-text">VCP策略</text>
+    </view>
+    <view
+      class="tab-item"
       :class="{ 'tab-active': activeTab === 'sandbox' }"
       @click="$emit('select-sandbox')"
     >
@@ -25,7 +32,7 @@ defineProps({
   },
 })
 
-defineEmits(['select-rs', 'select-sandbox'])
+defineEmits(['select-rs', 'select-vcp', 'select-sandbox'])
 </script>
 
 <style scoped>

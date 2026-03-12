@@ -383,3 +383,106 @@ async def trigger_quotes_backfill(
             "message": f"历史行情回填已启动: {start_date} ~ {end_date}",
         },
     )
+
+
+# ── VCP 策略白名单 ──
+
+class VCPWatchlistItem(BaseModel):
+    """VCP 白名单单条记录。"""
+    ts_code: str
+    name: str | None = None
+    current_price: float | None = None
+    vcp_score: float | None = None
+    eps_growth: float | None = None
+    revenue_yoy: float | None = None
+    ema20: float | None = None
+    ema50: float | None = None
+    ema120: float | None = None
+    industry: str | None = None
+    concepts: str | None = None
+    main_business: str | None = None
+    fund_flow_net: float | None = None
+    futu_url: str | None = None
+
+
+class VCPWatchlistResponse(BaseModel):
+    """VCP 白名单响应。"""
+    count: int
+    date: date
+    items: list[VCPWatchlistItem]
+
+
+def _generate_futu_url(ts_code: str) -> str:
+    """根据 A 股代码生成富途牛牛 URL Scheme 链接。
+
+    沪市（6 开头）→ market=SH
+    深市（0/3 开头）→ market=SZ
+    """
+    code = ts_code.replace(".SZ", "").replace(".SH", "").strip()
+    if code.startswith("6"):
+        market = "SH"
+    else:
+        market = "SZ"
+    return f"futubull://quote?market={market}&symbol={code}"
+
+
+@router.get("/vcp_watchlist", response_model=VCPWatchlistResponse)
+async def get_vcp_watchlist(
+    target_date: date | None = Query(None, description="查询日期，默认最新"),
+):
+    """查询 VCP 策略白名单。
+
+    返回最新一期（或指定日期）的 Screener 白名单，
+    含技术面指标、基本面指标、行业题材、资金流向等维度。
+    """
+    from sqlalchemy import select, func as sa_func
+
+    from app.database import async_session
+    from app.models.screener import WatchlistDaily
+
+    async with async_session() as session:
+        # 确定查询日期：用户指定或取最新
+        if target_date:
+            query_date = target_date
+        else:
+            max_date_q = await session.execute(
+                select(sa_func.max(WatchlistDaily.run_date))
+            )
+            query_date = max_date_q.scalar()
+            if not query_date:
+                return VCPWatchlistResponse(count=0, date=date.today(), items=[])
+
+        # 查询白名单
+        stmt = (
+            select(WatchlistDaily)
+            .where(WatchlistDaily.run_date == query_date)
+            .order_by(WatchlistDaily.vcp_score.desc().nulls_last())
+        )
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    items = []
+    for row in rows:
+        item = VCPWatchlistItem(
+            ts_code=row.ts_code,
+            name=row.name,
+            current_price=row.current_price,
+            vcp_score=row.vcp_score,
+            eps_growth=row.eps_growth,
+            revenue_yoy=row.revenue_yoy,
+            ema20=row.ema20,
+            ema50=row.ema50,
+            ema120=row.ema120,
+            industry=row.industry,
+            concepts=row.concepts,
+            main_business=row.main_business,
+            fund_flow_net=row.fund_flow_net,
+            futu_url=_generate_futu_url(row.ts_code),
+        )
+        items.append(item)
+
+    return VCPWatchlistResponse(
+        count=len(items),
+        date=query_date,
+        items=items,
+    )
