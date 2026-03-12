@@ -120,25 +120,48 @@ async def _fetch_stock_info_batch(codes: list[str]) -> dict[str, dict]:
 async def _fetch_concept_batch(codes: list[str]) -> dict[str, str]:
     """批量获取个股所属概念板块标签。
 
-    使用 akshare stock_board_concept_name_ths 反查每只股票的概念标签。
+    使用东方财富 F10 核心题材接口反查每只股票的概念标签。
+    过滤掉地域板块、指数成分等非题材标签，只保留有意义的概念。
     返回 {code: "低空经济, 碳纤维, ..."}
     """
+    # 过滤掉的板块关键词（地域、指数、杂项）
+    _SKIP_KEYWORDS = {
+        "板块", "沪股通", "深股通", "融资融券", "上证", "中证", "深证",
+        "创业板", "科创板", "东方财富", "昨日", "今日", "振幅",
+    }
+
     result: dict[str, str] = {}
 
-    def _fetch_all():
-        try:
-            import akshare as ak
-        except ImportError:
-            logger.warning("akshare 未安装，跳过题材概念拉取")
-            return result
+    def _is_useful_concept(name: str) -> bool:
+        """判断概念名称是否有实际意义（过滤地域/指数/杂项）。"""
+        return not any(kw in name for kw in _SKIP_KEYWORDS)
 
+    def _fetch_all():
+        import time
+        import requests
+
+        url = "https://datacenter.eastmoney.com/securities/api/data/v1/get"
         for code in codes:
             try:
-                df = ak.stock_board_concept_name_ths(symbol=code)
-                if df is not None and not df.empty:
-                    # 取前 5 个概念，避免过长
-                    concepts = df["概念名称"].tolist()[:5]
-                    result[code] = ", ".join(concepts)
+                params = {
+                    "reportName": "RPT_F10_CORETHEME_BOARDTYPE",
+                    "columns": "BOARD_NAME",
+                    "filter": f'(SECURITY_CODE="{code}")',
+                    "pageSize": 50,
+                    "source": "HSF10",
+                    "client": "PC",
+                }
+                r = requests.get(url, params=params, timeout=10)
+                data = r.json()
+                if data.get("result") and data["result"].get("data"):
+                    concepts = [
+                        item["BOARD_NAME"]
+                        for item in data["result"]["data"]
+                        if _is_useful_concept(item.get("BOARD_NAME", ""))
+                    ]
+                    if concepts:
+                        result[code] = ", ".join(concepts[:8])
+                time.sleep(0.1)  # 控制请求频率
             except Exception as e:
                 logger.debug("获取 %s 概念板块失败: %s", code, e)
                 continue
@@ -169,7 +192,9 @@ async def _fetch_fund_flow_batch(codes: list[str]) -> dict[str, float | None]:
 
         for code in codes:
             try:
-                df = ak.stock_individual_fund_flow(stock=code, market="")
+                # 根据代码判断市场：6开头=沪市(sh)，其他=深市(sz)
+                market = "sh" if code.startswith("6") else "sz"
+                df = ak.stock_individual_fund_flow(stock=code, market=market)
                 if df is not None and not df.empty:
                     # 取最新一天的主力净流入
                     latest = df.iloc[-1]
