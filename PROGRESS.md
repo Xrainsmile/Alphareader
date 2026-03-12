@@ -103,3 +103,49 @@ cd backend && python3 -m app.services.screener.runner --dry-run
 - 筛选为前端二次过滤 + 后端查询参数双重支持，不影响原有数据流
 - 概念字段按逗号拆分后去重，兼容多概念逗号分隔格式
 - 空选状态显示全量数据，不会误过滤
+
+---
+
+## 2026-03-12: VCP 筛选器 UI 优化
+
+### 问题/需求
+1. VCP 筛选器下拉框点击外部区域无法关闭
+2. VCP 筛选器样式需要统一为胶囊搜索栏风格，与 RS Rating 搜索组件保持一致
+
+### 解决方案
+**2 个文件修改**：
+
+| 文件 | 改动 |
+|------|------|
+| `frontend/src/pages/stocks/index.vue` | 新增 `.vcp-overlay` 全屏透明遮罩层实现点击外部关闭；重构筛选器为胶囊圆角搜索栏风格（含浮动下拉、已选标签、数量角标）；完整移动端+PC 响应式 CSS |
+| `claude.context.md` | 新增"前端标准化组件规范"章节，记录胶囊搜索栏的 HTML 结构模板和 CSS 类名速查表 |
+
+### 技术要点
+1. **遮罩层方案**：使用 `position: fixed` 全屏透明 `<view>` 覆盖，`z-index: 50`（低于下拉的 100），点击时关闭所有下拉
+2. **组件规范化**：统一 `.vcp-search-*` 类名体系，后续新增搜索功能必须复用
+3. **设计规格**：胶囊圆角 36rpx (PC 22px)，白色背景，边框 #e8e8ed，焦点态 #4285f4 蓝色阴影
+
+---
+
+## 2026-03-12: RS Rating 前端隐藏 + Stocks 页面默认 Tab 改为 VCP
+
+### 问题/需求
+RS Rating 模块的展示信息不够丰富（缺少行业、概念板块等），为简化先隐藏前端页面。
+RS Rating 后端定时计算服务继续运行，前端随时可恢复。
+
+### 解决方案
+**2 个文件修改**：
+
+| 文件 | 改动 |
+|------|------|
+| `frontend/src/components/stocks/StocksTabBar.vue` | 注释掉 RS Rating Tab 入口，只保留「VCP策略」和「模拟仓」两个 Tab |
+| `frontend/src/pages/stocks/index.vue` | 默认 `activeTab` 从 `'rs'` 改为 `'vcp'`；RS Rating 整个模板区块用 HTML 注释包裹；`onMounted` 改为默认加载 VCP 数据，RS Rating 数据加载注释掉 |
+
+### 技术要点
+1. **后端不动**：`scheduler.py` 中 RS Rating 定时任务（11:30/15:00）继续正常运行
+2. **前端可恢复**：RS Rating 相关的 JS 变量、CSS 样式、模板代码均以注释形式保留
+3. **默认加载优化**：`onMounted` 直接加载 VCP 数据和筛选项，避免无用的 RS Rating API 请求
+
+### 防范措施
+- RS Rating 所有代码以注释保留，恢复时取消注释即可
+- 后端 RS Rating 数据持续入库，不影响其他模块（如 VCP）可能的引用

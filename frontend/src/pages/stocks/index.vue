@@ -9,131 +9,69 @@
     />
 
     <!-- ═══════════════════════════════════════════════════════
-         RS Rating Tab
+         RS Rating Tab — 前端暂时隐藏，后端定时计算服务继续运行
          ═══════════════════════════════════════════════════════ -->
+    <!-- RS Rating 前端模板已注释，恢复时取消注释即可
     <template v-if="activeTab === 'rs'">
-      <!-- Header -->
       <view class="stocks-header">
         <text class="stocks-title">RS Rating</text>
         <text class="stocks-subtitle">相对强度排行 · RS Rating > 80</text>
-        <view class="rs-desc" :class="{ 'rs-desc-expanded': descExpanded }" @click="descExpanded = !descExpanded">
-          <text class="rs-desc-text">RS Rating（相对强度评级）是衡量股票相对于市场整体表现强弱的量化指标，由《投资者商业日报》（Investor's Business Daily, IBD）开发并广泛应用于成长股投资中。该评级通过对比某只股票在过去52周内的价格表现，与全市场所有上市股票进行排名，得出一个1到99之间的分数，分数越高，代表该股票的表现优于市场中越高比例的个股。例如，RS Rating为90，意味着该股票在过去一年中表现优于90%的其他股票。</text>
-        </view>
       </view>
-
-      <!-- 搜索栏 -->
-      <view class="search-bar" :class="{ 'search-bar-focus': searchFocused }">
-        <view class="search-input-wrap">
-          <text class="search-icon">🔍</text>
-          <input
-            class="search-input"
-            type="text"
-            placeholder="搜索代码/名称/拼音首字母..."
-            :value="searchQuery"
-            @input="onSearchInput"
-            @focus="onSearchFocus"
-            @confirm="onSearchConfirm"
-            confirm-type="search"
-          />
-          <view v-if="searchQuery" class="search-clear" @click="onClearSearch">
-            <text class="search-clear-icon">×</text>
+      <view class="vcp-filters">
+        <view class="vcp-search-section">
+          <view class="vcp-search-bar" :class="{ 'vcp-search-bar-focus': searchFocused }">
+            <view class="vcp-search-input-wrap">
+              <text class="vcp-search-icon">🔍</text>
+              <input class="vcp-search-input" type="text" placeholder="搜索代码/名称/拼音首字母..." :value="searchQuery" @input="onSearchInput" @focus="onSearchFocus" @confirm="onSearchConfirm" confirm-type="search" />
+              <view v-if="searchQuery" class="vcp-search-clear" @click="onClearSearch"><text class="vcp-search-clear-icon">×</text></view>
+            </view>
+            <view v-if="searchMode" class="rs-search-cancel" @click="onExitSearch"><text class="rs-search-cancel-text">取消</text></view>
           </view>
         </view>
-        <view v-if="searchMode" class="search-cancel" @click="onExitSearch">
-          <text class="search-cancel-text">取消</text>
-        </view>
       </view>
-
-      <!-- 搜索结果 -->
       <template v-if="searchMode && searchSubmitted">
         <EmptyState v-if="searchLoading" text="搜索中..." bg="#ffffff" radius="0 0 16rpx 16rpx" />
         <EmptyState v-else-if="searchMessage" :text="searchMessage" bg="#ffffff" radius="0 0 16rpx 16rpx" />
         <template v-else-if="searchList.length > 0">
-          <view class="info-bar">
-            <text class="info-date">找到 {{ searchList.length }} 条结果</text>
-          </view>
+          <view class="info-bar"><text class="info-date">找到 {{ searchList.length }} 条结果</text></view>
           <view class="table-header">
-            <text class="th th-rank">#</text>
-            <text class="th th-name">名称/代码</text>
-            <text class="th th-close">收盘价</text>
-            <text class="th th-pct">涨跌幅</text>
-            <text class="th th-rs">RS</text>
+            <text class="th th-rank">#</text><text class="th th-name">名称/代码</text>
+            <text class="th th-close">收盘价</text><text class="th th-pct">涨跌幅</text><text class="th th-rs">RS</text>
           </view>
           <view class="stock-list">
-            <view
-              v-for="(item, idx) in searchList"
-              :key="item.ts_code"
-              class="stock-row"
-              :class="{ 'stock-row-alt': idx % 2 === 1 }"
-            >
+            <view v-for="(item, idx) in searchList" :key="item.ts_code" class="stock-row" :class="{ 'stock-row-alt': idx % 2 === 1 }">
               <view class="col col-rank"><text class="rank-num">{{ idx + 1 }}</text></view>
-              <view class="col col-name">
-                <text class="stock-name">{{ item.name }}</text>
-                <text class="stock-code">{{ item.ts_code }}</text>
-              </view>
+              <view class="col col-name"><text class="stock-name">{{ item.name }}</text><text class="stock-code">{{ item.ts_code }}</text></view>
               <view class="col col-close"><text class="close-price">{{ formatPrice(item.close) }}</text></view>
-              <view class="col col-pct">
-                <view class="change-badge" :class="changeClass(item.pct_change)">
-                  <text class="change-text">{{ formatPct(item.pct_change) }}</text>
-                </view>
-                <text class="change-abs">{{ formatChange(item.change) }}</text>
-              </view>
-              <view class="col col-rs">
-                <view class="rs-badge" :class="rsClass(item.rs_rating)">
-                  <text class="rs-value">{{ item.rs_rating }}</text>
-                </view>
-              </view>
+              <view class="col col-pct"><view class="change-badge" :class="changeClass(item.pct_change)"><text class="change-text">{{ formatPct(item.pct_change) }}</text></view><text class="change-abs">{{ formatChange(item.change) }}</text></view>
+              <view class="col col-rs"><view class="rs-badge" :class="rsClass(item.rs_rating)"><text class="rs-value">{{ item.rs_rating }}</text></view></view>
             </view>
           </view>
         </template>
       </template>
-
-      <!-- RS 排行榜 -->
       <template v-if="!searchMode">
         <view class="info-bar">
           <text class="info-date">数据日期: {{ dataDate || '--' }}</text>
-          <view v-if="isTrading" class="trading-badge">
-            <text class="trading-dot">●</text>
-            <text class="trading-text">盘中</text>
-          </view>
+          <view v-if="isTrading" class="trading-badge"><text class="trading-dot">●</text><text class="trading-text">盘中</text></view>
         </view>
         <view class="table-header">
-          <text class="th th-rank">#</text>
-          <text class="th th-name">名称/代码</text>
-          <text class="th th-close">收盘价</text>
-          <text class="th th-pct">涨跌幅</text>
-          <text class="th th-rs">RS</text>
+          <text class="th th-rank">#</text><text class="th th-name">名称/代码</text>
+          <text class="th th-close">收盘价</text><text class="th th-pct">涨跌幅</text><text class="th th-rs">RS</text>
         </view>
         <EmptyState v-if="loading" text="加载中..." bg="#ffffff" radius="0 0 16rpx 16rpx" />
         <EmptyState v-else-if="stockList.length === 0" text="暂无数据" bg="#ffffff" radius="0 0 16rpx 16rpx" />
         <view v-else class="stock-list">
-          <view
-            v-for="(item, idx) in stockList"
-            :key="item.ts_code"
-            class="stock-row"
-            :class="{ 'stock-row-alt': idx % 2 === 1 }"
-          >
+          <view v-for="(item, idx) in stockList" :key="item.ts_code" class="stock-row" :class="{ 'stock-row-alt': idx % 2 === 1 }">
             <view class="col col-rank"><text class="rank-num" :class="rankClass(idx)">{{ idx + 1 }}</text></view>
-            <view class="col col-name">
-              <text class="stock-name">{{ item.name }}</text>
-              <text class="stock-code">{{ item.ts_code }}</text>
-            </view>
+            <view class="col col-name"><text class="stock-name">{{ item.name }}</text><text class="stock-code">{{ item.ts_code }}</text></view>
             <view class="col col-close"><text class="close-price">{{ formatPrice(item.close) }}</text></view>
-            <view class="col col-pct">
-              <view class="change-badge" :class="changeClass(item.pct_change)">
-                <text class="change-text">{{ formatPct(item.pct_change) }}</text>
-              </view>
-              <text class="change-abs">{{ formatChange(item.change) }}</text>
-            </view>
-            <view class="col col-rs">
-              <view class="rs-badge" :class="rsClass(item.rs_rating)">
-                <text class="rs-value">{{ item.rs_rating }}</text>
-              </view>
-            </view>
+            <view class="col col-pct"><view class="change-badge" :class="changeClass(item.pct_change)"><text class="change-text">{{ formatPct(item.pct_change) }}</text></view><text class="change-abs">{{ formatChange(item.change) }}</text></view>
+            <view class="col col-rs"><view class="rs-badge" :class="rsClass(item.rs_rating)"><text class="rs-value">{{ item.rs_rating }}</text></view></view>
           </view>
         </view>
       </template>
     </template>
+    -->
 
     <!-- ═══════════════════════════════════════════════════════
          VCP 策略 Tab
@@ -142,9 +80,6 @@
       <view class="stocks-header">
         <text class="stocks-title">VCP 策略</text>
         <text class="stocks-subtitle">波动收缩形态 · Volatility Contraction Pattern</text>
-        <view class="rs-desc" :class="{ 'rs-desc-expanded': vcpDescExpanded }" @click="vcpDescExpanded = !vcpDescExpanded">
-          <text class="rs-desc-text">VCP（波动收缩形态）由 Mark Minervini 提出，核心逻辑是当股票经历一段上升趋势后，价格波动幅度逐次收窄（如 20% → 10% → 5%），同时成交量萎缩，说明市场的供给侧（卖方）在不断衰竭。当股价在极度收缩的区间内向上突破时，往往伴随大级别行情的启动。本系统每日从 5000+ A 股中筛选出满足 Stage2 趋势模板 + VCP 形态收敛 + 基本面过关的候选股票池。</text>
-        </view>
       </view>
 
       <view class="info-bar">
@@ -598,7 +533,7 @@ import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { fetchRSRating, searchStocks, fetchVCPWatchlist, fetchVCPFilters, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
 
-const activeTab = ref('rs')
+const activeTab = ref('vcp')
 const onSelectRs = () => { activeTab.value = 'rs' }
 const onSelectVcp = () => { activeTab.value = 'vcp'; if (!vcpLoaded) { vcpLoaded = true; loadVCPData(); loadVCPFilters() } }
 
@@ -609,7 +544,6 @@ const onSelectVcp = () => { activeTab.value = 'vcp'; if (!vcpLoaded) { vcpLoaded
 const stockList = ref([])
 const dataDate = ref('')
 const loading = ref(true)
-const descExpanded = ref(false)
 
 const searchMode = ref(false)
 const searchFocused = ref(false)
@@ -630,16 +564,22 @@ const isTrading = computed(() => {
 })
 
 onMounted(async () => {
-  try {
-    const data = await fetchRSRating({ min_rating: 80, top_n: 5000 })
-    stockList.value = data.items || []
-    dataDate.value = data.date || ''
-  } catch (e) {
-    console.error('加载 RS Rating 失败:', e)
-    uni.showToast({ title: '加载失败', icon: 'none' })
-  } finally {
-    loading.value = false
-  }
+  // 默认 tab 是 VCP，直接加载 VCP 数据
+  vcpLoaded = true
+  loadVCPData()
+  loadVCPFilters()
+
+  // RS Rating 前端已隐藏，不再加载数据
+  // try {
+  //   const data = await fetchRSRating({ min_rating: 80, top_n: 5000 })
+  //   stockList.value = data.items || []
+  //   dataDate.value = data.date || ''
+  // } catch (e) {
+  //   console.error('加载 RS Rating 失败:', e)
+  //   uni.showToast({ title: '加载失败', icon: 'none' })
+  // } finally {
+  //   loading.value = false
+  // }
 })
 
 const onSearchFocus = () => { searchFocused.value = true; searchMode.value = true }
@@ -689,7 +629,6 @@ const rsClass = (rating) => rating >= 90 ? 'rs-hot' : rating >= 70 ? 'rs-warm' :
 const vcpList = ref([])
 const vcpDate = ref('')
 const vcpLoading = ref(false)
-const vcpDescExpanded = ref(false)
 const vcpExpandedIdx = ref(-1)
 let vcpLoaded = false
 
@@ -1041,64 +980,9 @@ const goToDetail = (id) => {
   display: block;
 }
 
-/* ── Search Bar ── */
-.search-bar {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  margin: 12rpx 0 8rpx;
-}
-.search-input-wrap {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  background: #ffffff;
-  border-radius: 36rpx;
-  padding: 16rpx 24rpx;
-  border: 2rpx solid #e8e8ed;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.search-bar-focus .search-input-wrap {
-  border-color: #4285f4;
-  box-shadow: 0 2rpx 12rpx rgba(66, 133, 244, 0.15);
-}
-.search-icon { font-size: 28rpx; margin-right: 12rpx; flex-shrink: 0; }
-.search-input {
-  flex: 1;
-  font-size: 28rpx;
-  color: #1a1a2e;
-  background: transparent;
-  border: none;
-  outline: none;
-  line-height: 1.4;
-}
-.search-clear { padding: 4rpx 8rpx; margin-left: 8rpx; flex-shrink: 0; cursor: pointer; }
-.search-clear-icon { font-size: 32rpx; color: #b0b0be; font-weight: 500; }
-.search-cancel { flex-shrink: 0; padding: 8rpx 4rpx; cursor: pointer; }
-.search-cancel-text { font-size: 28rpx; color: #4285f4; font-weight: 500; }
-
-/* ── RS Description ── */
-.rs-desc {
-  margin-top: 12rpx;
-  padding: 16rpx 20rpx;
-  background: rgba(140, 140, 154, 0.06);
-  border-radius: 12rpx;
-  overflow: hidden;
-  max-height: 80rpx;
-  transition: max-height 0.3s ease;
-  position: relative;
-}
-.rs-desc::after {
-  content: '...点击展开';
-  position: absolute;
-  bottom: 0; right: 0;
-  padding: 0 20rpx 0 40rpx;
-  background: linear-gradient(90deg, transparent, rgba(240, 242, 245, 1) 40%);
-  font-size: 20rpx; color: #8c8c9a; line-height: 40rpx;
-}
-.rs-desc-expanded { max-height: 600rpx; }
-.rs-desc-expanded::after { display: none; }
-.rs-desc-text { font-size: 22rpx; color: #8c8c9a; line-height: 1.7; display: block; }
+/* ── RS Search Cancel (取消按钮) ── */
+.rs-search-cancel { flex-shrink: 0; padding: 8rpx 12rpx; cursor: pointer; margin-left: 12rpx; }
+.rs-search-cancel-text { font-size: 28rpx; color: #4285f4; font-weight: 500; }
 
 /* ── Info Bar ── */
 .info-bar {
@@ -1799,19 +1683,8 @@ const goToDetail = (id) => {
   .stocks-title { font-size: 26px; letter-spacing: 0.5px; }
   .stocks-subtitle { font-size: 13px; margin-top: 4px; }
 
-  .search-bar { margin: 8px 0 8px; gap: 10px; }
-  .search-input-wrap { border-radius: 22px; padding: 10px 18px; border-width: 1px; }
-  .search-icon { font-size: 15px; margin-right: 8px; }
-  .search-input { font-size: 15px; }
-  .search-clear-icon { font-size: 18px; }
-  .search-cancel-text { font-size: 15px; }
-  .search-input-wrap:hover { border-color: #c0c0cc; }
-  .search-bar-focus .search-input-wrap:hover { border-color: #4285f4; }
-
-  .rs-desc { margin-top: 8px; padding: 10px 14px; border-radius: 8px; max-height: 40px; }
-  .rs-desc::after { padding: 0 14px 0 30px; font-size: 11px; line-height: 20px; }
-  .rs-desc-expanded { max-height: 300px; }
-  .rs-desc-text { font-size: 12px; }
+  .rs-search-cancel { padding: 5px 8px; margin-left: 8px; }
+  .rs-search-cancel-text { font-size: 15px; }
 
   .info-bar { padding: 8px 0 12px; }
   .info-date { font-size: 13px; }

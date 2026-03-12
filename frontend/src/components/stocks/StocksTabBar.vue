@@ -1,12 +1,13 @@
 <template>
   <view class="tab-bar">
-    <view
+    <!-- RS Rating Tab 暂时隐藏，后端服务继续运行 -->
+    <!-- <view
       class="tab-item"
       :class="{ 'tab-active': activeTab === 'rs' }"
       @click="$emit('select-rs')"
     >
       <text class="tab-text">RS Rating</text>
-    </view>
+    </view> -->
     <view
       class="tab-item"
       :class="{ 'tab-active': activeTab === 'vcp' }"
