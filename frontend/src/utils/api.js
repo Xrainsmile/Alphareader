@@ -158,6 +158,33 @@ export function fetchValueWatchlist() {
   return request('/api/v1/stocks/value_watchlist')
 }
 
+/**
+ * 搜索股票（供价投录入选股使用）
+ */
+export function searchSandboxStock(q) {
+  return request(`/api/v1/sandbox/stock-search?q=${encodeURIComponent(q)}`)
+}
+
+/**
+ * 添加价投标的
+ */
+export function addValueStock({ ts_code, name, reason, password }) {
+  return request('/api/v1/stocks/value_watchlist/add', {
+    method: 'POST',
+    data: { ts_code, name, reason, password },
+  })
+}
+
+/**
+ * 删除价投标的
+ */
+export function removeValueStock(stockId, password) {
+  return request(`/api/v1/stocks/value_watchlist/${stockId}`, {
+    method: 'DELETE',
+    data: { password },
+  })
+}
+
 // ── Sandbox API（模拟仓）──
 
 /**

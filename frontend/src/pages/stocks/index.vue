@@ -293,8 +293,16 @@
          ═══════════════════════════════════════════════════════ -->
     <template v-if="activeTab === 'value'">
       <view class="stocks-header">
-        <text class="stocks-title">价投策略</text>
-        <text class="stocks-subtitle">巴菲特式价值投资 · Value Investing</text>
+        <view class="value-header-row">
+          <view>
+            <text class="stocks-title">价投策略</text>
+            <text class="stocks-subtitle">巴菲特式价值投资 · Value Investing</text>
+          </view>
+          <view class="value-add-btn" @click="showValueAddModal = true">
+            <text class="value-add-icon">+</text>
+            <text class="value-add-text">添加标的</text>
+          </view>
+        </view>
       </view>
 
       <view class="info-bar">
@@ -392,6 +400,9 @@
             <view class="vcp-expand-row">
               <text class="vcp-expand-label">加入时间</text>
               <text class="vcp-expand-val">{{ item.added_at ? item.added_at.split('T')[0] : '--' }}</text>
+            </view>
+            <view class="value-remove-row" @click.stop="onRemoveValue(item)">
+              <text class="value-remove-text">移除此标的</text>
             </view>
           </view>
         </view>
@@ -633,6 +644,13 @@
       @update:password="pwdValue = $event"
       @confirm="onPwdConfirm"
     />
+
+    <!-- 价投标的添加弹窗 -->
+    <ValueStockAddModal
+      :visible="showValueAddModal"
+      @update:visible="showValueAddModal = $event"
+      @added="onValueStockAdded"
+    />
   </view>
 </template>
 
@@ -640,9 +658,10 @@
 import { ref, computed, onMounted } from 'vue'
 import StocksTabBar from '@/components/stocks/StocksTabBar.vue'
 import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
+import ValueStockAddModal from '@/components/stocks/ValueStockAddModal.vue'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { fetchRSRating, searchStocks, fetchVCPWatchlist, fetchVCPFilters, fetchValueWatchlist, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
+import { fetchRSRating, searchStocks, fetchVCPWatchlist, fetchVCPFilters, fetchValueWatchlist, removeValueStock, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
 
 const activeTab = ref('vcp')
 const onSelectRs = () => { activeTab.value = 'rs' }
@@ -847,6 +866,7 @@ const valueLoading = ref(false)
 const valueExpandedIdx = ref(-1)
 const valueSearch = ref('')
 const valueIndDropdown = ref(false)
+const showValueAddModal = ref(false)
 let valueLoaded = false
 
 const valueFilteredList = computed(() => {
@@ -870,6 +890,39 @@ const loadValueData = async () => {
   } finally {
     valueLoading.value = false
   }
+}
+
+const onValueStockAdded = () => {
+  // 添加成功后刷新列表
+  loadValueData()
+}
+
+const onRemoveValue = (item) => {
+  uni.showModal({
+    title: '移除确认',
+    content: `确定移除「${item.name || item.ts_code}」吗？`,
+    confirmText: '移除',
+    confirmColor: '#ef4444',
+    success: async (res) => {
+      if (!res.confirm) return
+      // 使用缓存密码
+      let pwd = ''
+      try { pwd = uni.getStorageSync('value_pwd') || '' } catch (_) {}
+      try {
+        await removeValueStock(item.id, pwd)
+        valueExpandedIdx.value = -1
+        loadValueData()
+        uni.showToast({ title: '已移除', icon: 'success' })
+      } catch (e) {
+        const msg = e.message || ''
+        if (msg.includes('403')) {
+          uni.showToast({ title: '请先通过「添加标的」验证密码', icon: 'none' })
+        } else {
+          uni.showToast({ title: '移除失败', icon: 'none' })
+        }
+      }
+    }
+  })
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1513,6 +1566,47 @@ const goToDetail = (id) => {
 .value-status-watching { background: rgba(59, 130, 246, 0.1); }
 .value-status-watching .value-status-text { color: #3b82f6; }
 
+/* 价投 header — 标题和添加按钮 */
+.value-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.value-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 14rpx 24rpx;
+  background: #1a1a2e;
+  border-radius: 32rpx;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+  margin-top: 8rpx;
+}
+.value-add-btn:active { opacity: 0.7; }
+.value-add-icon {
+  font-size: 28rpx; color: #ffffff; font-weight: 700;
+  line-height: 1;
+}
+.value-add-text {
+  font-size: 24rpx; color: #ffffff; font-weight: 600;
+}
+
+/* 价投展开行 — 删除按钮 */
+.value-remove-row {
+  margin-top: 16rpx;
+  padding-top: 14rpx;
+  border-top: 1rpx solid #f0f0f2;
+  text-align: center;
+  cursor: pointer;
+}
+.value-remove-text {
+  font-size: 24rpx;
+  color: #ef4444;
+  font-weight: 500;
+}
+
 /* ═══════════════════════════════════════════════════════
    模拟仓样式
    ═══════════════════════════════════════════════════════ */
@@ -1997,6 +2091,15 @@ const goToDetail = (id) => {
   /* 价投状态徽章 PC */
   .value-status-badge { padding: 2px 10px; border-radius: 6px; }
   .value-status-text { font-size: 12px; }
+
+  /* 价投添加按钮 PC */
+  .value-add-btn { padding: 8px 16px; border-radius: 20px; gap: 4px; margin-top: 4px; }
+  .value-add-icon { font-size: 15px; }
+  .value-add-text { font-size: 13px; }
+
+  /* 价投删除行 PC */
+  .value-remove-row { margin-top: 10px; padding-top: 10px; }
+  .value-remove-text { font-size: 13px; }
 
 }
 
