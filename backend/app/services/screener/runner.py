@@ -76,10 +76,10 @@ def parse_args() -> argparse.Namespace:
     stage2 = parser.add_argument_group("Stage2 过滤器参数")
     stage2.add_argument("--volume-ratio", type=float, default=1.5,
                         help="放量倍数（默认 1.5）")
-    stage2.add_argument("--vcp-contraction-ratio", type=float, default=0.5,
-                        help="VCP 深度收敛比（默认 0.5，即短期振幅≤长期的50%%）")
-    stage2.add_argument("--max-tightness", type=float, default=0.08,
-                        help="VCP 微观紧凑极限（默认 0.08 = 8%%）")
+    stage2.add_argument("--vcp-contraction-ratio", type=float, default=0.6,
+                        help="VCP 深度收敛比（默认 0.6，即短期振幅≤长期的60%%）")
+    stage2.add_argument("--max-tightness", type=float, default=0.15,
+                        help="VCP 微观紧凑极限（默认 0.15 = 15%%）")
     stage2.add_argument("--bottom-rebound", type=float, default=1.30,
                         help="脱离底部倍数（默认 1.30 = 30%%反弹）")
     stage2.add_argument("--near-high", type=float, default=0.85,
