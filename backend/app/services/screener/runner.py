@@ -76,8 +76,10 @@ def parse_args() -> argparse.Namespace:
     stage2 = parser.add_argument_group("Stage2 过滤器参数")
     stage2.add_argument("--volume-ratio", type=float, default=1.5,
                         help="放量倍数（默认 1.5）")
-    stage2.add_argument("--vcp-atr-ratio", type=float, default=0.8,
-                        help="VCP ATR 收缩比（默认 0.8）")
+    stage2.add_argument("--vcp-contraction-ratio", type=float, default=0.5,
+                        help="VCP 深度收敛比（默认 0.5，即短期振幅≤长期的50%%）")
+    stage2.add_argument("--max-tightness", type=float, default=0.08,
+                        help="VCP 微观紧凑极限（默认 0.08 = 8%%）")
     stage2.add_argument("--bottom-rebound", type=float, default=1.30,
                         help="脱离底部倍数（默认 1.30 = 30%%反弹）")
     stage2.add_argument("--near-high", type=float, default=0.85,
@@ -108,7 +110,8 @@ async def main():
     # 组装配置
     stage2_config = Stage2FilterConfig(
         volume_ratio=args.volume_ratio,
-        vcp_atr_ratio=args.vcp_atr_ratio,
+        vcp_contraction_ratio=args.vcp_contraction_ratio,
+        max_tightness_threshold=args.max_tightness,
         bottom_rebound_pct=args.bottom_rebound,
         near_high_pct=args.near_high,
         big_yang_threshold=args.yang_threshold,

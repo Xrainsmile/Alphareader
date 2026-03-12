@@ -18,8 +18,11 @@
   │   ⑤ Close > Quantile(Close, 60日, 0.90)       (箱体突破)      │
   │   ⑥ Volume > MA(Volume, 50日) × 1.5           (放量≥1.5倍)    │
   │                                                              │
-  │ 条件 C — 形态收敛与资金活跃度                                  │
-  │   ⑦ ATR(20) ≤ MA(ATR(60), 60日) × 0.8         (VCP 右侧收缩) │
+  │ 条件 C — 标准化区间振幅收敛 (NRC) + 资金活跃度                │
+  │   ⑦ VCP 形态判定 — 三重条件同时满足：                          │
+  │     a) Range_10d% ≤ Range_40d% × 0.5          (深度收敛)      │
+  │     b) Range_10d% ≤ 8%                         (微观紧凑极限)  │
+  │     c) 近5日跌日均量 < 50日均量                 (缩量洗盘)      │
   │   ⑧ 20 日内至少 1 根涨幅≥7% 的大阳线           (主力活跃)      │
   └──────────────────────────────────────────────────────────────┘
 
@@ -49,36 +52,97 @@ logger = logging.getLogger("alphareader.screener.filters")
 # 辅助计算函数（纯向量化）
 # ════════════════════════════════════════════════════════════════
 
-def _compute_atr(ohlcv: pd.DataFrame, period: int) -> pd.DataFrame:
-    """计算每只股票的 ATR（Average True Range）。
+def _compute_vcp_nrc(
+    ohlcv: pd.DataFrame,
+    latest_close_map: pd.Series,
+    long_window: int = 40,
+    short_window: int = 10,
+    down_vol_window: int = 5,
+    avg_vol_window: int = 50,
+) -> pd.DataFrame:
+    """计算 VCP 标准化区间振幅收敛 (Normalized Range Contraction) 指标。
+
+    三重条件：
+      A) 深度收敛：Range_10d% ≤ Range_40d% × vcp_contraction_ratio
+      B) 微观紧凑：Range_10d% ≤ max_tightness_threshold
+      C) 缩量洗盘：近 5 日下跌日均量 < 50 日均量
 
     公式：
-        TR = max(High - Low, |High - Close_prev|, |Low - Close_prev|)
-        ATR(n) = SMA(TR, n)
+      Range_Nd% = (Highest_Nd - Lowest_Nd) / Close_latest
+      用当前收盘价做标准化，消除股价翻倍对绝对振幅的干扰。
 
     Args:
-        ohlcv: 含 ts_code, trade_date, high, low, close 的 DataFrame（已排序）
-        period: ATR 周期
+        ohlcv: 含 ts_code, trade_date, open, high, low, close, volume 的 DataFrame（已排序）
+        latest_close_map: ts_code → 最新收盘价 的 Series（用于标准化）
+        long_window: 长期箱体窗口天数（默认 40）
+        short_window: 短期箱体窗口天数（默认 10）
+        down_vol_window: 缩量洗盘检测窗口（默认 5）
+        avg_vol_window: 均量基准窗口（默认 50）
 
     Returns:
-        DataFrame: ts_code, atr_{period}（最新交易日的 ATR 值）
+        DataFrame: ts_code, range_long_pct, range_short_pct, down_vol_avg, avg_vol_base
     """
-    df = ohlcv.copy()
-    df["close_prev"] = df.groupby("ts_code")["close"].shift(1)
-    df["tr"] = np.maximum(
-        df["high"] - df["low"],
-        np.maximum(
-            np.abs(df["high"] - df["close_prev"]),
-            np.abs(df["low"] - df["close_prev"]),
-        ),
-    )
+    results = []
 
-    # 按股票分组计算滚动均值
-    df[f"atr_{period}"] = (
-        df.groupby("ts_code")["tr"]
-        .transform(lambda x: x.rolling(period, min_periods=period).mean())
-    )
-    return df
+    for ts_code, group in ohlcv.groupby("ts_code"):
+        # 取最新的数据（已按 trade_date 排序）
+        g = group.tail(max(long_window, avg_vol_window))
+        if len(g) < short_window:
+            continue
+
+        latest_close = latest_close_map.get(ts_code)
+        if not latest_close or latest_close <= 0:
+            continue
+
+        highs = g["high"].values
+        lows = g["low"].values
+        closes = g["close"].values
+        opens = g["open"].values
+        volumes = g["volume"].values
+
+        # ── 长期箱体振幅百分比 (Range_40d%) ──
+        if len(g) >= long_window:
+            long_h = highs[-long_window:].max()
+            long_l = lows[-long_window:].min()
+        else:
+            long_h = highs.max()
+            long_l = lows.min()
+        range_long_pct = (long_h - long_l) / latest_close
+
+        # ── 短期箱体振幅百分比 (Range_10d%) ──
+        short_h = highs[-short_window:].max()
+        short_l = lows[-short_window:].min()
+        range_short_pct = (short_h - short_l) / latest_close
+
+        # ── 近 N 日下跌日均量 & 50 日均量 ──
+        recent_closes = closes[-down_vol_window:]
+        recent_opens = opens[-down_vol_window:]
+        recent_volumes = volumes[-down_vol_window:]
+
+        down_mask = recent_closes < recent_opens
+        if down_mask.any():
+            down_vol_avg = recent_volumes[down_mask].mean()
+        else:
+            # 无下跌日 → 说明极强势，给一个极小值以确保条件通过
+            down_vol_avg = 0.0
+
+        if len(volumes) >= avg_vol_window:
+            avg_vol_base = volumes[-avg_vol_window:].mean()
+        else:
+            avg_vol_base = volumes.mean()
+
+        results.append({
+            "ts_code": ts_code,
+            "range_long_pct": range_long_pct,
+            "range_short_pct": range_short_pct,
+            "down_vol_avg": down_vol_avg,
+            "avg_vol_base": avg_vol_base,
+        })
+
+    if not results:
+        return pd.DataFrame(columns=["ts_code", "range_long_pct", "range_short_pct", "down_vol_avg", "avg_vol_base"])
+
+    return pd.DataFrame(results)
 
 
 def _compute_poc(ohlcv: pd.DataFrame, window: int = 120) -> pd.DataFrame:
@@ -189,8 +253,9 @@ class Stage2FilterConfig:
     quantile_close_q: float = 0.90          # 箱体突破分位数
     quantile_close_window: int = 60         # 箱体窗口（交易日）
 
-    # 条件 C: 形态收敛与资金活跃度
-    vcp_atr_ratio: float = 0.9              # ATR(20) ≤ MA(ATR(60), 60) * 0.9
+    # 条件 C: 标准化区间振幅收敛 (NRC) + 资金活跃度
+    vcp_contraction_ratio: float = 0.5      # 深度收敛：Range_10d% ≤ Range_40d% × ratio
+    max_tightness_threshold: float = 0.08   # 微观紧凑极限：Range_10d% ≤ 8%
     big_yang_threshold: float = 7.0         # 大阳线涨幅阈值（%）
     big_yang_window: int = 20               # 大阳线检测窗口
 
@@ -309,29 +374,32 @@ class MinerviniScreener:
         candidates = set(merged["ts_code"].values)
         ohlcv_subset2 = ohlcv[ohlcv["ts_code"].isin(candidates)].copy()
 
-        # C1: VCP 右侧波动收缩 — ATR(20) ≤ MA(ATR(60), 60) × 0.8
-        atr_df = _compute_atr(ohlcv_subset2, period=20)
-        atr60_df = _compute_atr(ohlcv_subset2, period=60)
+        # C1: VCP 标准化区间振幅收敛 (NRC) — 三重条件
+        #   a) Range_10d% ≤ Range_40d% × vcp_contraction_ratio  (深度收敛)
+        #   b) Range_10d% ≤ max_tightness_threshold              (微观紧凑极限)
+        #   c) 近5日下跌日均量 < 50日均量                          (缩量洗盘)
+        latest_close_map = merged.set_index("ts_code")["latest_close"]
+        nrc_df = _compute_vcp_nrc(ohlcv_subset2, latest_close_map)
 
-        # 取每只股票最新一天的 ATR 值
-        latest_atr20 = (
-            atr_df.groupby("ts_code")
-            .tail(1)[["ts_code", "atr_20"]]
-            .reset_index(drop=True)
-        )
-        latest_atr60 = (
-            atr60_df.groupby("ts_code")
-            .tail(1)[["ts_code", "atr_60"]]
-            .reset_index(drop=True)
-        )
+        merged = merged.merge(nrc_df, on="ts_code", how="left")
 
-        merged = merged.merge(latest_atr20, on="ts_code", how="left")
-        merged = merged.merge(latest_atr60, on="ts_code", how="left")
+        # 条件 a: 深度收敛
+        mask_c1a = merged["range_short_pct"] <= merged["range_long_pct"] * cfg.vcp_contraction_ratio
+        # 条件 b: 微观紧凑极限
+        mask_c1b = merged["range_short_pct"] <= cfg.max_tightness_threshold
+        # 条件 c: 缩量洗盘（下跌日均量 < 50日均量）
+        mask_c1c = merged["down_vol_avg"] < merged["avg_vol_base"]
 
-        mask_c1 = merged["atr_20"] <= merged["atr_60"] * cfg.vcp_atr_ratio
-        merged = merged[mask_c1 | merged["atr_20"].isna() | merged["atr_60"].isna()]
+        # NaN 时不淘汰
+        has_nrc = merged["range_short_pct"].notna()
+        mask_c1 = (mask_c1a & mask_c1b & mask_c1c) | ~has_nrc
+
+        merged = merged[mask_c1]
         self._stats["C1_vcp_contraction"] = len(merged)
-        logger.info("C1 VCP 波动收缩 (ATR20≤ATR60*%.2f): %d 通过", cfg.vcp_atr_ratio, len(merged))
+        logger.info(
+            "C1 VCP-NRC 收敛 (Range10d%%≤Range40d%%*%.2f & ≤%.0f%% & 缩量): %d 通过",
+            cfg.vcp_contraction_ratio, cfg.max_tightness_threshold * 100, len(merged),
+        )
 
         # C2: 活跃基因 — 20 日内至少 1 根涨幅≥7% 的大阳线
         yang_df = _check_big_yang_line(

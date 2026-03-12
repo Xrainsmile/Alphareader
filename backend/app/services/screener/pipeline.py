@@ -320,11 +320,11 @@ class ScreenerPipeline:
                 r = row.iloc[0]
                 entry["current_price"] = round(float(r.get("latest_close", 0)), 2) if pd.notna(r.get("latest_close")) else None
 
-                # VCP Score = 1 - (ATR20 / ATR60)，越大越收敛
-                atr20 = r.get("atr_20")
-                atr60 = r.get("atr_60")
-                if pd.notna(atr20) and pd.notna(atr60) and atr60 > 0:
-                    entry["vcp_score"] = round(1.0 - float(atr20) / float(atr60), 3)
+                # VCP Score = 1 - (Range_10d% / Range_40d%)，越大越收敛
+                r_short = r.get("range_short_pct")
+                r_long = r.get("range_long_pct")
+                if pd.notna(r_short) and pd.notna(r_long) and r_long > 0:
+                    entry["vcp_score"] = round(1.0 - float(r_short) / float(r_long), 3)
 
             # 从 EMA 取均线数据
             ema_row = ema_df[ema_df["Code"] == code] if "Code" in ema_df.columns else ema_df[ema_df["ts_code"] == code]
@@ -470,7 +470,7 @@ class ScreenerPipeline:
             ("B1 站上筹码峰值", stats.get("B1_above_poc", "-")),
             ("B2 箱体突破90%", stats.get("B2_breakout", "-")),
             ("B3 放量≥1.5x", stats.get("B3_volume_surge", "-")),
-            ("C1 VCP波动收缩", stats.get("C1_vcp_contraction", "-")),
+            ("C1 VCP-NRC收敛", stats.get("C1_vcp_contraction", "-")),
             ("C2 大阳线活跃", stats.get("C2_big_yang", "-")),
             ("基本面通过", stats.get("fundamental_passed", "-")),
         ]
