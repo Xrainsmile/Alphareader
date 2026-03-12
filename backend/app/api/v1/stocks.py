@@ -413,17 +413,17 @@ class VCPWatchlistResponse(BaseModel):
 
 
 def _generate_futu_url(ts_code: str) -> str:
-    """根据 A 股代码生成富途牛牛 URL Scheme 链接。
+    """根据 A 股代码生成富途牛牛交易 URL Scheme 链接。
 
-    沪市（6 开头）→ market=SH
-    深市（0/3 开头）→ market=SZ
+    ftnn://normalTrade/市场ID/股票代码/
+    市场ID: 港股=1, 美股=2, 沪市=3, 深市=4
     """
     code = ts_code.replace(".SZ", "").replace(".SH", "").strip()
     if code.startswith("6"):
-        market = "SH"
+        market_id = "3"  # 沪市
     else:
-        market = "SZ"
-    return f"futubull://quote?market={market}&symbol={code}"
+        market_id = "4"  # 深市
+    return f"ftnn://normalTrade/{market_id}/{code}/"
 
 
 @router.get("/vcp_watchlist", response_model=VCPWatchlistResponse)
@@ -452,10 +452,14 @@ async def get_vcp_watchlist(
             if not query_date:
                 return VCPWatchlistResponse(count=0, date=date.today(), items=[])
 
-        # 查询白名单
+        # 查询白名单（兜底排除 ST 股票）
         stmt = (
             select(WatchlistDaily)
             .where(WatchlistDaily.run_date == query_date)
+            .where(
+                ~WatchlistDaily.name.like("%ST%")
+                | WatchlistDaily.name.is_(None)
+            )
             .order_by(WatchlistDaily.vcp_score.desc().nulls_last())
         )
         result = await session.execute(stmt)

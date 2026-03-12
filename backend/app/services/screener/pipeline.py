@@ -259,21 +259,34 @@ class ScreenerPipeline:
         return result
 
     async def _load_st_codes(self) -> set[str]:
-        """从数据库中查询最新交易日名称包含 ST 的股票代码。
+        """从数据库中查询最近完整交易日名称包含 ST 的股票代码。
 
         匹配规则：股票简称包含 'ST'（覆盖 *ST、ST 两种情况）。
-        仅查最新交易日，避免历史上曾 ST 但已摘帽的股票被误杀。
+        仅查最近的完整交易日，避免历史上曾 ST 但已摘帽的股票被误杀。
+
+        注意：不能简单取 MAX(trade_date)，因为当天数据可能还在入库中
+        （只有少量记录），会导致 ST 列表几乎为空。改为取最近一个
+        至少有 1000 只股票记录的交易日，确保数据完整。
 
         Returns:
             ST 股票的 ts_code 集合
         """
         from sqlalchemy import text as sa_text
 
+        # 取最近一个有完整数据的交易日（至少 1000 只股票）
         sql = sa_text("""
-            SELECT DISTINCT ts_code
-            FROM stock_daily_quote
-            WHERE trade_date = (SELECT MAX(trade_date) FROM stock_daily_quote)
-              AND name LIKE '%ST%'
+            WITH full_dates AS (
+                SELECT trade_date, COUNT(DISTINCT ts_code) AS cnt
+                FROM stock_daily_quote
+                GROUP BY trade_date
+                HAVING COUNT(DISTINCT ts_code) >= 1000
+                ORDER BY trade_date DESC
+                LIMIT 1
+            )
+            SELECT DISTINCT q.ts_code
+            FROM stock_daily_quote q
+            JOIN full_dates fd ON q.trade_date = fd.trade_date
+            WHERE q.name LIKE '%ST%'
         """)
 
         async with async_session() as session:

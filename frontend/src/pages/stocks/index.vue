@@ -158,8 +158,7 @@
         <text class="vth vth-name">名称/代码</text>
         <text class="vth vth-price">收盘价</text>
         <text class="vth vth-vcp">VCP</text>
-        <text class="vth vth-eps">EPS%</text>
-        <text class="vth vth-rev">营收%</text>
+        <text class="vth vth-flow">资金流入</text>
         <text class="vth vth-action">交易</text>
       </view>
 
@@ -173,12 +172,12 @@
           :class="{ 'stock-row-alt': idx % 2 === 1 }"
           @click="vcpExpandedIdx = vcpExpandedIdx === idx ? -1 : idx"
         >
-          <!-- 主行：核心数据 -->
+          <!-- 主行第一行：核心指标 -->
           <view class="vcp-row-main">
             <view class="col vcp-col-rank"><text class="rank-num" :class="rankClass(idx)">{{ idx + 1 }}</text></view>
             <view class="col vcp-col-name">
               <text class="stock-name">{{ item.name || item.ts_code }}</text>
-              <text class="stock-code">{{ item.ts_code }}</text>
+              <text class="stock-code">{{ item.ts_code }}{{ item.industry ? ' · ' + item.industry : '' }}</text>
             </view>
             <view class="col vcp-col-price"><text class="close-price">{{ formatPrice(item.current_price) }}</text></view>
             <view class="col vcp-col-vcp">
@@ -186,11 +185,10 @@
                 <text class="vcp-val">{{ formatVcp(item.vcp_score) }}</text>
               </view>
             </view>
-            <view class="col vcp-col-eps">
-              <text class="eps-val" :class="pctValClass(item.eps_growth)">{{ formatPctVal(item.eps_growth) }}</text>
-            </view>
-            <view class="col vcp-col-rev">
-              <text class="eps-val" :class="pctValClass(item.revenue_yoy)">{{ formatPctVal(item.revenue_yoy) }}</text>
+            <view class="col vcp-col-flow">
+              <text class="flow-val" :class="pctValClass(item.fund_flow_net)">
+                {{ item.fund_flow_net != null ? (item.fund_flow_net >= 0 ? '+' : '') + item.fund_flow_net.toFixed(0) + '万' : '--' }}
+              </text>
             </view>
             <view class="col vcp-col-action">
               <!-- #ifdef H5 -->
@@ -201,7 +199,16 @@
             </view>
           </view>
 
-          <!-- 展开行：详细信息 -->
+          <!-- 主行第二行：题材标签 -->
+          <view v-if="item.concepts" class="vcp-row-concepts">
+            <text
+              v-for="tag in item.concepts.split(', ').slice(0, 4)"
+              :key="tag"
+              class="concept-tag"
+            >{{ tag }}</text>
+          </view>
+
+          <!-- 展开行：完整详情 -->
           <view v-if="vcpExpandedIdx === idx" class="vcp-expand">
             <view class="vcp-expand-row">
               <text class="vcp-expand-label">行业</text>
@@ -216,6 +223,14 @@
               <text class="vcp-expand-val" :class="pctValClass(item.fund_flow_net)">
                 {{ item.fund_flow_net != null ? (item.fund_flow_net >= 0 ? '+' : '') + item.fund_flow_net.toFixed(2) + '万' : '--' }}
               </text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">EPS增长</text>
+              <text class="vcp-expand-val" :class="pctValClass(item.eps_growth)">{{ formatPctVal(item.eps_growth) }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">营收同比</text>
+              <text class="vcp-expand-val" :class="pctValClass(item.revenue_yoy)">{{ formatPctVal(item.revenue_yoy) }}</text>
             </view>
             <view class="vcp-expand-row">
               <text class="vcp-expand-label">主营业务</text>
@@ -1034,8 +1049,7 @@ const goToDetail = (id) => {
 .vth-name { flex: 1; padding-left: 8rpx; }
 .vth-price { width: 120rpx; text-align: right; }
 .vth-vcp { width: 110rpx; text-align: center; }
-.vth-eps { width: 110rpx; text-align: right; }
-.vth-rev { width: 110rpx; text-align: right; }
+.vth-flow { width: 140rpx; text-align: right; }
 .vth-action { width: 60rpx; text-align: center; }
 
 /* VCP 行 */
@@ -1055,9 +1069,29 @@ const goToDetail = (id) => {
 .vcp-col-name { flex: 1; padding-left: 8rpx; }
 .vcp-col-price { width: 120rpx; align-items: flex-end; }
 .vcp-col-vcp { width: 110rpx; align-items: center; }
-.vcp-col-eps { width: 110rpx; align-items: flex-end; }
-.vcp-col-rev { width: 110rpx; align-items: flex-end; }
+.vcp-col-flow { width: 140rpx; align-items: flex-end; }
 .vcp-col-action { width: 60rpx; align-items: center; }
+
+/* 题材标签行 */
+.vcp-row-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  padding: 0 16rpx 14rpx 66rpx;
+}
+.concept-tag {
+  font-size: 20rpx;
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.08);
+  padding: 4rpx 14rpx;
+  border-radius: 6rpx;
+  line-height: 1.4;
+}
+.flow-val {
+  font-size: 24rpx;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Roboto Mono', 'Menlo', monospace;
+}
 
 /* VCP badge */
 .vcp-badge {
@@ -1566,8 +1600,7 @@ const goToDetail = (id) => {
   .vth-name { padding-left: 6px; }
   .vth-price { width: 80px; }
   .vth-vcp { width: 70px; }
-  .vth-eps { width: 72px; }
-  .vth-rev { width: 72px; }
+  .vth-flow { width: 90px; }
   .vth-action { width: 40px; }
 
   .vcp-row-main { padding: 12px 12px; }
@@ -1576,15 +1609,17 @@ const goToDetail = (id) => {
   .vcp-col-name { padding-left: 6px; }
   .vcp-col-price { width: 80px; }
   .vcp-col-vcp { width: 70px; }
-  .vcp-col-eps { width: 72px; }
-  .vcp-col-rev { width: 72px; }
+  .vcp-col-flow { width: 90px; }
   .vcp-col-action { width: 40px; }
 
   .vcp-badge { padding: 2px 8px; border-radius: 5px; }
   .vcp-val { font-size: 12px; }
+  .flow-val { font-size: 13px; }
   .eps-val { font-size: 13px; }
   .futu-link { width: 32px; height: 26px; border-radius: 5px; }
   .futu-icon { font-size: 14px; }
+  .vcp-row-concepts { padding: 0 12px 10px 44px; gap: 5px; }
+  .concept-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; }
   .vcp-expand { padding: 8px 14px 12px 46px; }
   .vcp-expand-label { font-size: 12px; min-width: 72px; }
   .vcp-expand-val { font-size: 12px; }

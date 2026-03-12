@@ -19,6 +19,17 @@ from typing import Any
 logger = logging.getLogger("alphareader.screener.enricher")
 
 
+def _clean_code(ts_code: str) -> str:
+    """将 ts_code 统一为纯 6 位数字（akshare 接口要求）。
+
+    兼容以下输入格式：
+      - '000001'    → '000001'
+      - '000001.SZ' → '000001'
+      - '600519.SH' → '600519'
+    """
+    return ts_code.split(".")[0].strip()
+
+
 async def enrich_watchlist(watchlist: list[dict]) -> list[dict]:
     """为白名单补充行业、题材、主营业务、资金流向。
 
@@ -32,28 +43,32 @@ async def enrich_watchlist(watchlist: list[dict]) -> list[dict]:
         return watchlist
 
     codes = [item["ticker"] for item in watchlist]
+    # 建立 ticker → 纯数字代码 的映射
+    code_map = {ticker: _clean_code(ticker) for ticker in codes}
+    clean_codes = list(code_map.values())
     logger.info("开始数据补充: %d 只股票", len(codes))
 
-    # 并发拉取三类数据
+    # 并发拉取三类数据（使用纯数字代码）
     info_map, concept_map, flow_map = {}, {}, {}
     try:
         info_map, concept_map, flow_map = await asyncio.gather(
-            _fetch_stock_info_batch(codes),
-            _fetch_concept_batch(codes),
-            _fetch_fund_flow_batch(codes),
+            _fetch_stock_info_batch(clean_codes),
+            _fetch_concept_batch(clean_codes),
+            _fetch_fund_flow_batch(clean_codes),
         )
     except Exception as e:
         logger.warning("数据补充并发执行异常: %s", e)
 
-    # 合并到每只股票
+    # 合并到每只股票（通过 clean_code 查找）
     for item in watchlist:
-        code = item["ticker"]
-        info = info_map.get(code, {})
+        ticker = item["ticker"]
+        clean = code_map[ticker]
+        info = info_map.get(clean, {})
         item["name"] = info.get("name", "")
         item["industry"] = info.get("industry", "")
         item["main_business"] = info.get("main_business", "")
-        item["concepts"] = concept_map.get(code, "")
-        item["fund_flow_net"] = flow_map.get(code)
+        item["concepts"] = concept_map.get(clean, "")
+        item["fund_flow_net"] = flow_map.get(clean)
 
     logger.info("数据补充完成: info=%d, concept=%d, flow=%d",
                 len(info_map), len(concept_map), len(flow_map))

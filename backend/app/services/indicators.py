@@ -559,6 +559,7 @@ async def load_rs_rating(
                 & (StockRSRating.trade_date == StockDailyQuote.trade_date),
             )
             .where(StockRSRating.trade_date == target_date)
+            .where(~StockRSRating.name.like("%ST%"))  # 剔除 ST/*ST 股票
             .order_by(
                 StockRSRating.rs_rating.desc(),
                 StockDailyQuote.pct_change.desc().nulls_last(),
