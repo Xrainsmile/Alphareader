@@ -153,10 +153,13 @@
       </view>
 
       <!-- VCP 筛选器 -->
+      <!-- 点击外部关闭下拉的遮罩 -->
+      <view v-if="vcpIndDropdown || vcpConDropdown" class="vcp-overlay" @click="vcpIndDropdown = false; vcpConDropdown = false"></view>
+
       <view class="vcp-filters">
         <!-- 行业搜索栏 -->
         <view class="vcp-search-section">
-          <view class="vcp-search-bar" :class="{ 'vcp-search-bar-focus': vcpIndFocused }" @click="vcpIndDropdown = true">
+          <view class="vcp-search-bar" :class="{ 'vcp-search-bar-focus': vcpIndDropdown }" @click.stop="vcpIndDropdown = !vcpIndDropdown; vcpConDropdown = false">
             <view class="vcp-search-input-wrap">
               <text class="vcp-search-icon">🔍</text>
               <input
@@ -164,8 +167,7 @@
                 type="text"
                 v-model="vcpIndSearch"
                 placeholder="搜索行业..."
-                @focus="vcpIndFocused = true; vcpIndDropdown = true"
-                @blur="vcpIndFocused = false"
+                @focus="vcpIndDropdown = true; vcpConDropdown = false"
                 @click.stop
               />
               <text v-if="vcpSelIndustries.length > 0" class="vcp-search-badge">{{ vcpSelIndustries.length }}</text>
@@ -175,7 +177,7 @@
             </view>
           </view>
           <!-- 行业下拉列表 -->
-          <view v-if="vcpIndDropdown" class="vcp-dropdown">
+          <view v-if="vcpIndDropdown" class="vcp-dropdown" @click.stop>
             <scroll-view scroll-y class="vcp-dropdown-scroll">
               <view
                 v-for="ind in filteredIndustries"
@@ -205,7 +207,7 @@
 
         <!-- 概念搜索栏 -->
         <view class="vcp-search-section">
-          <view class="vcp-search-bar" :class="{ 'vcp-search-bar-focus': vcpConFocused }" @click="vcpConDropdown = true">
+          <view class="vcp-search-bar" :class="{ 'vcp-search-bar-focus': vcpConDropdown }" @click.stop="vcpConDropdown = !vcpConDropdown; vcpIndDropdown = false">
             <view class="vcp-search-input-wrap">
               <text class="vcp-search-icon">🔍</text>
               <input
@@ -213,8 +215,7 @@
                 type="text"
                 v-model="vcpConSearch"
                 placeholder="搜索概念板块..."
-                @focus="vcpConFocused = true; vcpConDropdown = true"
-                @blur="vcpConFocused = false"
+                @focus="vcpConDropdown = true; vcpIndDropdown = false"
                 @click.stop
               />
               <text v-if="vcpSelConcepts.length > 0" class="vcp-search-badge">{{ vcpSelConcepts.length }}</text>
@@ -224,7 +225,7 @@
             </view>
           </view>
           <!-- 概念下拉列表 -->
-          <view v-if="vcpConDropdown" class="vcp-dropdown">
+          <view v-if="vcpConDropdown" class="vcp-dropdown" @click.stop>
             <scroll-view scroll-y class="vcp-dropdown-scroll">
               <view
                 v-for="con in filteredConcepts"
@@ -693,8 +694,6 @@ const vcpExpandedIdx = ref(-1)
 let vcpLoaded = false
 
 // ── VCP 筛选器 ──
-const vcpIndFocused = ref(false)     // 行业搜索焦点态
-const vcpConFocused = ref(false)     // 概念搜索焦点态
 const vcpIndustryOptions = ref([])   // 行业枚举
 const vcpConceptOptions = ref([])    // 概念枚举
 const vcpSelIndustries = ref([])     // 已选行业
@@ -1211,8 +1210,19 @@ const goToDetail = (id) => {
    ═══════════════════════════════════════════════════════ */
 
 /* VCP 筛选器 — 胶囊搜索栏风格 */
+.vcp-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: transparent;
+}
 .vcp-filters {
   margin: 8rpx 0 12rpx;
+  position: relative;
+  z-index: 60;
 }
 .vcp-search-section {
   margin-bottom: 12rpx;
