@@ -30,19 +30,26 @@ from app.database import async_session
 logger = logging.getLogger("alphareader.screener.data_loader")
 
 # ── 项目根目录与 EMA 快照路径 ──
-# 向上查找包含 data/ema_snapshots 的目录，兼容本地和 Docker 两种路径结构
-def _find_project_root() -> Path:
-    """从当前文件向上查找包含 data/ 目录的项目根。"""
+# 兼容 Docker（/data/ema_snapshots 挂载）和本地（项目根/data/ema_snapshots）
+def _find_ema_dir() -> Path:
+    """查找 EMA 快照目录，优先使用 Docker 挂载路径。"""
+    # Docker 容器内：./data 挂载到 /data
+    docker_path = Path("/data/ema_snapshots")
+    if docker_path.exists():
+        return docker_path
+
+    # 本地开发：从源文件向上查找
     cur = Path(__file__).resolve().parent
     for _ in range(6):
-        if (cur / "data" / "ema_snapshots").exists():
-            return cur
+        candidate = cur / "data" / "ema_snapshots"
+        if candidate.exists():
+            return candidate
         cur = cur.parent
-    # fallback: 按本地结构 parents[4]
-    return Path(__file__).resolve().parents[4]
 
-PROJECT_ROOT = _find_project_root()
-EMA_SNAPSHOT_DIR = PROJECT_ROOT / "data" / "ema_snapshots"
+    # fallback: 按本地结构 parents[4]
+    return Path(__file__).resolve().parents[4] / "data" / "ema_snapshots"
+
+EMA_SNAPSHOT_DIR = _find_ema_dir()
 
 # ── EMA 周期与乘数 ──
 EMA_PERIODS = {

@@ -38,9 +38,10 @@ from .filters import (
 
 logger = logging.getLogger("alphareader.screener.pipeline")
 
-# 输出目录
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-OUTPUT_DIR = PROJECT_ROOT / "data" / "watchlists"
+# 输出目录 — 兼容 Docker 挂载路径和本地开发
+_docker_watchlist_dir = Path("/data/watchlists")
+_local_watchlist_dir = Path(__file__).resolve().parents[4] / "data" / "watchlists"
+OUTPUT_DIR = _docker_watchlist_dir if _docker_watchlist_dir.exists() else _local_watchlist_dir
 
 
 class ScreenerPipeline:
