@@ -144,6 +144,13 @@ export function fetchVCPWatchlist(params = {}) {
   return request(`/api/v1/stocks/vcp_watchlist${query ? '?' + query : ''}`)
 }
 
+/**
+ * 获取 VCP 白名单可用的行业和概念板块枚举值（用于筛选器）
+ */
+export function fetchVCPFilters() {
+  return request('/api/v1/stocks/vcp_watchlist/filters')
+}
+
 // ── Sandbox API（模拟仓）──
 
 /**

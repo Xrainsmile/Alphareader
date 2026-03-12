@@ -423,16 +423,76 @@ def _generate_futu_url(ts_code: str) -> str:
     return f"https://www.futunn.com/stock/{code}-{market}"
 
 
+class VCPFilterOptions(BaseModel):
+    """VCP 白名单可用的行业和概念枚举值。"""
+    industries: list[str]
+    concepts: list[str]
+
+
+@router.get("/vcp_watchlist/filters", response_model=VCPFilterOptions)
+async def get_vcp_filter_options(
+    target_date: date | None = Query(None, description="查询日期，默认最新"),
+):
+    """获取 VCP 白名单中可用的行业和概念板块枚举值（用于前端筛选器）。"""
+    from sqlalchemy import select, func as sa_func
+
+    from app.database import async_session
+    from app.models.screener import WatchlistDaily
+
+    async with async_session() as session:
+        if target_date:
+            query_date = target_date
+        else:
+            max_date_q = await session.execute(
+                select(sa_func.max(WatchlistDaily.run_date))
+            )
+            query_date = max_date_q.scalar()
+            if not query_date:
+                return VCPFilterOptions(industries=[], concepts=[])
+
+        # 查询所有行业（去重去空排序）
+        ind_stmt = (
+            select(sa_func.distinct(WatchlistDaily.industry))
+            .where(WatchlistDaily.run_date == query_date)
+            .where(WatchlistDaily.industry.isnot(None))
+            .where(WatchlistDaily.industry != "")
+            .order_by(WatchlistDaily.industry)
+        )
+        ind_result = await session.execute(ind_stmt)
+        industries = [r[0] for r in ind_result.all()]
+
+        # 查询所有概念（拆分逗号分隔值，去重排序）
+        con_stmt = (
+            select(WatchlistDaily.concepts)
+            .where(WatchlistDaily.run_date == query_date)
+            .where(WatchlistDaily.concepts.isnot(None))
+            .where(WatchlistDaily.concepts != "")
+        )
+        con_result = await session.execute(con_stmt)
+        concept_set: set[str] = set()
+        for (raw,) in con_result.all():
+            for c in raw.split(","):
+                c = c.strip()
+                if c:
+                    concept_set.add(c)
+        concepts = sorted(concept_set)
+
+    return VCPFilterOptions(industries=industries, concepts=concepts)
+
+
 @router.get("/vcp_watchlist", response_model=VCPWatchlistResponse)
 async def get_vcp_watchlist(
     target_date: date | None = Query(None, description="查询日期，默认最新"),
+    industry: str | None = Query(None, description="行业筛选，多个用逗号分隔"),
+    concepts: str | None = Query(None, description="概念板块筛选，多个用逗号分隔（包含任一即匹配）"),
 ):
     """查询 VCP 策略白名单。
 
     返回最新一期（或指定日期）的 Screener 白名单，
     含技术面指标、基本面指标、行业题材、资金流向等维度。
+    支持按行业和概念板块筛选。
     """
-    from sqlalchemy import select, func as sa_func
+    from sqlalchemy import select, func as sa_func, or_
 
     from app.database import async_session
     from app.models.screener import WatchlistDaily
@@ -457,8 +517,24 @@ async def get_vcp_watchlist(
                 ~WatchlistDaily.name.like("%ST%")
                 | WatchlistDaily.name.is_(None)
             )
-            .order_by(WatchlistDaily.vcp_score.desc().nulls_last())
         )
+
+        # 行业筛选
+        if industry:
+            ind_list = [i.strip() for i in industry.split(",") if i.strip()]
+            if ind_list:
+                stmt = stmt.where(WatchlistDaily.industry.in_(ind_list))
+
+        # 概念板块筛选（包含任一即匹配）
+        if concepts:
+            con_list = [c.strip() for c in concepts.split(",") if c.strip()]
+            if con_list:
+                concept_conditions = [
+                    WatchlistDaily.concepts.like(f"%{c}%") for c in con_list
+                ]
+                stmt = stmt.where(or_(*concept_conditions))
+
+        stmt = stmt.order_by(WatchlistDaily.vcp_score.desc().nulls_last())
         result = await session.execute(stmt)
         rows = result.scalars().all()
 

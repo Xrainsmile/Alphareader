@@ -75,3 +75,31 @@ cd backend && python3 -m app.services.screener.runner --dry-run
 - 旧的营收驱动和 EPS 加速条件以 `[暂时注释]` 形式保留，后续可快速恢复
 - 商誉防雷阈值 30% 可通过 CLI 参数调整
 - 宽松条件：两个子条件都缺失数据时放行（防御性设计）
+
+---
+
+## 2026-03-12: VCP 显示优化 + 行业/概念板块筛选
+
+### 问题/需求
+1. VCP 分数显示为百分位格式不直观，改为三位小数直接展示原始值
+2. VCP 策略页面缺少行业、概念板块筛选功能，用户无法按行业/概念过滤白名单
+
+### 解决方案
+**3 个文件修改（409 行新增）**：
+
+| 文件 | 改动 |
+|------|------|
+| `frontend/src/pages/stocks/index.vue` | VCP 分数 `formatVcp` 从百分位改为三位小数；`vcpClass` 阈值同步调整；新增行业/概念筛选面板（搜索+多选+标签+展开/收起）；列表从 `vcpList` 改为 `vcpFilteredList`；完整移动端+PC 响应式 CSS |
+| `frontend/src/utils/api.js` | 新增 `fetchVCPFilters()` 请求 `/api/v1/stocks/vcp_watchlist/filters` |
+| `backend/app/api/v1/stocks.py` | 新增 `VCPFilterOptions` 模型；新增 `GET /vcp_watchlist/filters` 端点（返回行业/概念枚举）；`GET /vcp_watchlist` 增加 `industry` + `concepts` 查询参数 |
+
+### 技术要点
+1. **前端筛选**：行业精确匹配 `===`，概念包含匹配 `includes()`，支持多选 AND 逻辑
+2. **后端筛选**：行业用 SQL `IN` 子句，概念用 `LIKE` OR 组合匹配
+3. **响应式**：移动端 rpx 布局 + `@media (min-width: 768px)` PC 适配
+4. **枚举动态获取**：从当日白名单数据中提取去重排序的行业/概念列表
+
+### 防范措施
+- 筛选为前端二次过滤 + 后端查询参数双重支持，不影响原有数据流
+- 概念字段按逗号拆分后去重，兼容多概念逗号分隔格式
+- 空选状态显示全量数据，不会误过滤

@@ -149,7 +149,103 @@
 
       <view class="info-bar">
         <text class="info-date">数据日期: {{ vcpDate || '--' }}</text>
-        <text class="info-date">共 {{ vcpList.length }} 只</text>
+        <text class="info-date">共 {{ vcpFilteredList.length }}/{{ vcpList.length }} 只</text>
+      </view>
+
+      <!-- VCP 筛选器 -->
+      <view class="vcp-filter-bar">
+        <view class="vcp-filter-toggle" @click="vcpFilterExpanded = !vcpFilterExpanded">
+          <text class="vcp-filter-icon">🔍</text>
+          <text class="vcp-filter-label">筛选</text>
+          <text v-if="vcpSelIndustries.length + vcpSelConcepts.length > 0" class="vcp-filter-badge">{{ vcpSelIndustries.length + vcpSelConcepts.length }}</text>
+          <text class="vcp-filter-arrow" :class="{ 'arrow-up': vcpFilterExpanded }">▾</text>
+        </view>
+        <text v-if="vcpSelIndustries.length + vcpSelConcepts.length > 0" class="vcp-filter-clear" @click.stop="clearVcpFilters">清除</text>
+      </view>
+
+      <!-- 筛选器展开区域 -->
+      <view v-if="vcpFilterExpanded" class="vcp-filter-panel">
+        <!-- 行业筛选 -->
+        <view class="vcp-filter-section">
+          <view class="vcp-filter-header" @click="vcpIndDropdown = !vcpIndDropdown">
+            <text class="vcp-filter-title">行业</text>
+            <text v-if="vcpSelIndustries.length > 0" class="vcp-filter-count">已选 {{ vcpSelIndustries.length }}</text>
+            <text class="vcp-filter-arrow" :class="{ 'arrow-up': vcpIndDropdown }">▾</text>
+          </view>
+          <view v-if="vcpIndDropdown" class="vcp-filter-dropdown">
+            <input
+              class="vcp-filter-search"
+              v-model="vcpIndSearch"
+              placeholder="搜索行业..."
+              @click.stop
+            />
+            <scroll-view scroll-y class="vcp-filter-options">
+              <view
+                v-for="ind in filteredIndustries"
+                :key="ind"
+                class="vcp-filter-option"
+                :class="{ 'option-selected': vcpSelIndustries.includes(ind) }"
+                @click.stop="toggleIndustry(ind)"
+              >
+                <text class="option-check">{{ vcpSelIndustries.includes(ind) ? '✓' : '' }}</text>
+                <text class="option-text">{{ ind }}</text>
+              </view>
+              <view v-if="filteredIndustries.length === 0" class="vcp-filter-empty">
+                <text>无匹配行业</text>
+              </view>
+            </scroll-view>
+          </view>
+          <!-- 已选标签 -->
+          <view v-if="vcpSelIndustries.length > 0" class="vcp-selected-tags">
+            <text
+              v-for="ind in vcpSelIndustries"
+              :key="ind"
+              class="vcp-sel-tag"
+              @click.stop="toggleIndustry(ind)"
+            >{{ ind }} ✕</text>
+          </view>
+        </view>
+
+        <!-- 概念板块筛选 -->
+        <view class="vcp-filter-section">
+          <view class="vcp-filter-header" @click="vcpConDropdown = !vcpConDropdown">
+            <text class="vcp-filter-title">概念板块</text>
+            <text v-if="vcpSelConcepts.length > 0" class="vcp-filter-count">已选 {{ vcpSelConcepts.length }}</text>
+            <text class="vcp-filter-arrow" :class="{ 'arrow-up': vcpConDropdown }">▾</text>
+          </view>
+          <view v-if="vcpConDropdown" class="vcp-filter-dropdown">
+            <input
+              class="vcp-filter-search"
+              v-model="vcpConSearch"
+              placeholder="搜索概念板块..."
+              @click.stop
+            />
+            <scroll-view scroll-y class="vcp-filter-options">
+              <view
+                v-for="con in filteredConcepts"
+                :key="con"
+                class="vcp-filter-option"
+                :class="{ 'option-selected': vcpSelConcepts.includes(con) }"
+                @click.stop="toggleConcept(con)"
+              >
+                <text class="option-check">{{ vcpSelConcepts.includes(con) ? '✓' : '' }}</text>
+                <text class="option-text">{{ con }}</text>
+              </view>
+              <view v-if="filteredConcepts.length === 0" class="vcp-filter-empty">
+                <text>无匹配概念</text>
+              </view>
+            </scroll-view>
+          </view>
+          <!-- 已选标签 -->
+          <view v-if="vcpSelConcepts.length > 0" class="vcp-selected-tags">
+            <text
+              v-for="con in vcpSelConcepts"
+              :key="con"
+              class="vcp-sel-tag"
+              @click.stop="toggleConcept(con)"
+            >{{ con }} ✕</text>
+          </view>
+        </view>
       </view>
 
       <!-- VCP 表格头 -->
@@ -163,10 +259,10 @@
       </view>
 
       <EmptyState v-if="vcpLoading" text="加载中..." bg="#ffffff" radius="0 0 16rpx 16rpx" />
-      <EmptyState v-else-if="vcpList.length === 0" text="暂无白名单数据" bg="#ffffff" radius="0 0 16rpx 16rpx" />
+      <EmptyState v-else-if="vcpFilteredList.length === 0" :text="vcpList.length === 0 ? '暂无白名单数据' : '无匹配结果，请调整筛选条件'" bg="#ffffff" radius="0 0 16rpx 16rpx" />
       <view v-else class="stock-list">
         <view
-          v-for="(item, idx) in vcpList"
+          v-for="(item, idx) in vcpFilteredList"
           :key="item.ts_code"
           class="vcp-row"
           :class="{ 'stock-row-alt': idx % 2 === 1 }"
@@ -489,11 +585,11 @@ import StocksTabBar from '@/components/stocks/StocksTabBar.vue'
 import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { fetchRSRating, searchStocks, fetchVCPWatchlist, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
+import { fetchRSRating, searchStocks, fetchVCPWatchlist, fetchVCPFilters, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
 
 const activeTab = ref('rs')
 const onSelectRs = () => { activeTab.value = 'rs' }
-const onSelectVcp = () => { activeTab.value = 'vcp'; if (!vcpLoaded) { vcpLoaded = true; loadVCPData() } }
+const onSelectVcp = () => { activeTab.value = 'vcp'; if (!vcpLoaded) { vcpLoaded = true; loadVCPData(); loadVCPFilters() } }
 
 // ═══════════════════════════════════════════════════════
 // RS Rating
@@ -586,6 +682,75 @@ const vcpDescExpanded = ref(false)
 const vcpExpandedIdx = ref(-1)
 let vcpLoaded = false
 
+// ── VCP 筛选器 ──
+const vcpFilterExpanded = ref(false)
+const vcpIndustryOptions = ref([])   // 行业枚举
+const vcpConceptOptions = ref([])    // 概念枚举
+const vcpSelIndustries = ref([])     // 已选行业
+const vcpSelConcepts = ref([])       // 已选概念
+const vcpIndSearch = ref('')         // 行业搜索关键字
+const vcpConSearch = ref('')         // 概念搜索关键字
+const vcpIndDropdown = ref(false)    // 行业下拉展开
+const vcpConDropdown = ref(false)    // 概念下拉展开
+
+// 筛选后的行业选项（搜索过滤）
+const filteredIndustries = computed(() => {
+  const kw = vcpIndSearch.value.trim().toLowerCase()
+  if (!kw) return vcpIndustryOptions.value
+  return vcpIndustryOptions.value.filter(i => i.toLowerCase().includes(kw))
+})
+
+// 筛选后的概念选项（搜索过滤）
+const filteredConcepts = computed(() => {
+  const kw = vcpConSearch.value.trim().toLowerCase()
+  if (!kw) return vcpConceptOptions.value
+  return vcpConceptOptions.value.filter(c => c.toLowerCase().includes(kw))
+})
+
+// 筛选后的 VCP 列表
+const vcpFilteredList = computed(() => {
+  let list = vcpList.value
+  if (vcpSelIndustries.value.length > 0) {
+    list = list.filter(item => item.industry && vcpSelIndustries.value.includes(item.industry))
+  }
+  if (vcpSelConcepts.value.length > 0) {
+    list = list.filter(item => {
+      if (!item.concepts) return false
+      return vcpSelConcepts.value.some(c => item.concepts.includes(c))
+    })
+  }
+  return list
+})
+
+const toggleIndustry = (ind) => {
+  const idx = vcpSelIndustries.value.indexOf(ind)
+  if (idx >= 0) vcpSelIndustries.value.splice(idx, 1)
+  else vcpSelIndustries.value.push(ind)
+}
+
+const toggleConcept = (con) => {
+  const idx = vcpSelConcepts.value.indexOf(con)
+  if (idx >= 0) vcpSelConcepts.value.splice(idx, 1)
+  else vcpSelConcepts.value.push(con)
+}
+
+const clearVcpFilters = () => {
+  vcpSelIndustries.value = []
+  vcpSelConcepts.value = []
+  vcpIndSearch.value = ''
+  vcpConSearch.value = ''
+}
+
+const loadVCPFilters = async () => {
+  try {
+    const data = await fetchVCPFilters()
+    vcpIndustryOptions.value = data.industries || []
+    vcpConceptOptions.value = data.concepts || []
+  } catch (e) {
+    console.error('加载 VCP 筛选项失败:', e)
+  }
+}
+
 const loadVCPData = async () => {
   vcpLoading.value = true
   try {
@@ -600,11 +765,10 @@ const loadVCPData = async () => {
   }
 }
 
-const formatVcp = (v) => v == null ? '--' : (v * 100).toFixed(1) + '%'
+const formatVcp = (v) => v == null ? '--' : Number(v).toFixed(3)
 const vcpClass = (v) => {
   if (v == null) return 'vcp-level-none'
-  const pct = v * 100
-  return pct >= 50 ? 'vcp-level-hot' : pct >= 30 ? 'vcp-level-warm' : pct >= 10 ? 'vcp-level-normal' : 'vcp-level-cool'
+  return v >= 0.50 ? 'vcp-level-hot' : v >= 0.30 ? 'vcp-level-warm' : v >= 0.10 ? 'vcp-level-normal' : 'vcp-level-cool'
 }
 const formatPctVal = (v) => {
   if (v == null) return '--'
@@ -1034,6 +1198,138 @@ const goToDetail = (id) => {
 /* ═══════════════════════════════════════════════════════
    VCP 策略样式
    ═══════════════════════════════════════════════════════ */
+
+/* VCP 筛选器 */
+.vcp-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 20rpx;
+  background: #ffffff;
+  border-bottom: 1rpx solid #f0f0f5;
+}
+.vcp-filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 20rpx;
+  background: #f5f5fa;
+  cursor: pointer;
+}
+.vcp-filter-icon { font-size: 24rpx; }
+.vcp-filter-label { font-size: 24rpx; color: #3c3c43; font-weight: 500; }
+.vcp-filter-badge {
+  background: #007aff;
+  color: #fff;
+  font-size: 20rpx;
+  min-width: 32rpx;
+  height: 32rpx;
+  line-height: 32rpx;
+  text-align: center;
+  border-radius: 16rpx;
+  padding: 0 8rpx;
+  font-weight: 600;
+}
+.vcp-filter-arrow { font-size: 20rpx; color: #8e8e93; transition: transform 0.2s; }
+.vcp-filter-arrow.arrow-up { transform: rotate(180deg); }
+.vcp-filter-clear {
+  font-size: 24rpx;
+  color: #007aff;
+  cursor: pointer;
+  padding: 8rpx 16rpx;
+}
+
+.vcp-filter-panel {
+  background: #ffffff;
+  padding: 12rpx 20rpx 20rpx;
+  border-bottom: 1rpx solid #e8e8ed;
+}
+.vcp-filter-section {
+  margin-bottom: 16rpx;
+}
+.vcp-filter-section:last-child { margin-bottom: 0; }
+.vcp-filter-header {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 0;
+  cursor: pointer;
+}
+.vcp-filter-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #1c1c1e;
+}
+.vcp-filter-count {
+  font-size: 22rpx;
+  color: #007aff;
+  font-weight: 500;
+}
+.vcp-filter-dropdown {
+  margin-top: 8rpx;
+  border: 1rpx solid #e8e8ed;
+  border-radius: 12rpx;
+  overflow: hidden;
+  background: #fafafa;
+}
+.vcp-filter-search {
+  width: 100%;
+  padding: 14rpx 16rpx;
+  font-size: 24rpx;
+  border: none;
+  border-bottom: 1rpx solid #e8e8ed;
+  background: #ffffff;
+  outline: none;
+  box-sizing: border-box;
+}
+.vcp-filter-options {
+  max-height: 360rpx;
+}
+.vcp-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 14rpx 16rpx;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.vcp-filter-option:active { background: #e8e8ed; }
+.option-selected { background: #f0f5ff; }
+.option-selected .option-text { color: #007aff; font-weight: 500; }
+.option-check {
+  width: 32rpx;
+  font-size: 24rpx;
+  color: #007aff;
+  font-weight: 700;
+  text-align: center;
+}
+.option-text { font-size: 24rpx; color: #3c3c43; }
+.vcp-filter-empty {
+  padding: 20rpx 16rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #8e8e93;
+}
+
+.vcp-selected-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 10rpx;
+}
+.vcp-sel-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 16rpx;
+  background: #e8f0fe;
+  color: #007aff;
+  font-size: 22rpx;
+  border-radius: 16rpx;
+  cursor: pointer;
+  font-weight: 500;
+}
+.vcp-sel-tag:active { background: #d0e0f8; }
 
 /* VCP 表头 */
 .vcp-table-header {
@@ -1594,6 +1890,26 @@ const goToDetail = (id) => {
   .arrow-icon { font-size: 22px; }
 
   /* VCP 策略 PC 适配 */
+  .vcp-filter-bar { padding: 8px 16px; }
+  .vcp-filter-toggle { padding: 6px 14px; gap: 6px; border-radius: 16px; }
+  .vcp-filter-icon { font-size: 14px; }
+  .vcp-filter-label { font-size: 13px; }
+  .vcp-filter-badge { font-size: 11px; min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px; }
+  .vcp-filter-clear { font-size: 13px; }
+  .vcp-filter-panel { padding: 8px 16px 14px; }
+  .vcp-filter-title { font-size: 14px; }
+  .vcp-filter-count { font-size: 12px; }
+  .vcp-filter-search { padding: 8px 12px; font-size: 13px; }
+  .vcp-filter-options { max-height: 200px; }
+  .vcp-filter-option { padding: 8px 12px; gap: 6px; }
+  .vcp-filter-option:hover { background: #f0f0f5; }
+  .option-check { width: 18px; font-size: 13px; }
+  .option-text { font-size: 13px; }
+  .vcp-filter-empty { font-size: 13px; }
+  .vcp-selected-tags { gap: 6px; margin-top: 6px; }
+  .vcp-sel-tag { padding: 3px 10px; font-size: 12px; border-radius: 10px; }
+  .vcp-sel-tag:hover { background: #d0e0f8; }
+
   .vcp-table-header { padding: 12px 12px; border-radius: 12px 12px 0 0; border-bottom-width: 1px; }
   .vth { font-size: 12px; }
   .vth-rank { width: 32px; }
