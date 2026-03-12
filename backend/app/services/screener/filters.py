@@ -409,7 +409,7 @@ class MinerviniScreener:
         mask_c2 = merged["has_big_yang"] == True  # noqa: E712
         merged = merged[mask_c2 | merged["has_big_yang"].isna()]
         self._stats["C2_big_yang"] = len(merged)
-        logger.info("C2 大阳线活跃 (20日内≥7%%): %d 通过", len(merged))
+        logger.info("C2 大阳线活跃 (%d日内≥%.0f%%): %d 通过", cfg.big_yang_window, cfg.big_yang_threshold, len(merged))
 
         self._stats["stage2_final"] = len(merged)
         logger.info("━━━ Stage2 最终通过: %d 只 ━━━", len(merged))
