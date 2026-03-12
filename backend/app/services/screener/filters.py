@@ -256,7 +256,7 @@ class Stage2FilterConfig:
     # 条件 C: 标准化区间振幅收敛 (NRC) + 资金活跃度
     vcp_contraction_ratio: float = 0.6      # 深度收敛：Range_10d% ≤ Range_40d% × ratio
     max_tightness_threshold: float = 0.15   # 微观紧凑极限：Range_10d% ≤ 15%
-    big_yang_threshold: float = 7.0         # 大阳线涨幅阈值（%）
+    big_yang_threshold: float = 5.0         # 大阳线涨幅阈值（%）
     big_yang_window: int = 20               # 大阳线检测窗口
 
 

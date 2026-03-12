@@ -84,8 +84,8 @@ def parse_args() -> argparse.Namespace:
                         help="脱离底部倍数（默认 1.30 = 30%%反弹）")
     stage2.add_argument("--near-high", type=float, default=0.85,
                         help="逼近前高比例（默认 0.85 = 15%%内）")
-    stage2.add_argument("--yang-threshold", type=float, default=7.0,
-                        help="大阳线涨幅阈值%%（默认 7.0）")
+    stage2.add_argument("--yang-threshold", type=float, default=5.0,
+                        help="大阳线涨幅阈值%%（默认 5.0）")
 
     # 基本面过滤器参数
     fund = parser.add_argument_group("基本面过滤器参数")
