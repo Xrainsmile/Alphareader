@@ -8,6 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy import and_, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_api_key
 from app.database import get_db
 from app.models.news import News
 from app.redis import get_redis
@@ -46,7 +47,7 @@ async def _run_pipeline_bg():
 
 
 @router.post("/pipeline/run")
-async def trigger_pipeline(background_tasks: BackgroundTasks):
+async def trigger_pipeline(background_tasks: BackgroundTasks, _: str | None = Depends(require_api_key)):
     """Manually trigger the news pipeline (runs in background to avoid timeout)."""
     if _pipeline_status["running"]:
         return {"message": "Pipeline already running, please wait"}
@@ -56,7 +57,7 @@ async def trigger_pipeline(background_tasks: BackgroundTasks):
 
 
 @router.get("/pipeline/status")
-async def pipeline_status():
+async def pipeline_status(_: str | None = Depends(require_api_key)):
     """Check the status of the last pipeline run."""
     return {
         "running": _pipeline_status["running"],
@@ -65,7 +66,7 @@ async def pipeline_status():
 
 
 @router.delete("/pipeline/cache")
-async def clear_dedup_cache():
+async def clear_dedup_cache(_: str | None = Depends(require_api_key)):
     """Clear the Redis dedup cache so next run re-fetches all news."""
     r = get_redis()
     deleted = await r.delete("alphareader:seen_urls")
@@ -83,6 +84,7 @@ async def list_news(
     gravity: float = Query(1.8, ge=0.5, le=5.0, description="Gravity factor for hot sort"),
     max_age_hours: int | None = Query(72, ge=1, le=720, description="Max news age in hours; omit for unlimited"),
     db: AsyncSession = Depends(get_db),
+    _: str | None = Depends(require_api_key),
 ):
     """获取评分新闻列表（分页）。
 
@@ -207,6 +209,7 @@ async def search(
     offset: int = Query(0, ge=0),
     min_score: int = Query(5, ge=0, le=10),
     db: AsyncSession = Depends(get_db),
+    _: str | None = Depends(require_api_key),
 ):
     """搜索新闻。
 
@@ -221,6 +224,7 @@ async def search(
 async def search_suggest(
     q: str = Query(..., min_length=1, max_length=100, description="搜索前缀"),
     db: AsyncSession = Depends(get_db),
+    _: str | None = Depends(require_api_key),
 ):
     """搜索建议 — 根据输入前缀返回自动补全建议。"""
     suggestions = await get_search_suggestions(db, q)
@@ -230,6 +234,7 @@ async def search_suggest(
 @router.get("/search/hot")
 async def search_hot(
     db: AsyncSession = Depends(get_db),
+    _: str | None = Depends(require_api_key),
 ):
     """热门话题 — 过去 24 小时高分新闻的高频标签，用于搜索推荐。"""
     topics = await get_hot_topics(db)

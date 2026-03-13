@@ -1,6 +1,37 @@
 # AlphaReader 开发进度记录
 
-## 2026-03-09: Daily Screener — Minervini Stage2 白名单筛选模块
+## 2026-03-13: News API — 全端点 API Token 鉴权
+
+### 问题/需求
+News API 所有端点（公开 GET + Pipeline 管理）均无鉴权保护，任何人可随意调用。
+
+### 解决方案
+**1 个文件修改**（`backend/app/api/v1/news.py`）：
+
+| 端点 | 方法 | 改动 |
+|------|------|------|
+| `GET /news/` | list_news | 新增 `_: str \| None = Depends(require_api_key)` |
+| `GET /news/search` | search | 新增 `require_api_key` |
+| `GET /news/search/suggest` | search_suggest | 新增 `require_api_key` |
+| `GET /news/search/hot` | search_hot | 新增 `require_api_key` |
+| `POST /news/pipeline/run` | trigger_pipeline | 新增 `require_api_key` |
+| `GET /news/pipeline/status` | pipeline_status | 新增 `require_api_key` |
+| `DELETE /news/pipeline/cache` | clear_dedup_cache | 新增 `require_api_key` |
+
+新增导入：`from app.auth import require_api_key`
+
+### 技术要点
+- `require_api_key` 来自 `app/auth.py`，已有实现，支持 `X-API-Key` Header 和 `?api_key=` Query 两种方式
+- `settings.API_KEY` 为空时自动跳过鉴权（开发环境不受影响）
+- 未修改 `auth.py` 和 `config.py`
+
+### 防范措施
+- 开发环境不配置 `API_KEY` 时行为不变，零侵入
+- 生产环境配置 `API_KEY` 后所有 7 个端点均强制鉴权
+
+---
+
+
 
 ### 问题/需求
 需要一个每日收盘后自动运行的量化筛选脚本，基于 Mark Minervini 趋势交易体系（Stage 2 & VCP），
