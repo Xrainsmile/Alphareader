@@ -430,5 +430,5 @@ document.addEventListener('keydown', e => {
 async def debug_panel():
     """Serve the API debug panel (only available when DEBUG=true)."""
     from app.config import settings
-    html = _DEBUG_HTML.replace("{{ api_key }}", settings.API_KEY or "")
+    html = _DEBUG_HTML.replace("{{ api_key }}", settings.NEWS_API_KEY or "")
     return HTMLResponse(content=html)

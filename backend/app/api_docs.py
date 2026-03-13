@@ -501,5 +501,5 @@ window.addEventListener('DOMContentLoaded', () => {
 @router.get("/api-docs", response_class=HTMLResponse, include_in_schema=False)
 async def api_docs_page():
     """RS Rating API 文档页面。"""
-    html = _API_DOCS_HTML.replace("{{ api_key }}", settings.API_KEY or "")
+    html = _API_DOCS_HTML.replace("{{ api_key }}", settings.NEWS_API_KEY or "")
     return HTMLResponse(html)

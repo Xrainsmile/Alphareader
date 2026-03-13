@@ -358,5 +358,5 @@ async def dashboard_page(dash_token: str = Cookie(None)):
     # 如果设置了密码且 token 验证失败，跳转登录
     if settings.DASHBOARD_PASSWORD and not _verify_token(dash_token or ""):
         return RedirectResponse("/dashboard/login", status_code=303)
-    html = DASHBOARD_HTML.replace("{{ api_key }}", settings.API_KEY or "")
+    html = DASHBOARD_HTML.replace("{{ api_key }}", settings.NEWS_API_KEY or "")
     return HTMLResponse(html)

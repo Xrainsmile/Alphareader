@@ -766,5 +766,5 @@ async def sandbox_admin_page(dash_token: str = Cookie(None)):
     """模拟仓管理页面 — 复用 Dashboard cookie 认证。"""
     if settings.DASHBOARD_PASSWORD and not _verify_token(dash_token or ""):
         return RedirectResponse("/dashboard/login", status_code=303)
-    html = SANDBOX_ADMIN_HTML.replace("{{ api_key }}", settings.API_KEY or "")
+    html = SANDBOX_ADMIN_HTML.replace("{{ api_key }}", settings.NEWS_API_KEY or "")
     return HTMLResponse(html)
