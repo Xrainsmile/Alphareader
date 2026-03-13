@@ -4,7 +4,7 @@
   1. Header: X-API-Key: <key>
   2. Query:  ?api_key=<key>
 
-配置项 API_KEY 为空时不启用鉴权（仅限开发环境）。
+配置项 NEWS_API_KEY 为空时不启用鉴权（仅限开发环境）。
 """
 
 import logging
@@ -24,8 +24,8 @@ async def require_api_key(
     query_key: str | None = Query(None, alias="api_key", include_in_schema=False),
 ) -> str | None:
     """验证 API Key，返回有效的 key 或在未配置时跳过。"""
-    # 未配置 API_KEY 则跳过鉴权（开发环境）
-    if not settings.API_KEY:
+    # 未配置 NEWS_API_KEY 则跳过鉴权（开发环境）
+    if not settings.NEWS_API_KEY:
         return None
 
     api_key = header_key or query_key
@@ -37,7 +37,7 @@ async def require_api_key(
             detail={"error": "unauthorized", "message": "缺少 API Key，请在 Header 中传递 X-API-Key 或 Query 中传递 api_key"},
         )
 
-    if api_key != settings.API_KEY:
+    if api_key != settings.NEWS_API_KEY:
         logger.warning("无效的 API Key: %s %s", request.method, request.url.path)
         raise HTTPException(
             status_code=403,
