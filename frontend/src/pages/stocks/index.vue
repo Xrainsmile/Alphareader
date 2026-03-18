@@ -415,7 +415,7 @@
       </view>
 
       <EmptyState v-if="trendLoading" text="加载中..." bg="#ffffff" radius="0 0 16rpx 16rpx" />
-      <EmptyState v-else-if="trendFilteredList.length === 0" :text="trendList.length === 0 ? '暂无趋势白名单数据' : '无匹配结果，请调整筛选条件'" bg="#ffffff" radius="0 0 16rpx 16rpx" />
+      <EmptyState v-else-if="trendFilteredList.length === 0" :text="trendList.length === 0 ? '今天没有符合策略的标的' : '无匹配结果，请调整筛选条件'" bg="#ffffff" radius="0 0 16rpx 16rpx" />
       <view v-else class="stock-list">
         <view
           v-for="(item, idx) in trendFilteredList"
