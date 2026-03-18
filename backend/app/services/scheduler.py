@@ -35,6 +35,7 @@ from app.services.indicators import compute_and_save_rs_rating
 from app.services.data_fetcher import incremental_update_quotes
 from app.services.sandbox_nav import compute_nav_core
 from app.services.screener.pipeline import ScreenerPipeline
+from app.services.screener.trend_pipeline import TrendPipeline
 
 logger = logging.getLogger("alphareader.scheduler")
 
@@ -218,6 +219,30 @@ async def _screener_job():
         raise
 
 
+async def _trend_screener_job():
+    """右侧趋势 Screener 每日选股 — 每个交易日 15:45 触发。
+
+    比 VCP Screener (15:40) 延后 5 分钟，避免同时占用资源。
+    结果自动写入数据库（TrendScreenerRun + TrendWatchlistDaily）。
+    """
+    try:
+        logger.info("Trend Screener job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        pipeline = TrendPipeline()
+        result = await pipeline.run()
+
+        final_count = len(result.get("watchlist", []))
+        logger.info("Trend Screener job completed: %d stocks in watchlist", final_count)
+        return {"status": "ok", "count": final_count}
+    except Exception as e:
+        logger.exception("Trend Screener job failed: %s", e)
+        await send_alert(
+            "🔴 Trend Screener Job Failed",
+            f"{type(e).__name__}: {e}",
+        )
+        raise
+
+
 def start_scheduler():
     """注册 Cron 定时任务并启动调度器。
 
@@ -331,6 +356,22 @@ def start_scheduler():
         ),
         id="screener_daily",
         name=f"Daily Screener (Mon-Fri 15:40 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # ── 右侧趋势 Screener（交易日 15:45，比 VCP Screener 晚 5 分钟）──
+    scheduler.add_job(
+        _trend_screener_job,
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="15",
+            minute="45",
+            timezone=settings.TIMEZONE,
+        ),
+        id="trend_screener_daily",
+        name=f"Trend Screener (Mon-Fri 15:45 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,

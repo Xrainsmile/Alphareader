@@ -96,3 +96,72 @@ class WatchlistDaily(Base):
     __table_args__ = (
         UniqueConstraint("run_date", "ts_code", name="uq_watchlist_daily"),
     )
+
+
+class TrendScreenerRun(Base):
+    """右侧趋势 Screener 运行记录 — 每次 pipeline 执行后写入一条。
+
+    记录运行耗时、各步骤通过数量（漏斗）、错误信息。
+    """
+
+    __tablename__ = "trend_screener_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    duration_sec: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+
+    # 漏斗统计
+    total_input: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    trend_passed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    final_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # 详细统计 JSON（完整的 stats dict，含各子步骤数量）
+    stats: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+
+    # 错误信息
+    errors: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+
+    # 状态：success / partial / failed
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="success")
+
+
+class TrendWatchlistDaily(Base):
+    """右侧趋势每日白名单 — 每个交易日趋势策略筛选出的股票列表。
+
+    每只股票一行，独立于 VCP 的 watchlist_daily 表。
+    """
+
+    __tablename__ = "trend_watchlist_daily"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    ts_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+
+    # 股票名称
+    name: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    # 技术面指标
+    current_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ma20: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ma50: Mapped[float | None] = mapped_column(Float, nullable=True)
+    adx: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rsi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trend_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # 扩展维度 — 行业/题材/主营/资金流向
+    industry: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    concepts: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    main_business: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fund_flow_net: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # 关联运行记录
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("run_date", "ts_code", name="uq_trend_watchlist_daily"),
+    )

@@ -5,6 +5,7 @@
       :active-tab="activeTab"
       @select-rs="onSelectRs"
       @select-vcp="onSelectVcp"
+      @select-trend="onSelectTrend"
       @select-value="onSelectValue"
       @select-sandbox="switchToSandbox"
     />
@@ -282,6 +283,218 @@
             <view class="vcp-expand-row">
               <text class="vcp-expand-label">EMA</text>
               <text class="vcp-expand-val">20d: {{ formatPrice(item.ema20) }}　50d: {{ formatPrice(item.ema50) }}　120d: {{ formatPrice(item.ema120) }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </template>
+
+    <!-- ═══════════════════════════════════════════════════════
+         右侧趋势策略 Tab
+         ═══════════════════════════════════════════════════════ -->
+    <template v-if="activeTab === 'trend'">
+      <view class="stocks-header">
+        <text class="stocks-title">右侧趋势</text>
+        <text class="stocks-subtitle">双均线趋势突破 · Dual MA Trend Breakout</text>
+      </view>
+
+      <view class="info-bar">
+        <text class="info-date">数据日期: {{ trendDate || '--' }}</text>
+        <text class="info-date">共 {{ trendFilteredList.length }}/{{ trendList.length }} 只</text>
+      </view>
+
+      <!-- 趋势筛选器 -->
+      <view v-if="trendIndDropdown || trendConDropdown" class="vcp-overlay" @click="trendIndDropdown = false; trendConDropdown = false"></view>
+
+      <view class="vcp-filters">
+        <!-- 行业搜索栏 -->
+        <view class="vcp-search-section">
+          <view class="vcp-search-bar" :class="{ 'vcp-search-bar-focus': trendIndDropdown }" @click.stop="trendIndDropdown = !trendIndDropdown; trendConDropdown = false">
+            <view class="vcp-search-input-wrap">
+              <text class="vcp-search-icon">🔍</text>
+              <input
+                class="vcp-search-input"
+                type="text"
+                v-model="trendIndSearch"
+                placeholder="搜索行业..."
+                @focus="trendIndDropdown = true; trendConDropdown = false"
+                @click.stop
+              />
+              <text v-if="trendSelIndustries.length > 0" class="vcp-search-badge">{{ trendSelIndustries.length }}</text>
+              <view v-if="trendIndSearch" class="vcp-search-clear" @click.stop="trendIndSearch = ''">
+                <text class="vcp-search-clear-icon">×</text>
+              </view>
+            </view>
+          </view>
+          <view v-if="trendIndDropdown" class="vcp-dropdown" @click.stop>
+            <scroll-view scroll-y class="vcp-dropdown-scroll">
+              <view
+                v-for="ind in trendFilteredIndustries"
+                :key="ind"
+                class="vcp-dropdown-item"
+                :class="{ 'vcp-dropdown-item-active': trendSelIndustries.includes(ind) }"
+                @click.stop="toggleTrendIndustry(ind)"
+              >
+                <text class="vcp-dropdown-check">{{ trendSelIndustries.includes(ind) ? '✓' : '' }}</text>
+                <text class="vcp-dropdown-text">{{ ind }}</text>
+              </view>
+              <view v-if="trendFilteredIndustries.length === 0" class="vcp-dropdown-empty">
+                <text>无匹配行业</text>
+              </view>
+            </scroll-view>
+          </view>
+          <view v-if="trendSelIndustries.length > 0" class="vcp-tags">
+            <text
+              v-for="ind in trendSelIndustries"
+              :key="ind"
+              class="vcp-tag"
+              @click.stop="toggleTrendIndustry(ind)"
+            >{{ ind }} ✕</text>
+          </view>
+        </view>
+
+        <!-- 概念搜索栏 -->
+        <view class="vcp-search-section">
+          <view class="vcp-search-bar" :class="{ 'vcp-search-bar-focus': trendConDropdown }" @click.stop="trendConDropdown = !trendConDropdown; trendIndDropdown = false">
+            <view class="vcp-search-input-wrap">
+              <text class="vcp-search-icon">🔍</text>
+              <input
+                class="vcp-search-input"
+                type="text"
+                v-model="trendConSearch"
+                placeholder="搜索概念板块..."
+                @focus="trendConDropdown = true; trendIndDropdown = false"
+                @click.stop
+              />
+              <text v-if="trendSelConcepts.length > 0" class="vcp-search-badge">{{ trendSelConcepts.length }}</text>
+              <view v-if="trendConSearch" class="vcp-search-clear" @click.stop="trendConSearch = ''">
+                <text class="vcp-search-clear-icon">×</text>
+              </view>
+            </view>
+          </view>
+          <view v-if="trendConDropdown" class="vcp-dropdown" @click.stop>
+            <scroll-view scroll-y class="vcp-dropdown-scroll">
+              <view
+                v-for="con in trendFilteredConcepts"
+                :key="con"
+                class="vcp-dropdown-item"
+                :class="{ 'vcp-dropdown-item-active': trendSelConcepts.includes(con) }"
+                @click.stop="toggleTrendConcept(con)"
+              >
+                <text class="vcp-dropdown-check">{{ trendSelConcepts.includes(con) ? '✓' : '' }}</text>
+                <text class="vcp-dropdown-text">{{ con }}</text>
+              </view>
+              <view v-if="trendFilteredConcepts.length === 0" class="vcp-dropdown-empty">
+                <text>无匹配概念</text>
+              </view>
+            </scroll-view>
+          </view>
+          <view v-if="trendSelConcepts.length > 0" class="vcp-tags">
+            <text
+              v-for="con in trendSelConcepts"
+              :key="con"
+              class="vcp-tag"
+              @click.stop="toggleTrendConcept(con)"
+            >{{ con }} ✕</text>
+          </view>
+        </view>
+
+        <view v-if="trendSelIndustries.length + trendSelConcepts.length > 0" class="vcp-clear-all" @click="clearTrendFilters">
+          <text class="vcp-clear-all-text">清除全部筛选 ({{ trendSelIndustries.length + trendSelConcepts.length }})</text>
+        </view>
+      </view>
+
+      <!-- 趋势表格头 -->
+      <view class="vcp-table-header">
+        <text class="vth vth-rank">#</text>
+        <text class="vth vth-name">名称/代码</text>
+        <text class="vth vth-price">收盘价</text>
+        <text class="vth vth-vcp">趋势分</text>
+        <text class="vth vth-flow">资金流入</text>
+        <text class="vth vth-action">交易</text>
+      </view>
+
+      <EmptyState v-if="trendLoading" text="加载中..." bg="#ffffff" radius="0 0 16rpx 16rpx" />
+      <EmptyState v-else-if="trendFilteredList.length === 0" :text="trendList.length === 0 ? '暂无趋势白名单数据' : '无匹配结果，请调整筛选条件'" bg="#ffffff" radius="0 0 16rpx 16rpx" />
+      <view v-else class="stock-list">
+        <view
+          v-for="(item, idx) in trendFilteredList"
+          :key="item.ts_code"
+          class="vcp-row"
+          :class="{ 'stock-row-alt': idx % 2 === 1 }"
+          @click="trendExpandedIdx = trendExpandedIdx === idx ? -1 : idx"
+        >
+          <!-- 主行：核心指标 -->
+          <view class="vcp-row-main">
+            <view class="col vcp-col-rank"><text class="rank-num" :class="rankClass(idx)">{{ idx + 1 }}</text></view>
+            <view class="col vcp-col-name">
+              <text class="stock-name">{{ item.name || item.ts_code }}</text>
+              <text class="stock-code">{{ item.ts_code }}{{ item.industry ? ' · ' + item.industry : '' }}</text>
+            </view>
+            <view class="col vcp-col-price"><text class="close-price">{{ formatPrice(item.current_price) }}</text></view>
+            <view class="col vcp-col-vcp">
+              <view class="vcp-badge" :class="trendScoreClass(item.trend_score)">
+                <text class="vcp-val">{{ formatTrendScore(item.trend_score) }}</text>
+              </view>
+            </view>
+            <view class="col vcp-col-flow">
+              <text class="flow-val" :class="pctValClass(item.fund_flow_net)">
+                {{ item.fund_flow_net != null ? (item.fund_flow_net >= 0 ? '+' : '') + item.fund_flow_net.toFixed(0) + '万' : '--' }}
+              </text>
+            </view>
+            <view class="col vcp-col-action">
+              <!-- #ifdef H5 -->
+              <a :href="item.futu_url" class="futu-link" @click.stop>
+                <text class="futu-icon">📈</text>
+              </a>
+              <!-- #endif -->
+            </view>
+          </view>
+
+          <!-- 题材标签 -->
+          <view v-if="item.concepts" class="vcp-row-concepts">
+            <text
+              v-for="tag in item.concepts.split(', ').slice(0, 4)"
+              :key="tag"
+              class="concept-tag"
+            >{{ tag }}</text>
+          </view>
+
+          <!-- 展开行：完整详情 -->
+          <view v-if="trendExpandedIdx === idx" class="vcp-expand">
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">行业</text>
+              <text class="vcp-expand-val">{{ item.industry || '--' }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">题材</text>
+              <text class="vcp-expand-val vcp-concepts">{{ item.concepts || '--' }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">主力净流入</text>
+              <text class="vcp-expand-val" :class="pctValClass(item.fund_flow_net)">
+                {{ item.fund_flow_net != null ? (item.fund_flow_net >= 0 ? '+' : '') + item.fund_flow_net.toFixed(2) + '万' : '--' }}
+              </text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">ADX(14)</text>
+              <text class="vcp-expand-val">{{ item.adx != null ? item.adx.toFixed(1) : '--' }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">RSI(14)</text>
+              <text class="vcp-expand-val">{{ item.rsi != null ? item.rsi.toFixed(1) : '--' }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">放量倍数</text>
+              <text class="vcp-expand-val">{{ item.volume_ratio != null ? item.volume_ratio.toFixed(1) + 'x' : '--' }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">主营业务</text>
+              <text class="vcp-expand-val vcp-business">{{ item.main_business || '--' }}</text>
+            </view>
+            <view class="vcp-expand-row">
+              <text class="vcp-expand-label">SMA</text>
+              <text class="vcp-expand-val">20d: {{ formatPrice(item.ma20) }}　50d: {{ formatPrice(item.ma50) }}</text>
             </view>
           </view>
         </view>
@@ -642,11 +855,12 @@ import StocksTabBar from '@/components/stocks/StocksTabBar.vue'
 import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { fetchRSRating, searchStocks, fetchVCPWatchlist, fetchVCPFilters, fetchValueWatchlist, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
+import { fetchRSRating, searchStocks, fetchVCPWatchlist, fetchVCPFilters, fetchValueWatchlist, fetchTrendWatchlist, fetchTrendFilters, fetchSandboxOverview, fetchSandboxStocks as apiFetchSandboxStocks, verifySandboxAccess } from '@/utils/api'
 
 const activeTab = ref('vcp')
 const onSelectRs = () => { activeTab.value = 'rs' }
 const onSelectVcp = () => { activeTab.value = 'vcp'; if (!vcpLoaded) { vcpLoaded = true; loadVCPData(); loadVCPFilters() } }
+const onSelectTrend = () => { activeTab.value = 'trend'; if (!trendLoaded) { trendLoaded = true; loadTrendData(); loadTrendFilters() } }
 const onSelectValue = () => { activeTab.value = 'value'; if (!valueLoaded) { valueLoaded = true; loadValueData() } }
 
 // ═══════════════════════════════════════════════════════
@@ -837,6 +1051,101 @@ const formatPctVal = (v) => {
   return (n >= 0 ? '+' : '') + n.toFixed(1) + '%'
 }
 const pctValClass = (v) => v == null ? '' : v > 0 ? 'val-up' : v < 0 ? 'val-down' : ''
+
+// ═══════════════════════════════════════════════════════
+// 右侧趋势策略
+// ═══════════════════════════════════════════════════════
+
+const trendList = ref([])
+const trendDate = ref('')
+const trendLoading = ref(false)
+const trendExpandedIdx = ref(-1)
+let trendLoaded = false
+
+// ── 趋势筛选器 ──
+const trendIndustryOptions = ref([])
+const trendConceptOptions = ref([])
+const trendSelIndustries = ref([])
+const trendSelConcepts = ref([])
+const trendIndSearch = ref('')
+const trendConSearch = ref('')
+const trendIndDropdown = ref(false)
+const trendConDropdown = ref(false)
+
+const trendFilteredIndustries = computed(() => {
+  const kw = trendIndSearch.value.trim().toLowerCase()
+  if (!kw) return trendIndustryOptions.value
+  return trendIndustryOptions.value.filter(i => i.toLowerCase().includes(kw))
+})
+
+const trendFilteredConcepts = computed(() => {
+  const kw = trendConSearch.value.trim().toLowerCase()
+  if (!kw) return trendConceptOptions.value
+  return trendConceptOptions.value.filter(c => c.toLowerCase().includes(kw))
+})
+
+const trendFilteredList = computed(() => {
+  let list = trendList.value
+  if (trendSelIndustries.value.length > 0) {
+    list = list.filter(item => item.industry && trendSelIndustries.value.includes(item.industry))
+  }
+  if (trendSelConcepts.value.length > 0) {
+    list = list.filter(item => {
+      if (!item.concepts) return false
+      return trendSelConcepts.value.some(c => item.concepts.includes(c))
+    })
+  }
+  return list
+})
+
+const toggleTrendIndustry = (ind) => {
+  const idx = trendSelIndustries.value.indexOf(ind)
+  if (idx >= 0) trendSelIndustries.value.splice(idx, 1)
+  else trendSelIndustries.value.push(ind)
+}
+
+const toggleTrendConcept = (con) => {
+  const idx = trendSelConcepts.value.indexOf(con)
+  if (idx >= 0) trendSelConcepts.value.splice(idx, 1)
+  else trendSelConcepts.value.push(con)
+}
+
+const clearTrendFilters = () => {
+  trendSelIndustries.value = []
+  trendSelConcepts.value = []
+  trendIndSearch.value = ''
+  trendConSearch.value = ''
+}
+
+const loadTrendFilters = async () => {
+  try {
+    const data = await fetchTrendFilters()
+    trendIndustryOptions.value = data.industries || []
+    trendConceptOptions.value = data.concepts || []
+  } catch (e) {
+    console.error('加载趋势筛选项失败:', e)
+  }
+}
+
+const loadTrendData = async () => {
+  trendLoading.value = true
+  try {
+    const data = await fetchTrendWatchlist({})
+    trendList.value = data.items || []
+    trendDate.value = data.date || ''
+  } catch (e) {
+    console.error('加载趋势白名单失败:', e)
+    uni.showToast({ title: '加载失败', icon: 'none' })
+  } finally {
+    trendLoading.value = false
+  }
+}
+
+const formatTrendScore = (v) => v == null ? '--' : Number(v).toFixed(3)
+const trendScoreClass = (v) => {
+  if (v == null) return 'vcp-level-none'
+  return v >= 0.70 ? 'vcp-level-hot' : v >= 0.50 ? 'vcp-level-warm' : v >= 0.30 ? 'vcp-level-normal' : 'vcp-level-cool'
+}
 
 // ═══════════════════════════════════════════════════════
 // 价投策略

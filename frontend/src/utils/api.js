@@ -158,6 +158,24 @@ export function fetchValueWatchlist() {
   return request('/api/v1/stocks/value_watchlist')
 }
 
+/**
+ * 获取右侧趋势策略白名单
+ */
+export function fetchTrendWatchlist(params = {}) {
+  const query = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return request(`/api/v1/stocks/trend_watchlist${query ? '?' + query : ''}`)
+}
+
+/**
+ * 获取右侧趋势白名单可用的行业和概念板块枚举值（用于筛选器）
+ */
+export function fetchTrendFilters() {
+  return request('/api/v1/stocks/trend_watchlist/filters')
+}
+
 // ── Sandbox API（模拟仓）──
 
 /**

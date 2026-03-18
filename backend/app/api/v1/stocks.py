@@ -565,6 +565,176 @@ async def get_vcp_watchlist(
     )
 
 
+# ── 右侧趋势策略白名单 ──
+
+class TrendWatchlistItem(BaseModel):
+    """右侧趋势白名单单条记录。"""
+    ts_code: str
+    name: str | None = None
+    current_price: float | None = None
+    trend_score: float | None = None
+    adx: float | None = None
+    rsi: float | None = None
+    ma20: float | None = None
+    ma50: float | None = None
+    volume_ratio: float | None = None
+    industry: str | None = None
+    concepts: str | None = None
+    main_business: str | None = None
+    fund_flow_net: float | None = None
+    futu_url: str | None = None
+
+
+class TrendWatchlistResponse(BaseModel):
+    """右侧趋势白名单响应。"""
+    count: int
+    date: date
+    items: list[TrendWatchlistItem]
+
+
+class TrendFilterOptions(BaseModel):
+    """右侧趋势白名单可用的行业和概念枚举值。"""
+    industries: list[str]
+    concepts: list[str]
+
+
+@router.get("/trend_watchlist/filters", response_model=TrendFilterOptions)
+async def get_trend_filter_options(
+    target_date: date | None = Query(None, description="查询日期，默认最新"),
+):
+    """获取右侧趋势白名单中可用的行业和概念板块枚举值（用于前端筛选器）。"""
+    from sqlalchemy import select, func as sa_func
+
+    from app.database import async_session
+    from app.models.screener import TrendWatchlistDaily
+
+    async with async_session() as session:
+        if target_date:
+            query_date = target_date
+        else:
+            max_date_q = await session.execute(
+                select(sa_func.max(TrendWatchlistDaily.run_date))
+            )
+            query_date = max_date_q.scalar()
+            if not query_date:
+                return TrendFilterOptions(industries=[], concepts=[])
+
+        # 查询所有行业（去重去空排序）
+        ind_stmt = (
+            select(sa_func.distinct(TrendWatchlistDaily.industry))
+            .where(TrendWatchlistDaily.run_date == query_date)
+            .where(TrendWatchlistDaily.industry.isnot(None))
+            .where(TrendWatchlistDaily.industry != "")
+            .order_by(TrendWatchlistDaily.industry)
+        )
+        ind_result = await session.execute(ind_stmt)
+        industries = [r[0] for r in ind_result.all()]
+
+        # 查询所有概念（拆分逗号分隔值，去重排序）
+        con_stmt = (
+            select(TrendWatchlistDaily.concepts)
+            .where(TrendWatchlistDaily.run_date == query_date)
+            .where(TrendWatchlistDaily.concepts.isnot(None))
+            .where(TrendWatchlistDaily.concepts != "")
+        )
+        con_result = await session.execute(con_stmt)
+        concept_set: set[str] = set()
+        for (raw,) in con_result.all():
+            for c in raw.split(","):
+                c = c.strip()
+                if c:
+                    concept_set.add(c)
+        concepts = sorted(concept_set)
+
+    return TrendFilterOptions(industries=industries, concepts=concepts)
+
+
+@router.get("/trend_watchlist", response_model=TrendWatchlistResponse)
+async def get_trend_watchlist(
+    target_date: date | None = Query(None, description="查询日期，默认最新"),
+    industry: str | None = Query(None, description="行业筛选，多个用逗号分隔"),
+    concepts: str | None = Query(None, description="概念板块筛选，多个用逗号分隔（包含任一即匹配）"),
+):
+    """查询右侧趋势策略白名单。
+
+    返回最新一期（或指定日期）的趋势 Screener 白名单，
+    含 trend_score、ADX、RSI、SMA20/50、放量倍数等技术面指标，
+    以及行业题材、资金流向等维度。
+    支持按行业和概念板块筛选。
+    """
+    from sqlalchemy import select, func as sa_func, or_
+
+    from app.database import async_session
+    from app.models.screener import TrendWatchlistDaily
+
+    async with async_session() as session:
+        # 确定查询日期：用户指定或取最新
+        if target_date:
+            query_date = target_date
+        else:
+            max_date_q = await session.execute(
+                select(sa_func.max(TrendWatchlistDaily.run_date))
+            )
+            query_date = max_date_q.scalar()
+            if not query_date:
+                return TrendWatchlistResponse(count=0, date=date.today(), items=[])
+
+        # 查询白名单（兜底排除 ST 股票）
+        stmt = (
+            select(TrendWatchlistDaily)
+            .where(TrendWatchlistDaily.run_date == query_date)
+            .where(
+                ~TrendWatchlistDaily.name.like("%ST%")
+                | TrendWatchlistDaily.name.is_(None)
+            )
+        )
+
+        # 行业筛选
+        if industry:
+            ind_list = [i.strip() for i in industry.split(",") if i.strip()]
+            if ind_list:
+                stmt = stmt.where(TrendWatchlistDaily.industry.in_(ind_list))
+
+        # 概念板块筛选
+        if concepts:
+            con_list = [c.strip() for c in concepts.split(",") if c.strip()]
+            if con_list:
+                concept_conditions = [
+                    TrendWatchlistDaily.concepts.like(f"%{c}%") for c in con_list
+                ]
+                stmt = stmt.where(or_(*concept_conditions))
+
+        stmt = stmt.order_by(TrendWatchlistDaily.trend_score.desc().nulls_last())
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    items = []
+    for row in rows:
+        item = TrendWatchlistItem(
+            ts_code=row.ts_code,
+            name=row.name,
+            current_price=row.current_price,
+            trend_score=row.trend_score,
+            adx=row.adx,
+            rsi=row.rsi,
+            ma20=row.ma20,
+            ma50=row.ma50,
+            volume_ratio=row.volume_ratio,
+            industry=row.industry,
+            concepts=row.concepts,
+            main_business=row.main_business,
+            fund_flow_net=row.fund_flow_net,
+            futu_url=_generate_futu_url(row.ts_code),
+        )
+        items.append(item)
+
+    return TrendWatchlistResponse(
+        count=len(items),
+        date=query_date,
+        items=items,
+    )
+
+
 # ── 价投策略白名单 ──
 
 class ValueStockItem(BaseModel):

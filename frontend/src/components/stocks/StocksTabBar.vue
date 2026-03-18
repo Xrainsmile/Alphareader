@@ -17,6 +17,13 @@
     </view>
     <view
       class="tab-item"
+      :class="{ 'tab-active': activeTab === 'trend' }"
+      @click="$emit('select-trend')"
+    >
+      <text class="tab-text">右侧趋势</text>
+    </view>
+    <view
+      class="tab-item"
       :class="{ 'tab-active': activeTab === 'value' }"
       @click="$emit('select-value')"
     >
@@ -40,7 +47,7 @@ defineProps({
   },
 })
 
-defineEmits(['select-rs', 'select-vcp', 'select-value', 'select-sandbox'])
+defineEmits(['select-rs', 'select-vcp', 'select-trend', 'select-value', 'select-sandbox'])
 </script>
 
 <style scoped>
