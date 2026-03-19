@@ -31,7 +31,7 @@ from app.models.analytics import PipelineRun
 from app.models.news import News
 from app.redis import get_redis
 from app.services.deepseek_filter import FilterResult, ScoredNewsItem, filter_news
-from app.services.rss_fetcher import REDIS_DEDUP_KEY, fetch_all_feeds
+from app.services.rss_fetcher import REDIS_DEDUP_KEY, _normalize_url, fetch_all_feeds
 from app.utils.deduplicator import NewsDeduplicator
 
 logger = logging.getLogger("alphareader.pipeline")
@@ -47,8 +47,8 @@ def _contains_cjk(text: str) -> bool:
 
 
 def _hash_url(url: str) -> str:
-    """将 URL 转为 SHA-256 哈希值，用于 Redis 去重"""
-    return hashlib.sha256(url.encode()).hexdigest()
+    """将标准化后的 URL 转为 SHA-256 哈希值，用于 Redis 去重"""
+    return hashlib.sha256(_normalize_url(url).encode()).hexdigest()
 
 
 async def _mark_urls_as_seen(urls: list[str]) -> None:
@@ -145,7 +145,7 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                         content=item.raw.content,
                         source=item.raw.source,
                         category=getattr(item.raw, "category", "财经"),
-                        url=item.raw.url,
+                        url=_normalize_url(item.raw.url),
                         published_at=item.raw.published_at,
                         ai_score=item.score,
                         ai_summary=summary,

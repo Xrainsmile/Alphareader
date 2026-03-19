@@ -79,9 +79,33 @@ class RawNewsItem:
     category: str = "财经"
 
 
+def _normalize_url(url: str) -> str:
+    """标准化 URL：去除尾部斜杠、去除常见 tracking 参数。
+    
+    解决同一篇文章因 URL 微小差异（如尾部 / 或 utm_ 参数）
+    被 Redis 去重漏过的问题。
+    例如：
+      https://openai.com/index/xxx/  → https://openai.com/index/xxx
+      https://example.com/a?utm_source=feed → https://example.com/a
+    """
+    from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+    parsed = urlparse(url.strip())
+    # 去除尾部斜杠（但保留根路径 /）
+    path = parsed.path.rstrip("/") if parsed.path != "/" else parsed.path
+    # 去除 tracking 查询参数
+    if parsed.query:
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        cleaned = {k: v for k, v in params.items()
+                   if not k.startswith(("utm_", "feed_item"))}
+        query = urlencode(cleaned, doseq=True) if cleaned else ""
+    else:
+        query = ""
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", query, ""))
+
+
 def _hash_url(url: str) -> str:
-    """将 URL 转为 SHA-256 哈希，用于 Redis 去重"""
-    return hashlib.sha256(url.encode()).hexdigest()
+    """将标准化后的 URL 转为 SHA-256 哈希，用于 Redis 去重"""
+    return hashlib.sha256(_normalize_url(url).encode()).hexdigest()
 
 
 def _should_keep(title: str, source: str = "") -> bool:
