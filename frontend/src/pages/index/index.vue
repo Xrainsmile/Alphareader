@@ -140,122 +140,126 @@
     <!-- 以下为原有 News Feed 内容 (非搜索模式时显示) -->
     <template v-if="!searchMode">
 
-    <!-- 筛选按钮 + 已选标签 -->
-    <view class="filter-trigger-bar">
-      <view class="filter-trigger-left">
-        <view class="filter-trigger-btn" :class="{ 'filter-trigger-active': hasActiveFilter }" @click="openFilter">
-          <text class="filter-trigger-icon">☰</text>
-          <text class="filter-trigger-text">筛选</text>
-          <text class="filter-arrow" :class="{ 'filter-arrow-up': filterOpen }">›</text>
+    <!-- 筛选按钮 + 已选标签 + 浮窗面板 -->
+    <view class="filter-anchor">
+      <view class="filter-trigger-bar">
+        <view class="filter-trigger-left">
+          <view class="filter-trigger-btn" :class="{ 'filter-trigger-active': hasActiveFilter || filterOpen }" @click="openFilter">
+            <text class="filter-trigger-icon">☰</text>
+            <text class="filter-trigger-text">筛选</text>
+            <text class="filter-arrow" :class="{ 'filter-arrow-up': filterOpen }">›</text>
+          </view>
+          <view v-if="filterTags.length" class="filter-tags">
+            <view v-for="tag in filterTags" :key="tag" class="filter-tag">
+              <text class="filter-tag-text">{{ tag }}</text>
+            </view>
+          </view>
         </view>
-        <view v-if="filterTags.length" class="filter-tags">
-          <view v-for="tag in filterTags" :key="tag" class="filter-tag">
-            <text class="filter-tag-text">{{ tag }}</text>
+        <text class="stats-text-inline">{{ total }} 条</text>
+      </view>
+
+      <!-- 筛选浮窗（贴着按钮下方） -->
+      <view v-if="filterOpen" class="filter-popover">
+        <view class="filter-popover-body">
+          <!-- 排序 -->
+          <view class="filter-row">
+            <text class="filter-row-label">排序</text>
+            <view class="filter-row-chips">
+              <view
+                v-for="tab in sortTabs"
+                :key="tab.value"
+                class="fc"
+                :class="{ 'fc-active': tmpSort === tab.value, 'fc-gravity': tab.value === 'hot' }"
+                @click="tmpSort = tab.value"
+              >
+                <text class="fc-text" :class="{ 'fc-text-active': tmpSort === tab.value }">{{ tab.label }}</text>
+                <view v-if="tab.value === 'hot'" class="gravity-tooltip">基于 Hacker News 经典重力算法：高评分的新鲜资讯排在前面，随时间自然下沉</view>
+              </view>
+            </view>
+          </view>
+          <!-- 时效 -->
+          <view class="filter-row">
+            <text class="filter-row-label">时效</text>
+            <view class="filter-row-chips">
+              <view
+                v-for="opt in ageOptions"
+                :key="opt.value"
+                class="fc"
+                :class="{ 'fc-active': tmpAge === opt.value }"
+                @click="tmpAge = opt.value"
+              >
+                <text class="fc-text" :class="{ 'fc-text-active': tmpAge === opt.value }">{{ opt.label }}</text>
+              </view>
+            </view>
+          </view>
+          <!-- 来源 -->
+          <view class="filter-row">
+            <text class="filter-row-label">来源</text>
+            <view class="filter-row-chips filter-row-chips-wrap">
+              <view class="fc" :class="{ 'fc-active': !tmpSource }" @click="tmpSource = ''">
+                <text class="fc-text" :class="{ 'fc-text-active': !tmpSource }">全部</text>
+              </view>
+              <view
+                v-for="src in cnSources"
+                :key="src"
+                class="fc"
+                :class="{ 'fc-active': tmpSource === src }"
+                @click="tmpSource = src"
+              >
+                <text class="fc-text" :class="{ 'fc-text-active': tmpSource === src }">{{ src }}</text>
+              </view>
+              <view class="fc-divider"></view>
+              <view
+                v-for="src in enSources"
+                :key="src"
+                class="fc"
+                :class="{ 'fc-active': tmpSource === src }"
+                @click="tmpSource = src"
+              >
+                <text class="fc-text" :class="{ 'fc-text-active': tmpSource === src }">{{ src }}</text>
+              </view>
+              <view class="fc-divider"></view>
+              <view
+                v-for="src in techSources"
+                :key="src"
+                class="fc"
+                :class="{ 'fc-active': tmpSource === src }"
+                @click="tmpSource = src"
+              >
+                <text class="fc-text" :class="{ 'fc-text-active': tmpSource === src }">{{ src }}</text>
+              </view>
+            </view>
+          </view>
+          <!-- 评分 -->
+          <view class="filter-row filter-row-last">
+            <text class="filter-row-label">评分</text>
+            <view class="filter-row-chips">
+              <view
+                v-for="s in scoreOptions"
+                :key="s"
+                class="fc"
+                :class="{ 'fc-active': tmpScore === s }"
+                @click="tmpScore = s"
+              >
+                <text class="fc-text" :class="{ 'fc-text-active': tmpScore === s }">≥{{ s }}</text>
+              </view>
+            </view>
+          </view>
+          <!-- 底部操作栏 -->
+          <view class="filter-footer">
+            <view class="filter-reset-btn" @click="resetTmp">
+              <text class="filter-reset-text">重置</text>
+            </view>
+            <view class="filter-confirm-btn" @click="confirmFilter">
+              <text class="filter-confirm-text">确认</text>
+            </view>
           </view>
         </view>
       </view>
-      <text class="stats-text-inline">{{ total }} 条</text>
     </view>
 
-    <!-- 筛选面板（展开/收起） -->
-    <view v-if="filterOpen" class="filter-panel">
-      <view class="filter-mask" @click="cancelFilter"></view>
-      <view class="filter-panel-body">
-        <!-- 排序 -->
-        <view class="filter-row">
-          <text class="filter-row-label">排序</text>
-          <view class="filter-row-chips">
-            <view
-              v-for="tab in sortTabs"
-              :key="tab.value"
-              class="fc"
-              :class="{ 'fc-active': tmpSort === tab.value, 'fc-gravity': tab.value === 'hot' }"
-              @click="tmpSort = tab.value"
-            >
-              <text class="fc-text" :class="{ 'fc-text-active': tmpSort === tab.value }">{{ tab.label }}</text>
-              <view v-if="tab.value === 'hot'" class="gravity-tooltip">基于 Hacker News 经典重力算法：高评分的新鲜资讯排在前面，随时间自然下沉</view>
-            </view>
-          </view>
-        </view>
-        <!-- 时效 -->
-        <view class="filter-row">
-          <text class="filter-row-label">时效</text>
-          <view class="filter-row-chips">
-            <view
-              v-for="opt in ageOptions"
-              :key="opt.value"
-              class="fc"
-              :class="{ 'fc-active': tmpAge === opt.value }"
-              @click="tmpAge = opt.value"
-            >
-              <text class="fc-text" :class="{ 'fc-text-active': tmpAge === opt.value }">{{ opt.label }}</text>
-            </view>
-          </view>
-        </view>
-        <!-- 来源 -->
-        <view class="filter-row">
-          <text class="filter-row-label">来源</text>
-          <view class="filter-row-chips filter-row-chips-wrap">
-            <view class="fc" :class="{ 'fc-active': !tmpSource }" @click="tmpSource = ''">
-              <text class="fc-text" :class="{ 'fc-text-active': !tmpSource }">全部</text>
-            </view>
-            <view
-              v-for="src in cnSources"
-              :key="src"
-              class="fc"
-              :class="{ 'fc-active': tmpSource === src }"
-              @click="tmpSource = src"
-            >
-              <text class="fc-text" :class="{ 'fc-text-active': tmpSource === src }">{{ src }}</text>
-            </view>
-            <view class="fc-divider"></view>
-            <view
-              v-for="src in enSources"
-              :key="src"
-              class="fc"
-              :class="{ 'fc-active': tmpSource === src }"
-              @click="tmpSource = src"
-            >
-              <text class="fc-text" :class="{ 'fc-text-active': tmpSource === src }">{{ src }}</text>
-            </view>
-            <view class="fc-divider"></view>
-            <view
-              v-for="src in techSources"
-              :key="src"
-              class="fc"
-              :class="{ 'fc-active': tmpSource === src }"
-              @click="tmpSource = src"
-            >
-              <text class="fc-text" :class="{ 'fc-text-active': tmpSource === src }">{{ src }}</text>
-            </view>
-          </view>
-        </view>
-        <!-- 评分 -->
-        <view class="filter-row filter-row-last">
-          <text class="filter-row-label">评分</text>
-          <view class="filter-row-chips">
-            <view
-              v-for="s in scoreOptions"
-              :key="s"
-              class="fc"
-              :class="{ 'fc-active': tmpScore === s }"
-              @click="tmpScore = s"
-            >
-              <text class="fc-text" :class="{ 'fc-text-active': tmpScore === s }">≥{{ s }}</text>
-            </view>
-          </view>
-        </view>
-        <!-- 底部操作栏 -->
-        <view class="filter-footer">
-          <view class="filter-reset-btn" @click="resetTmp">
-            <text class="filter-reset-text">重置</text>
-          </view>
-          <view class="filter-confirm-btn" @click="confirmFilter">
-            <text class="filter-confirm-text">确认</text>
-          </view>
-        </view>
-      </view>
-    </view>
+    <!-- 浮窗背景遮罩（点击关闭） -->
+    <view v-if="filterOpen" class="filter-backdrop" @click="cancelFilter"></view>
 
     <!-- 新闻列表（聚合模式） -->
     <view class="news-list">
@@ -623,8 +627,12 @@ export default {
       }
     },
 
-    /** 打开筛选面板 — 同步当前值到暂存 */
+    /** 打开/关闭筛选浮窗 — 打开时同步当前值到暂存 */
     openFilter() {
+      if (this.filterOpen) {
+        this.filterOpen = false
+        return
+      }
       this.tmpSort = this.currentSort
       this.tmpAge = this.maxAgeHours
       this.tmpSource = this.currentSource
@@ -1263,6 +1271,12 @@ ${newsBlock}
   font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
 }
 
+/* ── Filter Anchor (定位容器) ── */
+.filter-anchor {
+  position: relative;
+  z-index: 100;
+}
+
 /* ── Filter Trigger Bar ── */
 .filter-trigger-bar {
   display: flex;
@@ -1337,33 +1351,32 @@ ${newsBlock}
   margin-left: 12rpx;
 }
 
-/* ── Filter Panel ── */
-.filter-panel {
+/* ── Filter Popover (浮窗) ── */
+.filter-popover {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 101;
+  padding-top: 8rpx;
+}
+.filter-popover-body {
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 28rpx 28rpx 0;
+  box-shadow: 0 8rpx 40rpx rgba(0, 0, 0, 0.12), 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
+  border: 1rpx solid rgba(0, 0, 0, 0.05);
+}
+
+/* ── Filter Backdrop (轻量遮罩) ── */
+.filter-backdrop {
   position: fixed;
   left: 0;
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 999;
-  display: flex;
-  justify-content: center;
-}
-.filter-mask {
-  position: absolute;
-  left: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.35);
-}
-.filter-panel-body {
-  position: relative;
-  z-index: 1;
-  background: #ffffff;
-  border-radius: 0 0 28rpx 28rpx;
-  padding: 32rpx 32rpx 0;
-  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.1);
-  width: 100%;
+  z-index: 99;
+  background: rgba(0, 0, 0, 0.08);
 }
 .filter-row {
   display: flex;
@@ -1956,13 +1969,14 @@ ${newsBlock}
     margin-left: 8px;
   }
 
-  /* ── Filter Panel (PC: 居中限宽 + 圆角) ── */
-  .filter-panel-body {
-    max-width: 800px;
-    margin: 0 auto;
-    border-radius: 0 0 16px 16px;
+  /* ── Filter Popover (PC) ── */
+  .filter-popover {
+    padding-top: 6px;
+  }
+  .filter-popover-body {
+    border-radius: 14px;
     padding: 24px 28px 0;
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.06);
   }
   .filter-row {
     padding-bottom: 18px;

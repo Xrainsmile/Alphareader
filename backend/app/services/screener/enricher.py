@@ -64,7 +64,9 @@ async def enrich_watchlist(watchlist: list[dict]) -> list[dict]:
         ticker = item["ticker"]
         clean = code_map[ticker]
         info = info_map.get(clean, {})
-        item["name"] = info.get("name", "")
+        # name 已由 pipeline 从本地 DB 填充，仅在为空时用 akshare 兜底
+        if not item.get("name"):
+            item["name"] = info.get("name", "")
         item["industry"] = info.get("industry", "")
         item["main_business"] = info.get("main_business", "")
         item["concepts"] = concept_map.get(clean, "")

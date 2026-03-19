@@ -234,8 +234,16 @@ class ScreenerPipeline:
         logger.info("Step 6 基本面过滤完成 [%.1fs]", time.time() - step_start)
 
         # ── Step 7: 组装输出 ──
+        # 从本地 DB 批量查出股票名称（stock_daily_quote 每天入库时已带 name）
+        name_map: dict[str, str] = {}
+        try:
+            name_map = await self._load_stock_names(final_codes)
+            logger.info("从 DB 加载 %d 只股票名称", len(name_map))
+        except Exception as e:
+            logger.warning("从 DB 加载股票名称失败（不影响后续流程）: %s", e)
+
         watchlist = self._build_watchlist(
-            final_codes, stage2_passed, fundamental_df, ema_df,
+            final_codes, stage2_passed, fundamental_df, ema_df, name_map,
         )
         result["stats"]["output_count"] = len(watchlist)
 
@@ -309,23 +317,73 @@ class ScreenerPipeline:
         logger.info("_load_st_codes: 发现 %d 只 ST 股票", len(codes))
         return codes
 
+    async def _load_stock_names(self, codes: set[str]) -> dict[str, str]:
+        """从 stock_daily_quote 表批量查询股票名称。
+
+        取最近一个有完整数据的交易日（与 _load_st_codes 相同策略），
+        然后一次性查出所有候选股票的 name。
+
+        Args:
+            codes: 需要查名称的 ts_code 集合
+
+        Returns:
+            {ts_code: name} 映射字典
+        """
+        if not codes:
+            return {}
+
+        from sqlalchemy import text as sa_text
+
+        # 取最近一个有完整数据的交易日，批量查出 name
+        sql = sa_text("""
+            WITH full_date AS (
+                SELECT trade_date
+                FROM stock_daily_quote
+                GROUP BY trade_date
+                HAVING COUNT(DISTINCT ts_code) >= 1000
+                ORDER BY trade_date DESC
+                LIMIT 1
+            )
+            SELECT q.ts_code, q.name
+            FROM stock_daily_quote q
+            JOIN full_date fd ON q.trade_date = fd.trade_date
+            WHERE q.ts_code = ANY(:codes)
+              AND q.name IS NOT NULL
+              AND q.name != ''
+        """)
+
+        async with async_session() as session:
+            result = await session.execute(sql, {"codes": list(codes)})
+            name_map = {row[0]: row[1] for row in result}
+
+        return name_map
+
     def _build_watchlist(
         self,
         final_codes: set[str],
         stage2_df: pd.DataFrame,
         fundamental_df: pd.DataFrame,
         ema_df: pd.DataFrame,
+        name_map: dict[str, str] | None = None,
     ) -> list[dict]:
         """组装最终白名单输出。
 
         输出字段：
-            ticker, current_price, eps_growth, revenue_yoy, ema20, ema50, ema120,
+            ticker, name, current_price, eps_growth, revenue_yoy, ema20, ema50, ema120,
             vcp_score (ATR 收缩度)
         """
+        if name_map is None:
+            name_map = {}
         watchlist = []
 
         for code in sorted(final_codes):
-            entry = {"ticker": code, "current_price": None, "eps_growth": None, "vcp_score": None}
+            entry = {
+                "ticker": code,
+                "name": name_map.get(code, ""),
+                "current_price": None,
+                "eps_growth": None,
+                "vcp_score": None,
+            }
 
             # 从 stage2_df 取价格和 VCP 指标
             row = stage2_df[stage2_df["ts_code"] == code]
