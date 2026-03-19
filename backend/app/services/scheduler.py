@@ -36,6 +36,7 @@ from app.services.data_fetcher import incremental_update_quotes
 from app.services.sandbox_nav import compute_nav_core
 from app.services.screener.pipeline import ScreenerPipeline
 from app.services.screener.trend_pipeline import TrendPipeline
+from app.services.digest_service import generate_digest
 
 logger = logging.getLogger("alphareader.scheduler")
 
@@ -243,6 +244,29 @@ async def _trend_screener_job():
         raise
 
 
+async def _digest_job(period_label: str):
+    """新闻概览摘要生成任务 — 收集指定时段新闻并调用 DeepSeek 总结。
+
+    四个时段：
+      - morning (08:30): 收集 00:00~08:30 新闻
+      - midday  (12:00): 收集 08:30~12:00 新闻
+      - evening (18:00): 收集 12:00~18:00 新闻
+      - night   (00:00): 收集 18:00~24:00 新闻（次日凌晨触发）
+    """
+    try:
+        logger.info("Digest job [%s] triggered at %s", period_label, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        result = await generate_digest(period_label)
+        logger.info("Digest job [%s] completed: %s", period_label, result)
+        return result
+    except Exception as e:
+        logger.exception("Digest job [%s] failed: %s", period_label, e)
+        await send_alert(
+            f"🔴 Digest Job [{period_label}] Failed",
+            f"{type(e).__name__}: {e}",
+        )
+        raise
+
+
 def start_scheduler():
     """注册 Cron 定时任务并启动调度器。
 
@@ -377,6 +401,71 @@ def start_scheduler():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
+    # ── 新闻概览 Digest（每天 4 个时段，全天候运行）──
+    # 08:30 早间：收集 00:00~08:30
+    scheduler.add_job(
+        _digest_job,
+        args=["morning"],
+        trigger=CronTrigger(
+            hour="8",
+            minute="30",
+            timezone=settings.TIMEZONE,
+        ),
+        id="digest_morning",
+        name=f"News Digest Morning (08:30 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # 12:00 午间：收集 08:30~12:00
+    scheduler.add_job(
+        _digest_job,
+        args=["midday"],
+        trigger=CronTrigger(
+            hour="12",
+            minute="0",
+            timezone=settings.TIMEZONE,
+        ),
+        id="digest_midday",
+        name=f"News Digest Midday (12:00 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # 18:00 傍晚：收集 12:00~18:00
+    scheduler.add_job(
+        _digest_job,
+        args=["evening"],
+        trigger=CronTrigger(
+            hour="18",
+            minute="0",
+            timezone=settings.TIMEZONE,
+        ),
+        id="digest_evening",
+        name=f"News Digest Evening (18:00 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # 00:00 夜间：收集 18:00~24:00（次日凌晨触发）
+    scheduler.add_job(
+        _digest_job,
+        args=["night"],
+        trigger=CronTrigger(
+            hour="0",
+            minute="0",
+            timezone=settings.TIMEZONE,
+        ),
+        id="digest_night",
+        name=f"News Digest Night (00:00 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
     scheduler.start()
 
     alert_status = "enabled" if settings.ALERT_WEBHOOK_URL else "disabled"
@@ -402,6 +491,13 @@ def start_scheduler():
     sc_job = scheduler.get_job("screener_daily")
     sc_next = sc_job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if sc_job and sc_job.next_run_time else "N/A"
     logger.info("Screener scheduled Mon-Fri 15:40 (next: %s)", sc_next)
+
+    # Digest jobs status
+    for label, desc in [("digest_morning", "08:30"), ("digest_midday", "12:00"),
+                        ("digest_evening", "18:00"), ("digest_night", "00:00")]:
+        dj = scheduler.get_job(label)
+        dn = dj.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if dj and dj.next_run_time else "N/A"
+        logger.info("Digest %s scheduled daily %s (next: %s)", label, desc, dn)
 
 
 def stop_scheduler():

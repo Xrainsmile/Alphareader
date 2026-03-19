@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.bridge import router as bridge_router
+from app.api.v1.digests import router as digests_router
 from app.api.v1.health import router as health_router
 from app.api.v1.news import router as news_router
 from app.api.v1.reports import router as reports_router
@@ -21,6 +22,7 @@ _protected = APIRouter(dependencies=[Depends(require_api_key)])
 _protected.include_router(news_router)
 _protected.include_router(bridge_router)
 _protected.include_router(reports_router)
+_protected.include_router(digests_router)
 _protected.include_router(stocks_router)
 _protected.include_router(sandbox_router)
 _protected.include_router(analytics_router)

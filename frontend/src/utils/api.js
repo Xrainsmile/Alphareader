@@ -109,6 +109,16 @@ export function fetchReportDetail(id) {
   return request(`/api/v1/reports/${id}`)
 }
 
+// ── Digests API（新闻概览时间轴使用）──
+
+/**
+ * 获取新闻概览列表（按时间倒序）
+ * @param {number} days 获取最近几天，默认 7
+ */
+export function fetchDigests(days = 7) {
+  return request(`/api/v1/digests/?days=${days}`)
+}
+
 // ── Stocks API（RS Rating + VCP 排行榜使用）──
 
 /**

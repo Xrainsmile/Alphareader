@@ -2,59 +2,144 @@
   <view class="reports-container">
     <!-- Header -->
     <view class="reports-header">
-      <text class="reports-title">每日复盘</text>
-      <text class="reports-subtitle">Daily Reports · 市场脉搏回顾</text>
+      <text class="reports-title">Reports</text>
+      <text class="reports-subtitle">新闻概览 · 每日复盘</text>
     </view>
 
-    <!-- Reports List -->
-    <view class="reports-list">
+    <!-- Tab Bar -->
+    <view class="tab-bar">
       <view
-        v-for="item in reportsList"
-        :key="item.id"
-        class="report-card"
-        @click="goDetail(item.id)"
+        class="tab-item"
+        :class="{ active: activeTab === 'digest' }"
+        @click="activeTab = 'digest'"
       >
-        <!-- Text Area (left) -->
-        <view class="card-text">
-          <text class="card-title">{{ item.title }}</text>
-          <text class="card-summary">{{ item.summary }}</text>
-          <view class="card-bottom">
-            <text class="card-date">{{ formatDate(item.date) }}</text>
-            <view class="card-actions">
-              <view class="action-btn" @click.stop="onShare(item)">
-                <text class="action-icon">↗</text>
+        <text class="tab-text">新闻概览</text>
+      </view>
+      <view
+        class="tab-item"
+        :class="{ active: activeTab === 'reports' }"
+        @click="activeTab = 'reports'"
+      >
+        <text class="tab-text">研报</text>
+      </view>
+      <view class="tab-indicator" :style="{ left: activeTab === 'digest' ? '0%' : '50%' }"></view>
+    </view>
+
+    <!-- ═══════════════════════════════════════════
+         Tab 1: 新闻概览（时间轴）
+         ═══════════════════════════════════════════ -->
+    <view v-if="activeTab === 'digest'" class="digest-tab">
+      <!-- Loading -->
+      <EmptyState
+        v-if="digestLoading"
+        text="加载中..."
+        mobile-padding="120rpx 0"
+        desktop-padding="60px 0"
+      />
+
+      <!-- Empty -->
+      <EmptyState
+        v-if="!digestLoading && digestList.length === 0"
+        text="暂无新闻概览"
+        mobile-padding="120rpx 0"
+        desktop-padding="60px 0"
+      />
+
+      <!-- Timeline -->
+      <view v-if="!digestLoading && digestList.length > 0" class="timeline">
+        <view
+          v-for="(item, idx) in digestList"
+          :key="item.id"
+          class="timeline-item"
+        >
+          <!-- Timeline connector -->
+          <view class="timeline-rail">
+            <view class="timeline-dot" :class="'dot-' + item.period_label"></view>
+            <view v-if="idx < digestList.length - 1" class="timeline-line"></view>
+          </view>
+
+          <!-- Card -->
+          <view class="digest-card" @click="expandToggle(item.id)">
+            <!-- Card Header -->
+            <view class="digest-card-header">
+              <view class="digest-badge" :class="'badge-' + item.period_label">
+                <text class="badge-icon">{{ item.period_icon }}</text>
+                <text class="badge-text">{{ item.period_display }}</text>
               </view>
+              <text class="digest-time">{{ formatDigestDate(item) }}</text>
+            </view>
+
+            <!-- Card Content (Markdown rendered) -->
+            <view class="digest-content" :class="{ collapsed: !expandedIds.has(item.id) }">
+              <mp-html :content="renderMd(item.content)" :tag-style="tagStyle" :lazy-load="true" />
+            </view>
+
+            <!-- Expand/Collapse toggle -->
+            <view class="digest-toggle" v-if="item.content && item.content.length > 100">
+              <text class="toggle-text">{{ expandedIds.has(item.id) ? '收起' : '展开全文' }}</text>
+              <text class="toggle-arrow">{{ expandedIds.has(item.id) ? '▲' : '▼' }}</text>
+            </view>
+
+            <!-- Card Footer -->
+            <view class="digest-footer">
+              <text class="footer-stat">📊 收录 {{ item.news_count }} 条新闻</text>
             </view>
           </view>
         </view>
+      </view>
 
-        <!-- Cover Image (right, small) -->
-        <view class="card-cover" v-if="item.cover">
-          <image
-            class="cover-img"
-            :src="item.cover"
-            mode="aspectFill"
-            lazy-load
-          />
-        </view>
+      <!-- Load more -->
+      <view v-if="!digestLoading && digestList.length > 0 && digestDays < 30" class="load-more" @click="loadMoreDigests">
+        <text class="load-more-text">加载更多</text>
       </view>
     </view>
 
-    <!-- Empty State -->
-    <EmptyState
-      v-if="!loading && reportsList.length === 0"
-      text="暂无复盘报告"
-      mobile-padding="160rpx 0"
-      desktop-padding="80px 0"
-    />
+    <!-- ═══════════════════════════════════════════
+         Tab 2: 研报（原有 Reports 列表）
+         ═══════════════════════════════════════════ -->
+    <view v-if="activeTab === 'reports'" class="reports-tab">
+      <!-- Reports List -->
+      <view class="reports-list">
+        <view
+          v-for="item in reportsList"
+          :key="item.id"
+          class="report-card"
+          @click="goDetail(item.id)"
+        >
+          <view class="card-text">
+            <text class="card-title">{{ item.title }}</text>
+            <text class="card-summary">{{ item.summary }}</text>
+            <view class="card-bottom">
+              <text class="card-date">{{ formatDate(item.date) }}</text>
+              <view class="card-actions">
+                <view class="action-btn" @click.stop="onShare(item)">
+                  <text class="action-icon">↗</text>
+                </view>
+              </view>
+            </view>
+          </view>
+          <view class="card-cover" v-if="item.cover">
+            <image class="cover-img" :src="item.cover" mode="aspectFill" lazy-load />
+          </view>
+        </view>
+      </view>
 
-    <!-- Loading State -->
-    <EmptyState
-      v-if="loading"
-      text="加载中..."
-      mobile-padding="160rpx 0"
-      desktop-padding="80px 0"
-    />
+      <!-- Empty State -->
+      <EmptyState
+        v-if="!reportsLoading && reportsList.length === 0"
+        text="暂无复盘报告"
+        mobile-padding="120rpx 0"
+        desktop-padding="60px 0"
+      />
+
+      <!-- Loading State -->
+      <EmptyState
+        v-if="reportsLoading"
+        text="加载中..."
+        mobile-padding="120rpx 0"
+        desktop-padding="60px 0"
+      />
+    </view>
 
     <!-- Footer -->
     <SiteFooter />
@@ -62,15 +147,97 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { fetchReportsList } from '@/utils/api'
-import { parseFrontMatter } from '@/utils/markdown'
+import { ref, reactive, onMounted } from 'vue'
+import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
+import { fetchReportsList, fetchDigests } from '@/utils/api'
+import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
 import { rawReports } from '@/data/reports'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
+// ── Tab State ──
+const activeTab = ref('digest')
+
+// ── Digest State ──
+const digestList = ref([])
+const digestLoading = ref(true)
+const digestDays = ref(7)
+const expandedIds = reactive(new Set())
+
+// ── Reports State ──
 const reportsList = ref([])
-const loading = ref(true)
+const reportsLoading = ref(true)
+
+// Markdown tag styles (for mp-html in digest cards)
+const tagStyle = {
+  h1: 'font-size:17px;font-weight:700;color:#1a1a2e;margin:12px 0 8px;line-height:1.5;',
+  h2: 'font-size:15px;font-weight:600;color:#1a1a2e;margin:10px 0 6px;padding:2px 0 2px 10px;border-left:3px solid #4285f4;line-height:1.5;',
+  h3: 'font-size:14px;font-weight:600;color:#2a2a3e;margin:8px 0 4px;line-height:1.5;',
+  p: 'font-size:14px;color:#3a3a4a;line-height:1.7;margin:6px 0;',
+  strong: 'color:#1a1a2e;font-weight:600;',
+  ul: 'padding-left:18px;margin:6px 0;',
+  ol: 'padding-left:18px;margin:6px 0;',
+  li: 'font-size:14px;color:#3a3a4a;line-height:1.7;margin:4px 0;',
+}
+
+// ── Helpers ──
+
+function renderMd(md) {
+  if (!md) return ''
+  return renderMarkdown(md)
+}
+
+function expandToggle(id) {
+  if (expandedIds.has(id)) {
+    expandedIds.delete(id)
+  } else {
+    expandedIds.add(id)
+  }
+}
+
+function formatDigestDate(item) {
+  const d = new Date(item.period_start)
+  const month = d.getMonth() + 1
+  const day = d.getDate()
+  // 从 period_end 提取结束时间
+  const endD = new Date(item.period_end)
+  const startH = String(d.getHours()).padStart(2, '0')
+  const startM = String(d.getMinutes()).padStart(2, '0')
+  const endH = String(endD.getHours()).padStart(2, '0')
+  const endM = String(endD.getMinutes()).padStart(2, '0')
+  const endStr = endH === '00' && endM === '00' ? '24:00' : `${endH}:${endM}`
+  return `${month}月${day}日 ${startH}:${startM}~${endStr}`
+}
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+}
+
+// ── Data Loading ──
+
+async function loadDigests() {
+  digestLoading.value = true
+  try {
+    const data = await fetchDigests(digestDays.value)
+    digestList.value = data || []
+    // 自动展开第一条
+    if (digestList.value.length > 0 && expandedIds.size === 0) {
+      expandedIds.add(digestList.value[0].id)
+    }
+  } catch (e) {
+    console.warn('加载新闻概览失败:', e.message)
+    digestList.value = []
+  } finally {
+    digestLoading.value = false
+  }
+}
+
+async function loadMoreDigests() {
+  digestDays.value = Math.min(digestDays.value + 7, 30)
+  await loadDigests()
+}
 
 // 从 Mock 数据生成 fallback 列表
 function getLocalReports() {
@@ -88,36 +255,28 @@ function getLocalReports() {
   })
 }
 
-onMounted(async () => {
+async function loadReports() {
+  reportsLoading.value = true
   try {
     const data = await fetchReportsList()
     if (data && data.length > 0) {
       reportsList.value = data
     } else {
-      // API 返回空 → 用本地 Mock
       reportsList.value = getLocalReports()
     }
   } catch (e) {
     console.warn('API 不可用，使用本地数据:', e.message)
     reportsList.value = getLocalReports()
   } finally {
-    loading.value = false
+    reportsLoading.value = false
   }
-})
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 }
 
 const goDetail = (id) => {
   const item = reportsList.value.find(r => r.id === id)
   if (item && item._isLocal) {
-    // 本地 Mock 模式：传 idx
     uni.navigateTo({ url: `/pages/reports/detail?idx=${id}` })
   } else {
-    // API 模式：传 report id
     uni.navigateTo({ url: `/pages/reports/detail?id=${id}` })
   }
 }
@@ -141,6 +300,10 @@ const onShare = (item) => {
   // #endif
 }
 
+onMounted(() => {
+  loadDigests()
+  loadReports()
+})
 </script>
 
 <style scoped>
@@ -152,9 +315,7 @@ const onShare = (item) => {
 
 /* ── Header ── */
 .reports-header {
-  padding: 36rpx 0 20rpx;
-  border-bottom: 1rpx solid #f0f0f2;
-  margin-bottom: 8rpx;
+  padding: 36rpx 0 16rpx;
 }
 .reports-title {
   font-size: 44rpx;
@@ -172,13 +333,203 @@ const onShare = (item) => {
   display: block;
 }
 
-/* ── Reports List ── */
+/* ── Tab Bar ── */
+.tab-bar {
+  display: flex;
+  position: relative;
+  border-bottom: 1rpx solid #f0f0f2;
+  margin-bottom: 8rpx;
+}
+.tab-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24rpx 0;
+  cursor: pointer;
+}
+.tab-text {
+  font-size: 30rpx;
+  color: #8c8c9a;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+.tab-item.active .tab-text {
+  color: #1a1a2e;
+  font-weight: 700;
+}
+.tab-indicator {
+  position: absolute;
+  bottom: 0;
+  width: 50%;
+  height: 4rpx;
+  background: #4285f4;
+  border-radius: 2rpx;
+  transition: left 0.25s ease;
+}
+
+/* ═══════════════════════════════════
+   Digest Tab — Timeline
+   ═══════════════════════════════════ */
+.digest-tab {
+  padding-bottom: 20rpx;
+}
+
+.timeline {
+  position: relative;
+}
+
+.timeline-item {
+  display: flex;
+  flex-direction: row;
+  position: relative;
+  padding-bottom: 8rpx;
+}
+
+/* Timeline rail (dot + line) */
+.timeline-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 40rpx;
+  flex-shrink: 0;
+  padding-top: 30rpx;
+}
+
+.timeline-dot {
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 50%;
+  background: #4285f4;
+  flex-shrink: 0;
+  z-index: 1;
+}
+.dot-morning { background: #FF9800; }
+.dot-midday  { background: #F44336; }
+.dot-evening { background: #9C27B0; }
+.dot-night   { background: #3F51B5; }
+
+.timeline-line {
+  width: 3rpx;
+  flex: 1;
+  background: #e8e8ec;
+  margin-top: 4rpx;
+}
+
+/* Digest Card */
+.digest-card {
+  flex: 1;
+  margin-left: 16rpx;
+  background: #fafbfc;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  border: 1rpx solid #f0f0f2;
+  margin-bottom: 20rpx;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+
+.digest-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.digest-badge {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 6rpx 16rpx;
+  border-radius: 20rpx;
+  background: #e8f0fe;
+}
+.badge-morning { background: #FFF3E0; }
+.badge-midday  { background: #FFEBEE; }
+.badge-evening { background: #F3E5F5; }
+.badge-night   { background: #E8EAF6; }
+
+.badge-icon {
+  font-size: 28rpx;
+}
+.badge-text {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.digest-time {
+  font-size: 22rpx;
+  color: #8c8c9a;
+  font-family: 'SF Pro Text', -apple-system, sans-serif;
+}
+
+/* Content area with collapse */
+.digest-content {
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+.digest-content.collapsed {
+  max-height: 240rpx;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+}
+
+.digest-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  padding: 12rpx 0 4rpx;
+}
+.toggle-text {
+  font-size: 24rpx;
+  color: #4285f4;
+  font-weight: 500;
+}
+.toggle-arrow {
+  font-size: 20rpx;
+  color: #4285f4;
+}
+
+.digest-footer {
+  display: flex;
+  align-items: center;
+  padding-top: 12rpx;
+  border-top: 1rpx solid #f0f0f2;
+  margin-top: 12rpx;
+}
+.footer-stat {
+  font-size: 22rpx;
+  color: #8c8c9a;
+}
+
+/* Load more */
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 24rpx 0;
+  cursor: pointer;
+}
+.load-more-text {
+  font-size: 26rpx;
+  color: #4285f4;
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════
+   Reports Tab
+   ═══════════════════════════════════ */
+.reports-tab {
+  padding-bottom: 20rpx;
+}
+
 .reports-list {
   display: flex;
   flex-direction: column;
 }
 
-/* ── Report Card (横向布局：左文字 右封面) ── */
 .report-card {
   display: flex;
   flex-direction: row;
@@ -189,7 +540,6 @@ const onShare = (item) => {
   gap: 24rpx;
 }
 
-/* ── Text Area (占满剩余空间) ── */
 .card-text {
   display: flex;
   flex-direction: column;
@@ -197,7 +547,6 @@ const onShare = (item) => {
   min-width: 0;
 }
 
-/* ── Cover Image (右侧小图) ── */
 .card-cover {
   width: 112rpx;
   height: 112rpx;
@@ -260,7 +609,6 @@ const onShare = (item) => {
   font-weight: 500;
 }
 
-
 /* ═══════════════════════════════════════════════════════════
    PC / Tablet 适配 (≥768px)
    ═══════════════════════════════════════════════════════════ */
@@ -271,9 +619,7 @@ const onShare = (item) => {
     padding: 0 24px;
   }
   .reports-header {
-    padding: 28px 0 16px;
-    border-bottom-width: 1px;
-    margin-bottom: 4px;
+    padding: 28px 0 12px;
   }
   .reports-title {
     font-size: 26px;
@@ -284,10 +630,94 @@ const onShare = (item) => {
     margin-top: 4px;
   }
 
-  /* Card - PC 端保持横向布局 */
+  /* Tab Bar */
+  .tab-bar {
+    border-bottom-width: 1px;
+    margin-bottom: 4px;
+  }
+  .tab-item {
+    padding: 16px 0;
+  }
+  .tab-text {
+    font-size: 15px;
+  }
+  .tab-indicator {
+    height: 2px;
+  }
+
+  /* Timeline */
+  .timeline-rail {
+    width: 24px;
+    padding-top: 18px;
+  }
+  .timeline-dot {
+    width: 12px;
+    height: 12px;
+  }
+  .timeline-line {
+    width: 2px;
+  }
+
+  .digest-card {
+    margin-left: 12px;
+    padding: 20px;
+    border-radius: 12px;
+    border-width: 1px;
+    margin-bottom: 12px;
+  }
+  .digest-card:hover {
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+
+  .digest-card-header {
+    margin-bottom: 12px;
+  }
+  .digest-badge {
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 12px;
+  }
+  .badge-icon {
+    font-size: 14px;
+  }
+  .badge-text {
+    font-size: 13px;
+  }
+  .digest-time {
+    font-size: 12px;
+  }
+
+  .digest-content.collapsed {
+    max-height: 140px;
+  }
+  .digest-toggle {
+    gap: 4px;
+    padding: 8px 0 2px;
+  }
+  .toggle-text {
+    font-size: 13px;
+  }
+  .toggle-arrow {
+    font-size: 11px;
+  }
+  .digest-footer {
+    padding-top: 8px;
+    margin-top: 8px;
+    border-top-width: 1px;
+  }
+  .footer-stat {
+    font-size: 12px;
+  }
+
+  .load-more {
+    padding: 16px 0;
+  }
+  .load-more-text {
+    font-size: 14px;
+  }
+
+  /* Reports */
   .reports-list {
-    display: flex;
-    flex-direction: column;
     margin-top: 8px;
   }
   .report-card {
@@ -305,18 +735,16 @@ const onShare = (item) => {
     border-radius: 8px;
   }
   .card-text {
-    padding: 16px;
+    padding: 0 16px;
   }
   .card-title {
     font-size: 17px;
     line-height: 1.4;
-    -webkit-line-clamp: 2;
   }
   .card-summary {
     font-size: 13px;
     margin-top: 8px;
     line-height: 1.5;
-    -webkit-line-clamp: 2;
   }
   .card-bottom {
     margin-top: 12px;
@@ -334,7 +762,6 @@ const onShare = (item) => {
   .action-icon {
     font-size: 14px;
   }
-
 }
 
 @media screen and (min-width: 1200px) {
