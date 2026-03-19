@@ -1,10 +1,14 @@
-"""DeepSeek AI 评分与翻译服务 (deepseek_filter.py)
+"""AI 评分与翻译服务 (deepseek_filter.py)
 ====================================================
-职责：调用 DeepSeek-V3 API 对新闻进行批量评分和翻译。
+职责：调用 LLM API 对新闻进行批量评分和翻译。
+
+模型选择（通过 config 切换）：
+  - 评分/翻译：SiliconFlow Qwen3-8B（免费）
+  - 摘要（digest_service）：DeepSeek-V3（付费，但调用量极小）
 
 核心逻辑：
   1. 将新闻按语言分为中文组和英文组（使用 langdetect 自动检测）
-  2. 每组按 batch_size=20 分批，发送给 DeepSeek API
+  2. 每组按 batch_size=20 分批，发送给 SiliconFlow API
   3. 中文新闻：投资参考价值 + 催化剂/预期差评分框架
   4. 英文新闻：同评分框架 + 翻译标题和摘要为简体中文
   5. 丢弃 score < 5 的新闻，返回高分条目列表
@@ -93,7 +97,7 @@ JSON 字段及规则：
 [
   {"id": 1, "score": 7, "reason": "CPI数据发布，具体数据对通胀判断有参考价值", "tags": ["宏观经济", "通胀", "宏观数据"]},
   {"id": 2, "score": 8, "reason": "Q4指引大幅上调，构成实质性盈余惊喜", "tags": ["AI算力", "XX公司", "业绩指引上调", "核心催化"]}
-]"""
+] /no_think"""
 
 # ── 英文新闻评分+翻译的 System Prompt ──
 # 同中文评分框架 + 额外翻译要求（标题/摘要翻译为纯简体中文）
@@ -173,7 +177,7 @@ JSON 字段及规则：
 - 所有字段都必须返回，不可省略任何字段
 
 # JSON Format Example
-[{"id": 1, "score": 8, "chinese_title": "英伟达第三季度业绩指引大幅上调", "chinese_summary": "英伟达公布第三季度营收350亿美元，同比增长94%，指引远超市场预期，构成实质性盈余惊喜", "tags": ["AI算力", "英伟达", "业绩指引上调", "核心催化"], "relevant_tickers": ["NVDA"]}]"""
+[{"id": 1, "score": 8, "chinese_title": "英伟达第三季度业绩指引大幅上调", "chinese_summary": "英伟达公布第三季度营收350亿美元，同比增长94%，指引远超市场预期，构成实质性盈余惊喜", "tags": ["AI算力", "英伟达", "业绩指引上调", "核心催化"], "relevant_tickers": ["NVDA"]}] /no_think"""
 
 
 def _detect_is_english(text: str) -> bool:
@@ -360,15 +364,15 @@ async def filter_batch(
     if use_mock:
         return _filter_batch_mock(batch, is_english)
 
-    if not settings.DEEPSEEK_API_KEY or settings.DEEPSEEK_API_KEY.startswith("sk-your"):
-        logger.warning("DeepSeek API key not configured, skipping AI scoring")
+    if not settings.SILICONFLOW_API_KEY:
+        logger.warning("SiliconFlow API key not configured, skipping AI scoring")
         return []
 
     system_prompt = SYSTEM_PROMPT_EN if is_english else SYSTEM_PROMPT_CN
     user_prompt = _build_user_prompt(batch, is_english)
 
     payload = {
-        "model": settings.DEEPSEEK_MODEL,
+        "model": settings.SILICONFLOW_LLM_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -378,7 +382,7 @@ async def filter_batch(
     }
 
     headers = {
-        "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {settings.SILICONFLOW_API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -390,7 +394,7 @@ async def filter_batch(
     try:
         for attempt in range(1, settings.DEEPSEEK_MAX_RETRIES + 1):
             try:
-                resp = await client.post(settings.DEEPSEEK_API_URL, json=payload, headers=headers)
+                resp = await client.post(settings.SILICONFLOW_API_URL, json=payload, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
             except httpx.HTTPStatusError as e:

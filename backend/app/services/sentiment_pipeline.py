@@ -77,7 +77,7 @@ SENTIMENT_SYSTEM_PROMPT = """你是一位顶级的金融量化分析师和操盘
   "reasoning": "用一句话简述你打出该情绪分和预期差的逻辑（必须包含对预期差的判断依据）",
   "sentiment_score": 0,
   "surprise_factor": 0
-}"""
+} /no_think"""
 
 # ── User Prompt 模板 ──
 # 使用方式：SENTIMENT_USER_PROMPT_TEMPLATE.format(news_text="...新闻内容...")
@@ -152,11 +152,11 @@ async def analyze_sentiment_and_surprise_with_llm(
     - 返回 dict，键：entity, sentiment_score, surprise_factor, catalyst_type, reasoning
     - 调用失败或解析失败均抛出异常，由上层 process_incoming_news 的 try/except 兜底
     """
-    if not settings.DEEPSEEK_API_KEY or settings.DEEPSEEK_API_KEY.startswith("sk-your"):
-        raise RuntimeError("DeepSeek API key 未配置")
+    if not settings.SILICONFLOW_API_KEY:
+        raise RuntimeError("SiliconFlow API key 未配置")
 
     payload = {
-        "model": settings.DEEPSEEK_MODEL,
+        "model": settings.SILICONFLOW_LLM_MODEL,
         "messages": [
             {"role": "system", "content": SENTIMENT_SYSTEM_PROMPT},
             {"role": "user",   "content": news_text},  # news_text 已由 _build_news_text_for_llm 套入模板
@@ -165,7 +165,7 @@ async def analyze_sentiment_and_surprise_with_llm(
         "max_tokens": 256,
     }
     headers = {
-        "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {settings.SILICONFLOW_API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -173,7 +173,7 @@ async def analyze_sentiment_and_surprise_with_llm(
         for attempt in range(1, settings.DEEPSEEK_MAX_RETRIES + 1):
             try:
                 resp = await client.post(
-                    settings.DEEPSEEK_API_URL,
+                    settings.SILICONFLOW_API_URL,
                     json=payload,
                     headers=headers,
                 )
@@ -182,17 +182,17 @@ async def analyze_sentiment_and_surprise_with_llm(
                 status_code = e.response.status_code
                 # 内容安全审查触发 → 不重试，直接抛出让上层用默认值兜底
                 if status_code == 400:
-                    raise RuntimeError(f"DeepSeek 内容审查拦截 (400): {e.response.text[:200]}") from e
+                    raise RuntimeError(f"LLM 内容审查拦截 (400): {e.response.text[:200]}") from e
                 # 限速或服务端错误 → 退避重试
                 if attempt < settings.DEEPSEEK_MAX_RETRIES and status_code in (429, 500, 502, 503):
                     await asyncio.sleep(2 * attempt)
                     continue
-                raise RuntimeError(f"DeepSeek HTTP {status_code}") from e
+                raise RuntimeError(f"SiliconFlow HTTP {status_code}") from e
             except (httpx.TimeoutException, httpx.ConnectError) as e:
                 if attempt < settings.DEEPSEEK_MAX_RETRIES:
                     await asyncio.sleep(2 * attempt)
                     continue
-                raise TimeoutError(f"DeepSeek 请求超时/连接失败: {e}") from e
+                raise TimeoutError(f"SiliconFlow 请求超时/连接失败: {e}") from e
 
             # ── 解析响应 ──
             raw_content: str = resp.json()["choices"][0]["message"]["content"]
@@ -210,7 +210,7 @@ async def analyze_sentiment_and_surprise_with_llm(
             return result
 
     # 理论上不会到达这里（循环内必然 return 或 raise），保险起见
-    raise RuntimeError("DeepSeek API 所有重试均失败")
+    raise RuntimeError("SiliconFlow API 所有重试均失败")
 
 
 async def save_to_db(

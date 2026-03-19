@@ -5,8 +5,8 @@
   - 日志：LOG_LEVEL / LOG_FORMAT
   - 跨域：CORS_ORIGINS
   - 智谱 AI：短文本 Embedding 去重 API 密钥
-  - 硅基流动 SiliconFlow：免费 Embedding API（BAAI/bge-m3）
-  - DeepSeek AI：API 密钥/地址/模型/批次大小/分数阈值/重试次数
+  - 硅基流动 SiliconFlow：免费 Embedding API（BAAI/bge-m3）+ 免费 LLM（Qwen3-8B 评分/情绪分析）
+  - DeepSeek AI：API 密钥/地址/模型/批次大小/分数阈值/重试次数（仅摘要 digest 使用）
   - 调度器：Pipeline 运行时间范围
   - 告警：Webhook URL（支持飞书/钉钉/企微/Slack）
   - PostgreSQL：连接参数 + 连接池配置
@@ -57,14 +57,16 @@ class Settings(BaseSettings):
     ZHIPU_API_KEY: str = ""                                         # 智谱 API Key (https://open.bigmodel.cn)
     ZHIPU_EMBEDDING_MODEL: str = "embedding-3"                      # Embedding 模型：embedding-3（可自定义维度）或 embedding-2（固定1024维）
 
-    # ── 硅基流动 SiliconFlow（免费 Embedding）──
+    # ── 硅基流动 SiliconFlow（免费 Embedding + 免费 LLM 评分）──
     SILICONFLOW_API_KEY: str = ""                                   # SiliconFlow API Key (https://cloud.siliconflow.cn)
     SILICONFLOW_EMBEDDING_MODEL: str = "BAAI/bge-m3"               # 免费模型：BAAI/bge-m3(1024维) / BAAI/bge-large-zh-v1.5(1024维)
+    SILICONFLOW_LLM_MODEL: str = "Qwen/Qwen3-8B"                  # 免费 LLM 模型（用于评分/情绪分析）
+    SILICONFLOW_API_URL: str = "https://api.siliconflow.cn/v1/chat/completions"  # SiliconFlow Chat API
 
-    # ── DeepSeek AI 评分配置 ──
+    # ── DeepSeek AI（摘要专用，评分已迁移至 SiliconFlow）──
     DEEPSEEK_API_KEY: str = ""                                      # API 密钥
     DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # API 地址
-    DEEPSEEK_MODEL: str = "deepseek-chat"                           # 模型名称
+    DEEPSEEK_MODEL: str = "deepseek-chat"                           # 模型名称（仅 digest 使用）
     DEEPSEEK_BATCH_SIZE: int = 20                                   # 每批评分条数
     DEEPSEEK_SCORE_THRESHOLD: int = 5                               # 入库分数阈值（≥5 才存储）
     DEEPSEEK_MAX_RETRIES: int = 2                                   # API 失败最大重试次数
