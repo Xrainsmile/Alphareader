@@ -301,7 +301,7 @@
               <view class="news-meta">
                 <text class="meta-source">{{ group.source }}</text>
                 <text class="meta-dot">·</text>
-                <text class="meta-time">{{ formatTime(group.created_at) }}</text>
+                <text class="meta-time">{{ formatTime(group.published_at || group.created_at) }}</text>
                 <!-- Hacker Gravity 指标 (hot 模式下显示)，含聚合热度加成 -->
                 <template v-if="currentSort === 'hot' && group.ranking_score != null">
                   <text class="meta-dot">·</text>
@@ -342,7 +342,7 @@
                   <view class="related-item-meta">
                     <text class="related-item-source">{{ child.source }}</text>
                     <text class="meta-dot">·</text>
-                    <text class="related-item-time">{{ formatTime(child.created_at) }}</text>
+                    <text class="related-item-time">{{ formatTime(child.published_at || child.created_at) }}</text>
                   </view>
                 </view>
               </view>

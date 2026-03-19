@@ -131,7 +131,7 @@ async def list_news(
             order_clause = desc(News.created_at)
             use_python_sort = True
     elif sort == SortMode.LATEST:
-        order_clause = desc(News.created_at)
+        order_clause = desc(func.coalesce(News.published_at, News.created_at))
     else:  # SortMode.SCORE
         order_clause = desc(News.ai_score)
 

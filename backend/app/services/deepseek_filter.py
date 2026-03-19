@@ -140,6 +140,11 @@ SYSTEM_PROMPT_EN = """你是一位资深金融市场分析师，熟悉 Minervini
 # 翻译要求（极其重要）
 
 - chinese_title 和 chinese_summary 必须是 **纯简体中文**，绝对不可包含任何英文单词或字母。
+- **当标题过短或为纯产品名（如 "OpenAI o1-mini"、"Hello GPT-4o"、"Dota 2"）时，必须结合 Content 内容生成一个描述性的中文标题**。例如：
+  - "OpenAI o1-mini" + Content 提到推进低成本推理 → chinese_title: "OpenAI发布推理模型o1迷你版，推进低成本AI推理"
+  - "Hello GPT-4o" + Content 提到多模态旗舰模型 → chinese_title: "OpenAI发布多模态旗舰模型GPT-4o"
+  - "OpenAI API" + Content 提到开放API访问 → chinese_title: "OpenAI开放API接口供开发者使用"
+  - 绝对不可直接复制英文标题作为 chinese_title！
 - 公司名称必须翻译为中文通用译名（NVIDIA → 英伟达，Apple → 苹果，Tesla → 特斯拉，Microsoft → 微软，Google → 谷歌，Amazon → 亚马逊，Meta → Meta/脸书，Goldman Sachs → 高盛，JPMorgan → 摩根大通，Morgan Stanley → 摩根士丹利）。
 - 股票代码仅放在 relevant_tickers 字段中，不要出现在 chinese_title 里。
 - 使用专业中文金融术语：
@@ -293,6 +298,15 @@ def _parse_response(raw_text: str, batch: list[RawNewsItem], is_english: bool) -
                 if chinese_summary and not _contains_chinese(chinese_summary):
                     logger.warning("chinese_summary is not Chinese, discarding: %s", chinese_summary[:50])
                     chinese_summary = ""
+
+                # 兜底：如果 chinese_title 为空但 chinese_summary 有中文，
+                # 从摘要截取前30字作为标题，避免回退到英文原标题
+                if not chinese_title and chinese_summary and _contains_chinese(chinese_summary):
+                    chinese_title = chinese_summary[:30].rstrip("，。、；：")
+                    logger.info(
+                        "chinese_title empty, fallback from summary: '%s' (original: '%s')",
+                        chinese_title, batch[idx].title[:50],
+                    )
 
                 scored.append(ScoredNewsItem(
                     raw=batch[idx],

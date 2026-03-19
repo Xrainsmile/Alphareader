@@ -19,9 +19,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -34,6 +35,15 @@ from app.services.rss_fetcher import REDIS_DEDUP_KEY, fetch_all_feeds
 from app.utils.deduplicator import NewsDeduplicator
 
 logger = logging.getLogger("alphareader.pipeline")
+
+# 新闻最大年龄（天）：published_at 超过此天数的文章视为过时，跳过处理
+# 防止 RSS 返回全量历史文章（如 OpenAI Blog 一次返回数百篇从2016年至今的文章）
+MAX_NEWS_AGE_DAYS = 7
+
+
+def _contains_cjk(text: str) -> bool:
+    """检查文本是否包含 CJK（中日韩）字符"""
+    return bool(re.search(r"[\u4e00-\u9fff]", text))
 
 
 def _hash_url(url: str) -> str:
@@ -108,6 +118,12 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                 async with session.begin_nested():
                     # For English news with translated title/summary, use Chinese versions
                     title = item.chinese_title or item.raw.title
+                    # Log untranslated English titles for debugging
+                    if not item.chinese_title and item.raw.title and not _contains_cjk(item.raw.title):
+                        logger.warning(
+                            "⚠️ English news stored without translation: '%s' [%s]",
+                            item.raw.title[:50], item.raw.source,
+                        )
                     # Already chinese_summary for EN items; fallback to
                     # truncated content for CN items where DeepSeek omits summary
                     summary = item.summary or (item.raw.content or "")[:100]
@@ -259,6 +275,28 @@ async def run_pipeline() -> dict:
     summary["fetched"] = len(raw_items)
     if not raw_items:
         logger.info("No new items fetched, pipeline done.")
+        await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
+        return summary
+
+    # Step 1.5: 过滤掉过于陈旧的新闻
+    # 某些 RSS 源（如 OpenAI Blog）会返回全量历史文章，需要剔除
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(days=MAX_NEWS_AGE_DAYS)
+    fresh_items: list = []
+    stale_count = 0
+    for item in raw_items:
+        if item.published_at and item.published_at < cutoff_dt:
+            stale_count += 1
+            continue
+        fresh_items.append(item)
+    if stale_count:
+        logger.info(
+            "Stale-filter: dropped %d items with published_at > %d days old (cutoff=%s)",
+            stale_count, MAX_NEWS_AGE_DAYS, cutoff_dt.isoformat(),
+        )
+    raw_items = fresh_items
+
+    if not raw_items:
+        logger.info("All items were stale, pipeline done.")
         await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
         return summary
 
