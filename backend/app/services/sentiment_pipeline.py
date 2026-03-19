@@ -77,7 +77,7 @@ SENTIMENT_SYSTEM_PROMPT = """你是一位顶级的金融量化分析师和操盘
   "reasoning": "用一句话简述你打出该情绪分和预期差的逻辑（必须包含对预期差的判断依据）",
   "sentiment_score": 0,
   "surprise_factor": 0
-} /no_think"""
+}"""
 
 # ── User Prompt 模板 ──
 # 使用方式：SENTIMENT_USER_PROMPT_TEMPLATE.format(news_text="...新闻内容...")
@@ -163,6 +163,7 @@ async def analyze_sentiment_and_surprise_with_llm(
         ],
         "temperature": 0.1,
         "max_tokens": 256,
+        "enable_thinking": False,
     }
     headers = {
         "Authorization": f"Bearer {settings.SILICONFLOW_API_KEY}",

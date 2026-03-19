@@ -97,7 +97,7 @@ JSON 字段及规则：
 [
   {"id": 1, "score": 7, "reason": "CPI数据发布，具体数据对通胀判断有参考价值", "tags": ["宏观经济", "通胀", "宏观数据"]},
   {"id": 2, "score": 8, "reason": "Q4指引大幅上调，构成实质性盈余惊喜", "tags": ["AI算力", "XX公司", "业绩指引上调", "核心催化"]}
-] /no_think"""
+]"""
 
 # ── 英文新闻评分+翻译的 System Prompt ──
 # 同中文评分框架 + 额外翻译要求（标题/摘要翻译为纯简体中文）
@@ -177,7 +177,7 @@ JSON 字段及规则：
 - 所有字段都必须返回，不可省略任何字段
 
 # JSON Format Example
-[{"id": 1, "score": 8, "chinese_title": "英伟达第三季度业绩指引大幅上调", "chinese_summary": "英伟达公布第三季度营收350亿美元，同比增长94%，指引远超市场预期，构成实质性盈余惊喜", "tags": ["AI算力", "英伟达", "业绩指引上调", "核心催化"], "relevant_tickers": ["NVDA"]}] /no_think"""
+[{"id": 1, "score": 8, "chinese_title": "英伟达第三季度业绩指引大幅上调", "chinese_summary": "英伟达公布第三季度营收350亿美元，同比增长94%，指引远超市场预期，构成实质性盈余惊喜", "tags": ["AI算力", "英伟达", "业绩指引上调", "核心催化"], "relevant_tickers": ["NVDA"]}]"""
 
 
 def _detect_is_english(text: str) -> bool:
@@ -330,7 +330,7 @@ def _parse_response(raw_text: str, batch: list[RawNewsItem], is_english: bool) -
                     tags=[str(t) for t in item.get("tags", []) if t][:5],
                 ))
         except (ValueError, TypeError) as e:
-            logger.warning("Skipping malformed item in DeepSeek response: %s (%s)", item, e)
+            logger.warning("Skipping malformed item in LLM response: %s (%s)", item, e)
             continue
 
     return scored
@@ -379,6 +379,7 @@ async def filter_batch(
         ],
         "temperature": 0.1,
         "max_tokens": 4096,
+        "enable_thinking": False,
     }
 
     headers = {
@@ -405,7 +406,7 @@ async def filter_batch(
                 if status == 400 and any(kw in body for kw in _CONTENT_RISK_KEYWORDS):
                     titles = [it.title[:40] for it in batch[:3]]
                     logger.warning(
-                        "⚠️ DeepSeek content safety triggered — skipping batch "
+                        "⚠️ SiliconFlow content safety triggered — skipping batch "
                         "(%d items, first titles: %s)",
                         len(batch), titles,
                     )
@@ -413,7 +414,7 @@ async def filter_batch(
 
                 max_retries = settings.DEEPSEEK_MAX_RETRIES
                 logger.error(
-                    "DeepSeek API HTTP %s (attempt %d/%d): %s",
+                    "SiliconFlow API HTTP %s (attempt %d/%d): %s",
                     status, attempt, max_retries, body,
                 )
 
@@ -425,7 +426,7 @@ async def filter_batch(
             except (httpx.TimeoutException, httpx.ConnectError) as e:
                 max_retries = settings.DEEPSEEK_MAX_RETRIES
                 logger.error(
-                    "DeepSeek network error (attempt %d/%d): %s", attempt, max_retries, e,
+                    "SiliconFlow network error (attempt %d/%d): %s", attempt, max_retries, e,
                 )
                 if attempt < max_retries:
                     await asyncio.sleep(3 * attempt)
@@ -433,7 +434,7 @@ async def filter_batch(
                 return []
             except Exception as e:
                 max_retries = settings.DEEPSEEK_MAX_RETRIES
-                logger.error("DeepSeek request failed (attempt %d/%d): %s", attempt, max_retries, e)
+                logger.error("SiliconFlow request failed (attempt %d/%d): %s", attempt, max_retries, e)
                 if attempt < max_retries:
                     await asyncio.sleep(3 * attempt)
                     continue
@@ -442,7 +443,7 @@ async def filter_batch(
             try:
                 raw_text = data["choices"][0]["message"]["content"]
             except (KeyError, IndexError) as e:
-                logger.error("Unexpected DeepSeek response structure: %s", e)
+                logger.error("Unexpected SiliconFlow response structure: %s", e)
                 return []
 
             scored = _parse_response(raw_text, batch, is_english)
@@ -451,14 +452,14 @@ async def filter_batch(
             max_retries = settings.DEEPSEEK_MAX_RETRIES
             if not scored and len(batch) > 3 and attempt < max_retries:
                 logger.warning(
-                    "DeepSeek returned 0 scored items for %d inputs (attempt %d/%d), "
+                    "SiliconFlow returned 0 scored items for %d inputs (attempt %d/%d), "
                     "retrying...\n── Raw response (%d chars) ──\n%s",
                     len(batch), attempt, max_retries, len(raw_text), raw_text[:1500],
                 )
                 await asyncio.sleep(2 * attempt)
                 continue
 
-            logger.info("DeepSeek scored batch: %d/%d passed threshold (>=%d)",
+            logger.info("SiliconFlow scored batch: %d/%d passed threshold (>=%d)",
                          len(scored), len(batch), settings.DEEPSEEK_SCORE_THRESHOLD)
             return scored
     finally:
@@ -560,5 +561,5 @@ async def filter_news(items: list[RawNewsItem]) -> FilterResult:
 
     if skipped_batches:
         logger.warning("⚠️ %d/%d batch(es) skipped due to errors", skipped_batches, total_batches)
-    logger.info("Total items passing DeepSeek filter: %d / %d", len(all_scored), len(items))
+    logger.info("Total items passing SiliconFlow filter: %d / %d", len(all_scored), len(items))
     return FilterResult(scored=all_scored, skipped_batches=skipped_batches, total_batches=total_batches)
