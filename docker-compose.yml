@@ -40,6 +40,9 @@ services:
     container_name: alpha-web
     env_file:
       - .env
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     depends_on:
       db:
         condition: service_healthy
