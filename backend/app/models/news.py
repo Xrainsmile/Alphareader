@@ -19,6 +19,7 @@ class News(Base):
     title: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
     content: Mapped[str] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(32), nullable=False, default="财经", server_default="财经", index=True)
     url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=True

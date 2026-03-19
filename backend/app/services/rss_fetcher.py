@@ -1,11 +1,14 @@
 """新闻抓取服务 (rss_fetcher.py)
 =================================
-职责：从多个中英文金融信源并发抓取新闻，返回去重后的原始新闻列表。
+职责：从多个中英文金融/科技信源并发抓取新闻，返回去重后的原始新闻列表。
 
-当前活跃信源（6 个）：
-  中文：财联社（通过 JSON API）
-  英文：MarketWatch / Seeking Alpha / TechCrunch（通过 RSS/Atom XML）
-        Finnhub（通过 JSON API，需 API Key）
+当前活跃信源（11 个）：
+  财经类：财联社（通过 JSON API）
+         MarketWatch / Seeking Alpha（通过 RSS/Atom XML）
+         Finnhub（通过 JSON API，需 API Key）
+  科技类：TechCrunch / OpenAI Blog / Google AI Blog / Anthropic /
+         Hugging Face / MIT Technology Review（通过 RSS/Atom XML）
+         Hacker News（通过 Firebase API）
 
 处理流程：
   1. 使用 httpx 并发请求所有信源
@@ -72,6 +75,8 @@ class RawNewsItem:
     tags: list[str] = field(default_factory=list)
     # 事件聚合：当去重器判定为"同一事件的关联报道"时，记录更早报道的 URL
     related_to_url: str | None = None
+    # 分类标签：科技 / 财经
+    category: str = "财经"
 
 
 def _hash_url(url: str) -> str:
@@ -364,6 +369,7 @@ def _parse_techcrunch(raw_text: str) -> list[RawNewsItem]:
             items.append(RawNewsItem(
                 title=title, content=content or title,
                 url=url, source="TechCrunch", published_at=published, tags=tags[:3],
+                category="科技",
             ))
     return items
 
@@ -394,10 +400,162 @@ def _parse_finnhub(data: list | dict) -> list[RawNewsItem]:
     return items
 
 
+# ════════════════════════════════════════════════════════════════
+# 科技信源解析器 — AI/Tech Blog RSS + Hacker News Firebase API
+# ════════════════════════════════════════════════════════════════
 
-# ════════════════════════════════════════════════════════
-# 信源注册表 — 所有活跃信源的配置中心
-# ════════════════════════════════════════════════════════
+def _parse_hackernews(data: list | dict) -> list[RawNewsItem]:
+    """解析 Hacker News Firebase API（https://hacker-news.firebaseio.com）
+
+    通过 /v0/topstories.json 获取 Top Story ID 列表，
+    再批量获取每条的 title/url/time/score。
+    注意：此函数接收的 data 是预处理后的 story 列表（由 fetch 逻辑处理）。
+    """
+    items: list[RawNewsItem] = []
+    entries = data if isinstance(data, list) else []
+    for entry in entries:
+        title = (entry.get("title") or "").strip()
+        url = entry.get("url") or f"https://news.ycombinator.com/item?id={entry.get('id', '')}"
+        ts = entry.get("time")
+        published = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
+        if title:
+            items.append(RawNewsItem(
+                title=title, content=title,
+                url=url, source="Hacker News", published_at=published,
+                category="科技",
+            ))
+    return items
+
+
+def _parse_openai_blog(raw_text: str) -> list[RawNewsItem]:
+    """解析 OpenAI Blog RSS (https://openai.com/news/rss/)"""
+    feed = feedparser.parse(raw_text)
+    items: list[RawNewsItem] = []
+    for entry in feed.entries:
+        title = entry.get("title", "").strip()
+        url = entry.get("link", "")
+        content = _strip_html(entry.get("summary", "") or entry.get("description", ""))
+        published = _parse_rss_time(entry)
+        if title and url:
+            items.append(RawNewsItem(
+                title=title, content=content or title,
+                url=url, source="OpenAI Blog", published_at=published,
+                category="科技",
+            ))
+    return items
+
+
+def _parse_google_ai_blog(raw_text: str) -> list[RawNewsItem]:
+    """解析 Google AI Blog RSS (https://blog.google/technology/ai/rss/)"""
+    feed = feedparser.parse(raw_text)
+    items: list[RawNewsItem] = []
+    for entry in feed.entries:
+        title = entry.get("title", "").strip()
+        url = entry.get("link", "")
+        content = _strip_html(entry.get("summary", "") or entry.get("description", ""))
+        published = _parse_rss_time(entry)
+        if title and url:
+            items.append(RawNewsItem(
+                title=title, content=content or title,
+                url=url, source="Google AI Blog", published_at=published,
+                category="科技",
+            ))
+    return items
+
+
+def _parse_anthropic(raw_text: str) -> list[RawNewsItem]:
+    """解析 Anthropic sitemap.xml，提取 /engineering/ + /research/ + /news/ 下的文章。
+
+    Anthropic 没有 RSS feed，但 sitemap.xml 包含所有文章 URL 和 lastmod 时间。
+    我们从中筛选最近的文章条目。
+    """
+    import xml.etree.ElementTree as ET
+
+    items: list[RawNewsItem] = []
+    try:
+        root = ET.fromstring(raw_text)
+    except ET.ParseError:
+        return items
+
+    ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    prefixes = ("/engineering/", "/research/", "/news/")
+
+    for url_elem in root.findall("s:url", ns):
+        loc = (url_elem.findtext("s:loc", "", ns) or "").strip()
+        lastmod = (url_elem.findtext("s:lastmod", "", ns) or "").strip()
+
+        # 只要 engineering / research / news 下的子页面
+        from urllib.parse import urlparse
+        path = urlparse(loc).path
+        if not any(path.startswith(p) for p in prefixes):
+            continue
+        # 排除分类首页（如 /engineering/ 本身）
+        slug = path.rstrip("/").split("/")[-1]
+        if not slug or slug in ("engineering", "research", "news"):
+            continue
+
+        # 从 slug 生成标题（将连字符替换为空格并首字母大写）
+        title = slug.replace("-", " ").title()
+
+        published = None
+        if lastmod:
+            try:
+                from datetime import datetime, timezone
+                # sitemap lastmod 格式通常是 YYYY-MM-DD 或 ISO 8601
+                if "T" in lastmod:
+                    published = datetime.fromisoformat(lastmod.replace("Z", "+00:00"))
+                else:
+                    published = datetime.strptime(lastmod, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except (ValueError, TypeError):
+                pass
+
+        items.append(RawNewsItem(
+            title=title, content=title,
+            url=loc, source="Anthropic", published_at=published,
+            category="科技",
+        ))
+
+    # 按 lastmod 降序排列，只取最近 30 条
+    items.sort(key=lambda x: x.published_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    return items[:30]
+
+
+def _parse_huggingface_blog(raw_text: str) -> list[RawNewsItem]:
+    """解析 Hugging Face Blog RSS (https://huggingface.co/blog/feed.xml)"""
+    feed = feedparser.parse(raw_text)
+    items: list[RawNewsItem] = []
+    for entry in feed.entries:
+        title = entry.get("title", "").strip()
+        url = entry.get("link", "")
+        content = _strip_html(entry.get("summary", "") or entry.get("description", ""))
+        published = _parse_rss_time(entry)
+        tags = [t.get("term", "") for t in entry.get("tags", []) if t.get("term")]
+        if title and url:
+            items.append(RawNewsItem(
+                title=title, content=content or title,
+                url=url, source="Hugging Face", published_at=published, tags=tags[:3],
+                category="科技",
+            ))
+    return items
+
+
+def _parse_mit_tech_review(raw_text: str) -> list[RawNewsItem]:
+    """解析 MIT Technology Review RSS (https://www.technologyreview.com/feed/)"""
+    feed = feedparser.parse(raw_text)
+    items: list[RawNewsItem] = []
+    for entry in feed.entries:
+        title = entry.get("title", "").strip()
+        url = entry.get("link", "")
+        content = _strip_html(entry.get("summary", "") or entry.get("description", ""))
+        published = _parse_rss_time(entry)
+        tags = [t.get("term", "") for t in entry.get("tags", []) if t.get("term")]
+        if title and url:
+            items.append(RawNewsItem(
+                title=title, content=content or title,
+                url=url, source="MIT Tech Review", published_at=published, tags=tags[:3],
+                category="科技",
+            ))
+    return items
 
 @dataclass
 class FeedSource:
@@ -406,11 +564,13 @@ class FeedSource:
     url: str                                    # 主 URL
     parser: Callable
     is_rss: bool = False                        # True = RSS/Atom 格式，用 feedparser 解析
+    is_api_hn: bool = False                     # True = Hacker News Firebase API（需二次请求获取详情）
     fallback_urls: list[str] = field(default_factory=list)  # 主 URL 失败时按顺序尝试的备用 URL
 
 
 # 活跃信源列表：pipeline 每次运行时并发抓取以下所有信源
 FEED_SOURCES: list[FeedSource] = [
+    # ── 财经信源 ──
     FeedSource(
         name="财联社",
         url="https://www.cls.cn/nodeapi/updateTelegraphList?app=CailianpressWeb&os=web&sv=8.4.6&rn=30",
@@ -431,15 +591,52 @@ FEED_SOURCES: list[FeedSource] = [
         is_rss=True,
     ),
     FeedSource(
+        name="Finnhub",
+        url="",  # 动态构建，见 fetch_all_feeds()
+        parser=_parse_finnhub,
+    ),
+    # ── 科技信源 ──
+    FeedSource(
         name="TechCrunch",
         url="https://techcrunch.com/feed/",
         parser=_parse_techcrunch,
         is_rss=True,
     ),
     FeedSource(
-        name="Finnhub",
-        url="",  # 动态构建，见 fetch_all_feeds()
-        parser=_parse_finnhub,
+        name="Hacker News",
+        url="https://hacker-news.firebaseio.com/v0/topstories.json",
+        parser=_parse_hackernews,
+        is_api_hn=True,   # 特殊标记：需要二次请求获取详情
+    ),
+    FeedSource(
+        name="OpenAI Blog",
+        url="https://openai.com/blog/rss.xml",
+        parser=_parse_openai_blog,
+        is_rss=True,
+    ),
+    FeedSource(
+        name="Google AI Blog",
+        url="https://blog.google/technology/ai/rss/",
+        parser=_parse_google_ai_blog,
+        is_rss=True,
+    ),
+    FeedSource(
+        name="Anthropic",
+        url="https://www.anthropic.com/sitemap.xml",
+        parser=_parse_anthropic,
+        is_rss=True,  # 将 raw text 传给 parser（内部用 XML 解析 sitemap）
+    ),
+    FeedSource(
+        name="Hugging Face",
+        url="https://huggingface.co/blog/feed.xml",
+        parser=_parse_huggingface_blog,
+        is_rss=True,
+    ),
+    FeedSource(
+        name="MIT Tech Review",
+        url="https://www.technologyreview.com/feed/",
+        parser=_parse_mit_tech_review,
+        is_rss=True,
     ),
 ]
 
@@ -522,9 +719,14 @@ async def _fetch_raw_items(
     """抓取单个信源的原始数据并解析。失败返回 None。
 
     如果信源配置了 fallback_urls，会使用 Primary → Fallback 策略逐个尝试。
+    Hacker News (is_api_hn=True) 使用特殊的二次请求逻辑。
     """
     if source.fallback_urls:
         return await _fetch_with_fallback(client, source)
+
+    # Hacker News 特殊处理：先获取 Top Story IDs，再并发获取前 30 条详情
+    if source.is_api_hn:
+        return await _fetch_hackernews_stories(client, source)
 
     try:
         resp = await client.get(source.url, timeout=20.0)
@@ -541,6 +743,48 @@ async def _fetch_raw_items(
     except Exception as e:
         logger.error("Parser error for %s: %s", source.name, e)
         return None
+
+
+async def _fetch_hackernews_stories(
+    client: httpx.AsyncClient,
+    source: FeedSource,
+    max_stories: int = 30,
+) -> list[RawNewsItem] | None:
+    """Hacker News Firebase API 二次请求：
+    1. GET /v0/topstories.json → 获取 Top Story ID 列表
+    2. 并发 GET /v0/item/{id}.json → 获取每条详情
+    只取前 max_stories 条，避免请求过多。
+    """
+    try:
+        resp = await client.get(source.url, timeout=15.0)
+        resp.raise_for_status()
+        story_ids = resp.json()
+    except Exception as e:
+        logger.warning("Failed to fetch HN top stories: %s", e)
+        return None
+
+    if not isinstance(story_ids, list) or not story_ids:
+        return None
+
+    # 只取前 max_stories 条
+    story_ids = story_ids[:max_stories]
+
+    async def _get_story(sid: int) -> dict | None:
+        try:
+            r = await client.get(
+                f"https://hacker-news.firebaseio.com/v0/item/{sid}.json",
+                timeout=10.0,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+    results = await asyncio.gather(*[_get_story(sid) for sid in story_ids])
+    stories = [s for s in results if s and isinstance(s, dict) and s.get("title")]
+
+    logger.info("HN: fetched %d/%d story details", len(stories), len(story_ids))
+    return source.parser(stories)
 
 
 async def _fetch_with_fallback(

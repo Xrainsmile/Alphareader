@@ -12,6 +12,19 @@
       <text class="subtitle">高频金融情报 · 信噪比优先</text>
     </view>
 
+    <!-- 分类 Tab：全部 / 财经 / 科技 -->
+    <view class="category-tabs">
+      <view
+        v-for="cat in categoryTabs"
+        :key="cat.value"
+        class="category-tab"
+        :class="{ 'category-tab-active': currentCategory === cat.value }"
+        @click="onSwitchCategory(cat.value)"
+      >
+        <text class="category-tab-text" :class="{ 'category-tab-text-active': currentCategory === cat.value }">{{ cat.label }}</text>
+      </view>
+    </view>
+
     <!-- 搜索栏 -->
     <view class="search-bar" :class="{ 'search-bar-focus': searchFocused }">
       <view class="search-input-wrap">
@@ -205,6 +218,16 @@
             >
               <text class="fc-text" :class="{ 'fc-text-active': tmpSource === src }">{{ src }}</text>
             </view>
+            <view class="fc-divider"></view>
+            <view
+              v-for="src in techSources"
+              :key="src"
+              class="fc"
+              :class="{ 'fc-active': tmpSource === src }"
+              @click="tmpSource = src"
+            >
+              <text class="fc-text" :class="{ 'fc-text-active': tmpSource === src }">{{ src }}</text>
+            </view>
           </view>
         </view>
         <!-- 评分 -->
@@ -372,8 +395,16 @@ export default {
       promptCopied: false,
       expandedGroups: {},   // 关联报道折叠/展开状态：{ [parentId]: true/false }
       scoreOptions: [5, 6, 7, 8, 9],
+      // ── 分类 Tab ──
+      currentCategory: '',  // 当前选中分类：'' = 全部, '财经', '科技'
+      categoryTabs: [
+        { value: '', label: '全部' },
+        { value: '财经', label: '财经' },
+        { value: '科技', label: '科技' },
+      ],
       cnSources: ['财联社'],
-      enSources: ['MarketWatch', 'Seeking Alpha', 'TechCrunch', 'Finnhub'],
+      enSources: ['MarketWatch', 'Seeking Alpha', 'Finnhub'],
+      techSources: ['TechCrunch', 'Hacker News', 'OpenAI Blog', 'Google AI Blog', 'Anthropic', 'Hugging Face', 'MIT Tech Review'],
       sortTabs: [
         { value: 'hot', label: 'Gravity' },
         { value: 'latest', label: '最新' },
@@ -516,6 +547,13 @@ export default {
       }
     },
 
+    /** 切换分类 Tab（全部/财经/科技） */
+    onSwitchCategory(cat) {
+      if (this.currentCategory === cat) return
+      this.currentCategory = cat
+      this.resetAndLoad()
+    },
+
     /** 聚合热度计算：base + children * 0.2 */
     boostedGravity(group) {
       const base = group.ranking_score || 0
@@ -536,6 +574,7 @@ export default {
           offset: 0,
           min_score: this.minScore,
           source: this.currentSource || undefined,
+          category: this.currentCategory || undefined,
           sort: this.currentSort,
           max_age_hours: this.maxAgeHours || undefined,
         })
@@ -564,6 +603,7 @@ export default {
           offset: this.offset,
           min_score: this.minScore,
           source: this.currentSource || undefined,
+          category: this.currentCategory || undefined,
           sort: this.currentSort,
           max_age_hours: this.maxAgeHours || undefined,
         })
@@ -1033,6 +1073,42 @@ ${newsBlock}
   color: #8c8c9a;
   margin-top: 6rpx;
   letter-spacing: 1rpx;
+}
+
+/* ── Category Tabs ── */
+.category-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 20rpx 0 4rpx;
+  background: #ecedf0;
+  border-radius: 20rpx;
+  padding: 4rpx;
+}
+.category-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16rpx 0;
+  border-radius: 16rpx;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.category-tab-active {
+  background: #ffffff;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+}
+.category-tab-text {
+  font-size: 26rpx;
+  color: #8c8c9a;
+  font-weight: 500;
+  letter-spacing: 1rpx;
+}
+.category-tab-text-active {
+  color: #1a1a2e;
+  font-weight: 700;
 }
 
 /* ── Search Bar ── */
@@ -1819,6 +1895,23 @@ ${newsBlock}
   .subtitle {
     font-size: 13px;
     margin-top: 4px;
+  }
+
+  /* ── Category Tabs (PC) ── */
+  .category-tabs {
+    margin: 14px 0 4px;
+    border-radius: 12px;
+    padding: 3px;
+  }
+  .category-tab {
+    padding: 9px 0;
+    border-radius: 10px;
+  }
+  .category-tab:hover:not(.category-tab-active) {
+    background: rgba(0, 0, 0, 0.03);
+  }
+  .category-tab-text {
+    font-size: 14px;
   }
 
   /* ── Filter Trigger Bar ── */

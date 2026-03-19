@@ -108,7 +108,9 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                 async with session.begin_nested():
                     # For English news with translated title/summary, use Chinese versions
                     title = item.chinese_title or item.raw.title
-                    summary = item.summary  # Already chinese_summary for EN items
+                    # Already chinese_summary for EN items; fallback to
+                    # truncated content for CN items where DeepSeek omits summary
+                    summary = item.summary or (item.raw.content or "")[:100]
 
                     # Merge relevant_tickers into tags if present
                     tags = item.tags or item.raw.tags
@@ -126,6 +128,7 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                         title=title,
                         content=item.raw.content,
                         source=item.raw.source,
+                        category=getattr(item.raw, "category", "财经"),
                         url=item.raw.url,
                         published_at=item.raw.published_at,
                         ai_score=item.score,

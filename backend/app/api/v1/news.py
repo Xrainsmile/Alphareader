@@ -79,6 +79,7 @@ async def list_news(
     offset: int = Query(0, ge=0),
     min_score: int = Query(5, ge=0, le=10),
     source: str | None = Query(None),
+    category: str | None = Query(None, description="分类筛选: 财经 / 科技"),
     sector: str | None = Query(None),
     sort: SortMode = Query(SortMode.HOT, description="Sort mode: hot (gravity decay), latest, score"),
     gravity: float = Query(1.8, ge=0.5, le=5.0, description="Gravity factor for hot sort"),
@@ -97,6 +98,8 @@ async def list_news(
     conditions = [News.ai_score >= min_score]
     if source:
         conditions.append(News.source == source)
+    if category:
+        conditions.append(News.category == category)
     if sector:
         conditions.append(News.tags.any(sector))
 
@@ -170,6 +173,7 @@ async def list_news(
             "id": str(n.id),
             "title": n.title,
             "source": n.source,
+            "category": n.category,
             "url": n.url,
             "ai_score": n.ai_score,
             "ranking_score": ranking_score,

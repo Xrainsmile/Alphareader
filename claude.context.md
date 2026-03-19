@@ -22,6 +22,7 @@
 * **模拟仓 NAV**：四级降级策略获取不复权实时价（新浪实时 -> akshare -> DB -> 历史交易价）。每个交易日 11:35/15:35 自动计算。
 * **Daily Screener (Minervini Stage2)**：每个交易日 15:40 自动运行。从全市场 5000+ 只 A 股中，经过 ST 剔除、8 项技术面过滤（均线排列/底部反弹/前高逼近/筹码POC/箱体突破/放量/VCP收缩/大阳线）+ 基本面过滤（扣非净利润>0/营收降幅<10%）+ 商誉防雷，筛出约 30-50 只白名单写入 DB。代码位于 `backend/app/services/screener/`。
 * **Stocks 前端页面**：默认 Tab 为「VCP 策略」（含行业/概念板块胶囊搜索筛选器），「价投」Tab 展示手动录入的价值投资标的，「模拟仓」需密码验证。RS Rating Tab 已隐藏（代码注释保留）。
+* **News 分类标签**：新闻分为「财经」和「科技」两个分类。财联社/MarketWatch/Seeking Alpha/Finnhub 归为「财经」；TechCrunch/Hacker News/OpenAI Blog/Google AI Blog/Anthropic/Hugging Face/MIT Tech Review 归为「科技」。前端首页顶部有「全部/财经/科技」三个平铺 Tab 供切换筛选，独立于筛选面板。
 * **Sandbox Admin (`/sandbox-admin`)**：纯后端渲染的独立 HTML 管理页面，**不走前端 Vue**。单文件 `backend/app/sandbox_admin.py` 内嵌全部 HTML/CSS/JS。Dashboard cookie 认证（复用 `app.dashboard._verify_token`）。5 个 Tab：观察池 / 录入推演 / 录入交易 / 录入价投 / 净值计算。API 均走 `backend/app/api/v1/sandbox.py` 中 `/sandbox/admin/*` 路径，依赖 `_require_admin` 校验。新增功能应优先在此页面扩展，而非前端 Vue。
 
 ## 4. 部署与容器架构
