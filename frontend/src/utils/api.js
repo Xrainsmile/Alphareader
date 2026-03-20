@@ -226,6 +226,31 @@ export function fetchSandboxStockDetail(stockId) {
   return request(`/api/v1/sandbox/stocks/${stockId}`)
 }
 
+// ── Briefing API（每日研报使用）──
+
+/**
+ * 获取研报列表（按日期倒序）
+ * @param {number} days 获取最近几天，默认 7
+ */
+export function fetchBriefings(days = 7) {
+  return request(`/api/v1/briefings/?days=${days}`)
+}
+
+/**
+ * 获取最新一条研报
+ */
+export function fetchLatestBriefing() {
+  return request('/api/v1/briefings/latest')
+}
+
+/**
+ * 获取单条研报详情
+ * @param {number} id 研报 ID
+ */
+export function fetchBriefingDetail(id) {
+  return request(`/api/v1/briefings/${id}`)
+}
+
 // ── Analytics API（用户行为上报）──
 
 /**

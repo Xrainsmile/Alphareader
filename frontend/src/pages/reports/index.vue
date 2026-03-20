@@ -3,7 +3,7 @@
     <!-- Header -->
     <view class="reports-header">
       <text class="reports-title">Reports</text>
-      <text class="reports-subtitle">新闻概览 · 每日复盘</text>
+      <text class="reports-subtitle">每日研报 · 新闻概览 · 每日复盘</text>
     </view>
 
     <!-- Tab Bar -->
@@ -11,18 +11,25 @@
       <view
         class="tab-item"
         :class="{ active: activeTab === 'digest' }"
-        @click="activeTab = 'digest'"
+        @click="switchTab('digest')"
       >
         <text class="tab-text">新闻概览</text>
       </view>
       <view
         class="tab-item"
-        :class="{ active: activeTab === 'reports' }"
-        @click="activeTab = 'reports'"
+        :class="{ active: activeTab === 'briefing' }"
+        @click="switchTab('briefing')"
       >
-        <text class="tab-text">研报</text>
+        <text class="tab-text">每日研报</text>
       </view>
-      <view class="tab-indicator" :style="{ left: activeTab === 'digest' ? '0%' : '50%' }"></view>
+      <view
+        class="tab-item"
+        :class="{ active: activeTab === 'reports' }"
+        @click="switchTab('reports')"
+      >
+        <text class="tab-text">复盘</text>
+      </view>
+      <view class="tab-indicator" :style="{ left: tabIndicatorLeft, width: '33.33%' }"></view>
     </view>
 
     <!-- ═══════════════════════════════════════════
@@ -95,7 +102,68 @@
     </view>
 
     <!-- ═══════════════════════════════════════════
-         Tab 2: 研报（原有 Reports 列表）
+         Tab 2: 每日研报（AI 市场分析）
+         ═══════════════════════════════════════════ -->
+    <view v-if="activeTab === 'briefing'" class="briefing-tab">
+      <!-- Loading -->
+      <EmptyState
+        v-if="briefingLoading"
+        text="加载中..."
+        mobile-padding="120rpx 0"
+        desktop-padding="60px 0"
+      />
+
+      <!-- Empty -->
+      <EmptyState
+        v-if="!briefingLoading && briefingList.length === 0"
+        text="暂无研报数据"
+        mobile-padding="120rpx 0"
+        desktop-padding="60px 0"
+      />
+
+      <!-- Briefing List -->
+      <view v-if="!briefingLoading && briefingList.length > 0" class="briefing-list">
+        <view
+          v-for="item in briefingList"
+          :key="item.id"
+          class="briefing-card"
+          @click="goBriefingDetail(item.id)"
+        >
+          <!-- Card Header -->
+          <view class="briefing-card-header">
+            <view class="briefing-date-group">
+              <text class="briefing-date-day">{{ formatBriefingDay(item.briefing_date) }}</text>
+              <text class="briefing-date-weekday">{{ formatBriefingWeekday(item.briefing_date) }}</text>
+            </view>
+            <view class="briefing-status" :class="'status-' + item.status">
+              <text class="status-dot">●</text>
+              <text class="status-text">{{ statusLabel(item.status) }}</text>
+            </view>
+          </view>
+
+          <!-- Preview Content (first ~100 chars) -->
+          <text class="briefing-preview">{{ getPreview(item.content) }}</text>
+
+          <!-- Card Footer: meta stats -->
+          <view class="briefing-card-footer">
+            <view class="meta-tags">
+              <text class="meta-tag" v-if="item.meta && item.meta.vcp_count">VCP {{ item.meta.vcp_count }}</text>
+              <text class="meta-tag" v-if="item.meta && item.meta.trend_count">趋势 {{ item.meta.trend_count }}</text>
+              <text class="meta-tag" v-if="item.meta && item.meta.value_count">价投 {{ item.meta.value_count }}</text>
+            </view>
+            <text class="briefing-gen-time" v-if="item.generation_sec">⏱ {{ item.generation_sec.toFixed(1) }}s</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- Load more -->
+      <view v-if="!briefingLoading && briefingList.length > 0 && briefingDays < 30" class="load-more" @click="loadMoreBriefings">
+        <text class="load-more-text">加载更多</text>
+      </view>
+    </view>
+
+    <!-- ═══════════════════════════════════════════
+         Tab 3: 复盘（原有 Reports 列表）
          ═══════════════════════════════════════════ -->
     <view v-if="activeTab === 'reports'" class="reports-tab">
       <!-- Reports List -->
@@ -147,16 +215,37 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
-import { fetchReportsList, fetchDigests } from '@/utils/api'
+import { fetchReportsList, fetchDigests, fetchBriefings } from '@/utils/api'
 import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
 import { rawReports } from '@/data/reports'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
 // ── Tab State ──
-const activeTab = ref('digest')
+const activeTab = ref('briefing')
+
+// ── Tab indicator position (3 tabs) ──
+const tabIndicatorLeft = computed(() => {
+  if (activeTab.value === 'digest') return '0%'
+  if (activeTab.value === 'briefing') return '33.33%'
+  return '66.66%'
+})
+
+function switchTab(tab) {
+  activeTab.value = tab
+  // 首次切换时懒加载
+  if (tab === 'digest' && digestList.value.length === 0 && !digestLoading.value) {
+    loadDigests()
+  }
+  if (tab === 'briefing' && briefingList.value.length === 0 && !briefingLoading.value) {
+    loadBriefings()
+  }
+  if (tab === 'reports' && reportsList.value.length === 0 && !reportsLoading.value) {
+    loadReports()
+  }
+}
 
 // ── Digest State ──
 const digestList = ref([])
@@ -167,6 +256,11 @@ const expandedIds = reactive(new Set())
 // ── Reports State ──
 const reportsList = ref([])
 const reportsLoading = ref(true)
+
+// ── Briefing State ──
+const briefingList = ref([])
+const briefingLoading = ref(true)
+const briefingDays = ref(7)
 
 // Markdown tag styles (for mp-html in digest cards)
 const tagStyle = {
@@ -239,6 +333,63 @@ async function loadMoreDigests() {
   await loadDigests()
 }
 
+// ── Briefing Helpers ──
+
+function formatBriefingDay(dateStr) {
+  const d = new Date(dateStr)
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
+function formatBriefingWeekday(dateStr) {
+  const d = new Date(dateStr)
+  const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return days[d.getDay()]
+}
+
+function statusLabel(status) {
+  if (status === 'ok') return '已生成'
+  if (status === 'failed') return '生成失败'
+  if (status === 'empty') return '无数据'
+  return status
+}
+
+function getPreview(content) {
+  if (!content) return '暂无内容'
+  // 去除 Markdown 标记，取前 120 个字符
+  const plain = content
+    .replace(/#{1,6}\s/g, '')
+    .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[-*]\s/g, '')
+    .replace(/\n+/g, ' ')
+    .trim()
+  return plain.length > 120 ? plain.slice(0, 120) + '...' : plain
+}
+
+function goBriefingDetail(id) {
+  uni.navigateTo({ url: `/pages/briefing/detail?id=${id}` })
+}
+
+// ── Briefing Data Loading ──
+
+async function loadBriefings() {
+  briefingLoading.value = true
+  try {
+    const data = await fetchBriefings(briefingDays.value)
+    briefingList.value = data || []
+  } catch (e) {
+    console.warn('加载研报失败:', e.message)
+    briefingList.value = []
+  } finally {
+    briefingLoading.value = false
+  }
+}
+
+async function loadMoreBriefings() {
+  briefingDays.value = Math.min(briefingDays.value + 7, 30)
+  await loadBriefings()
+}
+
 // 从 Mock 数据生成 fallback 列表
 function getLocalReports() {
   return rawReports.map((raw, idx) => {
@@ -301,8 +452,7 @@ const onShare = (item) => {
 }
 
 onMounted(() => {
-  loadDigests()
-  loadReports()
+  loadBriefings()
 })
 </script>
 
@@ -361,7 +511,7 @@ onMounted(() => {
 .tab-indicator {
   position: absolute;
   bottom: 0;
-  width: 50%;
+  width: 33.33%;
   height: 4rpx;
   background: #4285f4;
   border-radius: 2rpx;
@@ -516,6 +666,136 @@ onMounted(() => {
   font-size: 26rpx;
   color: #4285f4;
   font-weight: 500;
+}
+
+/* ═══════════════════════════════════
+   Briefing Tab — 每日研报卡片列表
+   ═══════════════════════════════════ */
+.briefing-tab {
+  padding-bottom: 20rpx;
+}
+
+.briefing-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.briefing-card {
+  background: #fafbfc;
+  border-radius: 16rpx;
+  padding: 28rpx;
+  border: 1rpx solid #f0f0f2;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.briefing-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.briefing-date-group {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+
+.briefing-date-day {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #1a1a2e;
+  font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
+}
+
+.briefing-date-weekday {
+  font-size: 24rpx;
+  color: #8c8c9a;
+  font-weight: 500;
+}
+
+.briefing-status {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+}
+.status-ok {
+  background: #e8f5e9;
+}
+.status-failed {
+  background: #FFEBEE;
+}
+.status-empty {
+  background: #f5f5f5;
+}
+.status-dot {
+  font-size: 14rpx;
+}
+.status-ok .status-dot {
+  color: #34c759;
+}
+.status-failed .status-dot {
+  color: #ff3b30;
+}
+.status-empty .status-dot {
+  color: #b0b0be;
+}
+.status-text {
+  font-size: 22rpx;
+  font-weight: 500;
+}
+.status-ok .status-text {
+  color: #2e7d32;
+}
+.status-failed .status-text {
+  color: #c62828;
+}
+.status-empty .status-text {
+  color: #8c8c9a;
+}
+
+.briefing-preview {
+  font-size: 26rpx;
+  color: #5a5a6e;
+  line-height: 1.65;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.briefing-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid #f0f0f2;
+}
+
+.meta-tags {
+  display: flex;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.meta-tag {
+  font-size: 22rpx;
+  color: #4285f4;
+  background: #e8f0fe;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+  font-weight: 500;
+}
+
+.briefing-gen-time {
+  font-size: 22rpx;
+  color: #b0b0be;
+  font-family: 'SF Pro Text', -apple-system, sans-serif;
 }
 
 /* ═══════════════════════════════════
@@ -714,6 +994,63 @@ onMounted(() => {
   }
   .load-more-text {
     font-size: 14px;
+  }
+
+  /* Briefing */
+  .briefing-list {
+    gap: 12px;
+  }
+  .briefing-card {
+    padding: 20px 24px;
+    border-radius: 12px;
+    border-width: 1px;
+  }
+  .briefing-card:hover {
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    transform: translateY(-1px);
+  }
+  .briefing-card-header {
+    margin-bottom: 12px;
+  }
+  .briefing-date-group {
+    gap: 8px;
+  }
+  .briefing-date-day {
+    font-size: 17px;
+  }
+  .briefing-date-weekday {
+    font-size: 13px;
+  }
+  .briefing-status {
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 12px;
+  }
+  .status-dot {
+    font-size: 8px;
+  }
+  .status-text {
+    font-size: 12px;
+  }
+  .briefing-preview {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .briefing-card-footer {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top-width: 1px;
+  }
+  .meta-tags {
+    gap: 8px;
+  }
+  .meta-tag {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .briefing-gen-time {
+    font-size: 12px;
   }
 
   /* Reports */
