@@ -249,13 +249,13 @@ function switchTab(tab) {
 
 // ── Digest State ──
 const digestList = ref([])
-const digestLoading = ref(true)
+const digestLoading = ref(false)
 const digestDays = ref(7)
 const expandedIds = reactive(new Set())
 
 // ── Reports State ──
 const reportsList = ref([])
-const reportsLoading = ref(true)
+const reportsLoading = ref(false)
 
 // ── Briefing State ──
 const briefingList = ref([])
