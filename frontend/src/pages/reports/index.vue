@@ -147,9 +147,10 @@
           <!-- Card Footer: meta stats -->
           <view class="briefing-card-footer">
             <view class="meta-tags">
-              <text class="meta-tag" v-if="item.meta && item.meta.vcp_count">VCP {{ item.meta.vcp_count }}</text>
-              <text class="meta-tag" v-if="item.meta && item.meta.trend_count">趋势 {{ item.meta.trend_count }}</text>
-              <text class="meta-tag" v-if="item.meta && item.meta.value_count">价投 {{ item.meta.value_count }}</text>
+              <text class="meta-tag tag-sentiment" v-if="item.meta && item.meta.market_sentiment">{{ sentimentEmoji(item.meta.market_sentiment) }} {{ item.meta.market_sentiment }}</text>
+              <text class="meta-tag tag-s" v-if="item.meta && item.meta.tier_s">🎯 {{ item.meta.tier_s }}</text>
+              <text class="meta-tag tag-a" v-if="item.meta && item.meta.tier_a">📋 {{ item.meta.tier_a }}</text>
+              <text class="meta-tag tag-x" v-if="item.meta && item.meta.tier_x">⚠️ {{ item.meta.tier_x }}</text>
             </view>
             <text class="briefing-gen-time" v-if="item.generation_sec">⏱ {{ item.generation_sec.toFixed(1) }}s</text>
           </view>
@@ -351,6 +352,12 @@ function statusLabel(status) {
   if (status === 'failed') return '生成失败'
   if (status === 'empty') return '无数据'
   return status
+}
+
+function sentimentEmoji(sentiment) {
+  if (sentiment === '偏多') return '🟢'
+  if (sentiment === '偏空') return '🔴'
+  return '🟡'
 }
 
 function getPreview(content) {
@@ -790,6 +797,22 @@ onMounted(() => {
   padding: 4rpx 14rpx;
   border-radius: 8rpx;
   font-weight: 500;
+}
+.tag-sentiment {
+  color: #5a5a6e;
+  background: #f0f0f2;
+}
+.tag-s {
+  color: #e65100;
+  background: #fff3e0;
+}
+.tag-a {
+  color: #4285f4;
+  background: #e8f0fe;
+}
+.tag-x {
+  color: #c62828;
+  background: #ffebee;
 }
 
 .briefing-gen-time {

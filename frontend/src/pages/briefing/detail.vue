@@ -13,27 +13,29 @@
         <text class="article-badge">AI 分析</text>
       </view>
 
-      <!-- Meta Stats -->
+      <!-- Market Sentiment -->
+      <view class="sentiment-bar" v-if="briefing.meta && briefing.meta.market_sentiment">
+        <text class="sentiment-emoji">{{ sentimentEmoji(briefing.meta.market_sentiment) }}</text>
+        <text class="sentiment-text">市场情绪：{{ briefing.meta.market_sentiment }}</text>
+      </view>
+
+      <!-- Tier Stats -->
       <view class="meta-stats" v-if="briefing.meta">
-        <view class="stat-item" v-if="briefing.meta.vcp_count">
-          <text class="stat-value">{{ briefing.meta.vcp_count }}</text>
-          <text class="stat-label">VCP</text>
+        <view class="stat-item tier-s" v-if="briefing.meta.tier_s != null">
+          <text class="stat-value">{{ briefing.meta.tier_s }}</text>
+          <text class="stat-label">🎯 重点狙击</text>
         </view>
-        <view class="stat-item" v-if="briefing.meta.trend_count">
-          <text class="stat-value">{{ briefing.meta.trend_count }}</text>
-          <text class="stat-label">趋势</text>
+        <view class="stat-item tier-a" v-if="briefing.meta.tier_a != null">
+          <text class="stat-value">{{ briefing.meta.tier_a }}</text>
+          <text class="stat-label">📋 常规盯防</text>
         </view>
-        <view class="stat-item" v-if="briefing.meta.value_count">
-          <text class="stat-value">{{ briefing.meta.value_count }}</text>
-          <text class="stat-label">价投</text>
+        <view class="stat-item tier-x" v-if="briefing.meta.tier_x != null">
+          <text class="stat-value">{{ briefing.meta.tier_x }}</text>
+          <text class="stat-label">⚠️ 风险剔除</text>
         </view>
-        <view class="stat-item" v-if="briefing.meta.digest_count">
-          <text class="stat-value">{{ briefing.meta.digest_count }}</text>
-          <text class="stat-label">新闻概览</text>
-        </view>
-        <view class="stat-item" v-if="briefing.meta.quote_count">
-          <text class="stat-value">{{ briefing.meta.quote_count }}</text>
-          <text class="stat-label">行情</text>
+        <view class="stat-item" v-if="briefing.meta.pool_count">
+          <text class="stat-value">{{ briefing.meta.pool_count }}</text>
+          <text class="stat-label">📊 股票池</text>
         </view>
       </view>
     </view>
@@ -115,6 +117,12 @@ function statusLabel(status) {
   if (status === 'failed') return '生成失败'
   if (status === 'empty') return '无数据'
   return status
+}
+
+function sentimentEmoji(sentiment) {
+  if (sentiment === '偏多') return '🟢'
+  if (sentiment === '偏空') return '🔴'
+  return '🟡'
 }
 
 onMounted(async () => {
@@ -208,6 +216,25 @@ onMounted(async () => {
   font-weight: 500;
 }
 
+/* ── Sentiment Bar ── */
+.sentiment-bar {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 20rpx;
+  padding: 16rpx 24rpx;
+  background: linear-gradient(135deg, #f7f8fa 0%, #eef1f5 100%);
+  border-radius: 12rpx;
+}
+.sentiment-emoji {
+  font-size: 32rpx;
+}
+.sentiment-text {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
 /* ── Meta Stats ── */
 .meta-stats {
   display: flex;
@@ -233,6 +260,15 @@ onMounted(async () => {
   font-size: 20rpx;
   color: #8c8c9a;
   margin-top: 4rpx;
+}
+.tier-s .stat-value {
+  color: #e65100;
+}
+.tier-a .stat-value {
+  color: #1a1a2e;
+}
+.tier-x .stat-value {
+  color: #c62828;
 }
 
 /* ── Divider ── */
@@ -343,6 +379,20 @@ onMounted(async () => {
     font-size: 12px;
     padding: 2px 10px;
     border-radius: 4px;
+  }
+
+  /* Sentiment Bar */
+  .sentiment-bar {
+    gap: 8px;
+    margin-top: 14px;
+    padding: 10px 16px;
+    border-radius: 8px;
+  }
+  .sentiment-emoji {
+    font-size: 18px;
+  }
+  .sentiment-text {
+    font-size: 14px;
   }
 
   /* Meta Stats */
