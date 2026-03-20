@@ -81,8 +81,10 @@ CATALYST_SYSTEM_PROMPT = """\
 }
 ```
 
-## 注意
-- code 必须是输入中给定的 ts_code，不可自行编造
+## ⚠️ 严格约束（违反将导致输出无效）
+- code **必须**使用输入"统一股票池"中给出的完整 ts_code（如 000001.SZ），**禁止**使用任何不在输入列表中的 code
+- **所有** 输入股票必须出现在输出的 S / A / X 三个列表之一中，不可遗漏
+- S + A + X 的 code 总数必须等于输入股票池总数
 - 没有理由强行归入 S 或 X，宁可放入 A
 - 只输出 JSON，不要有任何其他文字、解释、markdown
 """
@@ -338,6 +340,9 @@ def _build_catalyst_prompt(
 
     # 股票池部分
     parts.append(f"## 统一股票池（{len(pool)} 只）\n")
+    # 先列出所有合法 code，让 LLM 明确知道只能用这些
+    all_codes = [s['ts_code'] for s in pool]
+    parts.append(f"**合法 code 列表（输出中只允许使用以下 code）：** {', '.join(all_codes)}\n")
     for s in pool:
         line = f"- {s['name']}（{s['ts_code']}）| 策略:{s['strategy']} | 行业:{s.get('industry', 'N/A')}"
         concepts = s.get("concepts", "")
@@ -470,6 +475,53 @@ def _normalize_tier_codes(catalyst: dict, pool_map: dict[str, dict]) -> dict:
     if normalized_count:
         logger.info("Normalized %d tier codes to match pool_map", normalized_count)
 
+    return catalyst
+
+
+def _validate_and_fix_tiers(catalyst: dict, pool_map: dict[str, dict]) -> dict:
+    """校验 LLM 返回的 tiers 结果，确保所有 pool_map 中的股票都被覆盖。
+
+    修正策略：
+    1. 移除 LLM 编造的、不在 pool_map 中的 code
+    2. pool_map 中未被覆盖的股票自动补入 Tier A
+    """
+    tiers = catalyst.get("tiers", {})
+    all_pool_codes = set(pool_map.keys())
+
+    # 收集 LLM 覆盖的有效 codes，同时清理无效 codes
+    covered_codes: set[str] = set()
+    for tier_key in ("S", "A", "X"):
+        items = tiers.get(tier_key, [])
+        valid_items = []
+        for item in items:
+            code = item.get("code", "")
+            if code in all_pool_codes:
+                valid_items.append(item)
+                covered_codes.add(code)
+            else:
+                logger.warning("Removing invalid code from tier %s: %s", tier_key, code)
+        tiers[tier_key] = valid_items
+
+    # 找出未被覆盖的股票，补入 Tier A
+    missing_codes = all_pool_codes - covered_codes
+    if missing_codes:
+        logger.warning(
+            "LLM missed %d/%d stocks, auto-adding to Tier A: %s",
+            len(missing_codes), len(all_pool_codes),
+            ", ".join(sorted(missing_codes)[:10]),
+        )
+        a_items = tiers.get("A", [])
+        for code in sorted(missing_codes):
+            a_items.append({"code": code})
+        tiers["A"] = a_items
+
+    catalyst["tiers"] = tiers
+
+    logger.info(
+        "Tiers after validation: S=%d, A=%d, X=%d (pool=%d)",
+        len(tiers.get("S", [])), len(tiers.get("A", [])),
+        len(tiers.get("X", [])), len(all_pool_codes),
+    )
     return catalyst
 
 
@@ -861,9 +913,10 @@ async def generate_briefing(target_date: date | None = None) -> dict:
 
     catalyst = await _call_deepseek_catalyst(catalyst_prompt)
 
-    # ── 2.5 标准化 LLM 返回的 code，使其匹配 pool_map 的 key ──
+    # ── 2.5 标准化 + 校验 LLM 返回的 tiers ──
     if catalyst:
         catalyst = _normalize_tier_codes(catalyst, pool_map)
+        catalyst = _validate_and_fix_tiers(catalyst, pool_map)
 
     # ── 3. Stage 2：代码渲染 Markdown ──
     if catalyst:
