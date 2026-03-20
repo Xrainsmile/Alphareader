@@ -46,6 +46,8 @@
 - DeepSeek API 调用带重试和超时保护
 - 定时任务独立于现有 screener/news pipeline，互不影响
 
+**Commit**: d9fbec0 (branch: feat/daily-briefing)
+
 ---
 
 ## 2026-03-13: News API — 全端点 API Token 鉴权
