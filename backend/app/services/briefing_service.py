@@ -57,6 +57,12 @@ BRIEFING_SYSTEM_PROMPT = """\
 - 标注关键价位（支撑位、压力位、止损位）
 - 中文输出，专业但易读
 - 总字数控制在 2000 字以内
+
+## 格式要求（极其重要）
+- 直接输出报告正文，以 Markdown 一级标题开头（如 `# A股每日投资分析报告`）
+- 禁止输出任何开场白、寒暄语、自我介绍（如"好的""作为您的分析师""以下是报告"等）
+- 禁止在报告末尾添加"如需进一步分析"等客套话
+- 第一个字符必须是 `#`
 """
 
 
@@ -385,7 +391,11 @@ def _build_briefing_prompt(
 # ── DeepSeek 调用 ──
 
 async def _call_deepseek_briefing(user_prompt: str) -> str:
-    """调用 DeepSeek API 生成分析报告。"""
+    """调用 DeepSeek API 生成分析报告（streaming 模式）。
+
+    使用 streaming 模式逐块接收响应，避免长回复时 DeepSeek API
+    因空闲超时导致 ReadError / ConnectError 断连。
+    """
     if not settings.DEEPSEEK_API_KEY or settings.DEEPSEEK_API_KEY.startswith("sk-your"):
         logger.warning("DeepSeek API key not configured, returning empty briefing")
         return ""
@@ -398,6 +408,7 @@ async def _call_deepseek_briefing(user_prompt: str) -> str:
         ],
         "temperature": 0.4,
         "max_tokens": 3000,
+        "stream": True,
     }
 
     headers = {
@@ -407,17 +418,41 @@ async def _call_deepseek_briefing(user_prompt: str) -> str:
 
     max_retries = max(settings.DEEPSEEK_MAX_RETRIES, 3)
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    import json as _json
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=180.0)) as client:
         for attempt in range(1, max_retries + 1):
             try:
-                resp = await client.post(
-                    settings.DEEPSEEK_API_URL, json=payload, headers=headers
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                logger.info("Briefing generated: %d chars", len(content))
-                return content.strip()
+                chunks: list[str] = []
+                async with client.stream(
+                    "POST",
+                    settings.DEEPSEEK_API_URL,
+                    json=payload,
+                    headers=headers,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data_str = line[len("data:"):].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = _json.loads(data_str)
+                            delta = data["choices"][0].get("delta", {})
+                            if "content" in delta and delta["content"]:
+                                chunks.append(delta["content"])
+                        except (_json.JSONDecodeError, KeyError, IndexError):
+                            continue
+
+                content = "".join(chunks)
+                if content:
+                    logger.info("Briefing generated (stream): %d chars", len(content))
+                    return content.strip()
+                else:
+                    logger.warning("Briefing stream returned empty content (attempt %d/%d)", attempt, max_retries)
+
             except httpx.HTTPStatusError as e:
                 body = e.response.text[:500] if e.response else "N/A"
                 logger.error(
@@ -551,6 +586,21 @@ async def generate_briefing(target_date: date | None = None) -> dict:
     # 3. 调用 DeepSeek
     content = await _call_deepseek_briefing(user_prompt)
     generation_sec = time.monotonic() - t0
+
+    # 后处理：去除 LLM 可能输出的开场白（从第一个 # 标题开始截取）
+    if content:
+        first_heading = content.find("\n#")
+        if first_heading > 0 and not content.startswith("#"):
+            content = content[first_heading + 1:].strip()
+        elif content.startswith("#"):
+            pass  # 已经以标题开头，无需处理
+        # 去除末尾客套话（如"如需进一步分析请告知"等）
+        import re
+        content = re.sub(
+            r'\n+(?:如[需有].*?[。！]|以上.*?[。！]|希望.*?[。！]|如果.*?请.*?[。！])\s*$',
+            '',
+            content,
+        ).strip()
 
     meta = {
         "vcp_count": vcp_count,
