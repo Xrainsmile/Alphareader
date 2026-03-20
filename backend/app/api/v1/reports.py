@@ -7,8 +7,11 @@ Endpoints:
   GET    /api/v1/reports/{id}   — Get single report by id
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import date
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, field_validator
