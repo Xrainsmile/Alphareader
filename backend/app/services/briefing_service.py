@@ -434,6 +434,45 @@ async def _call_deepseek_catalyst(user_prompt: str) -> dict | None:
     return None
 
 
+def _normalize_tier_codes(catalyst: dict, pool_map: dict[str, dict]) -> dict:
+    """标准化 LLM 返回的 tiers 中的 code，使其匹配 pool_map 的 key。
+
+    LLM 可能返回 '000001.SZ'（完整）、'000001'（无后缀）、'000001.sz'（小写后缀）等，
+    需要统一映射到 pool_map 中的实际 key（如 '000001.SZ'）。
+    """
+    # 构建反向索引：纯数字 code → 完整 ts_code
+    code_index: dict[str, str] = {}
+    for full_code in pool_map:
+        code_index[full_code] = full_code
+        code_index[full_code.upper()] = full_code
+        code_index[full_code.lower()] = full_code
+        base = full_code.split(".")[0]
+        code_index[base] = full_code
+
+    tiers = catalyst.get("tiers", {})
+    normalized_count = 0
+    for tier_key in ("S", "A", "X"):
+        items = tiers.get(tier_key, [])
+        for item in items:
+            raw_code = item.get("code", "")
+            if raw_code not in pool_map:
+                mapped = (
+                    code_index.get(raw_code)
+                    or code_index.get(raw_code.upper())
+                    or code_index.get(raw_code.lower())
+                )
+                if mapped:
+                    item["code"] = mapped
+                    normalized_count += 1
+                else:
+                    logger.warning("Unknown code in tier %s: %s (not in pool_map)", tier_key, raw_code)
+
+    if normalized_count:
+        logger.info("Normalized %d tier codes to match pool_map", normalized_count)
+
+    return catalyst
+
+
 # ═══════════════════════════════════════════════════════════
 #  Stage 2 — 代码渲染精美 Markdown 研报
 # ═══════════════════════════════════════════════════════════
@@ -821,6 +860,10 @@ async def generate_briefing(target_date: date | None = None) -> dict:
     logger.info("Catalyst prompt: ~%d chars, ~%d tokens est.", len(catalyst_prompt), prompt_tokens_est)
 
     catalyst = await _call_deepseek_catalyst(catalyst_prompt)
+
+    # ── 2.5 标准化 LLM 返回的 code，使其匹配 pool_map 的 key ──
+    if catalyst:
+        catalyst = _normalize_tier_codes(catalyst, pool_map)
 
     # ── 3. Stage 2：代码渲染 Markdown ──
     if catalyst:
