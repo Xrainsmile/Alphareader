@@ -334,19 +334,20 @@ class ScreenerPipeline:
 
         from sqlalchemy import text as sa_text
 
-        # 取最近一个有完整数据的交易日，批量查出 name
+        # 取最近一个有足够非空 name 的交易日，避免取到 name 全空的日期
         sql = sa_text("""
-            WITH full_date AS (
+            WITH name_date AS (
                 SELECT trade_date
                 FROM stock_daily_quote
+                WHERE name IS NOT NULL AND name != ''
                 GROUP BY trade_date
-                HAVING COUNT(DISTINCT ts_code) >= 1000
+                HAVING COUNT(DISTINCT ts_code) >= 500
                 ORDER BY trade_date DESC
                 LIMIT 1
             )
             SELECT q.ts_code, q.name
             FROM stock_daily_quote q
-            JOIN full_date fd ON q.trade_date = fd.trade_date
+            JOIN name_date nd ON q.trade_date = nd.trade_date
             WHERE q.ts_code = ANY(:codes)
               AND q.name IS NOT NULL
               AND q.name != ''

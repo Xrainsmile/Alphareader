@@ -156,8 +156,10 @@ async def _call_deepseek_digest(user_prompt: str) -> str:
         "Content-Type": "application/json",
     }
 
+    max_retries = max(settings.DEEPSEEK_MAX_RETRIES, 3)  # 至少重试 3 次
+
     async with httpx.AsyncClient(timeout=90.0) as client:
-        for attempt in range(1, settings.DEEPSEEK_MAX_RETRIES + 1):
+        for attempt in range(1, max_retries + 1):
             try:
                 resp = await client.post(
                     settings.DEEPSEEK_API_URL, json=payload, headers=headers
@@ -167,15 +169,23 @@ async def _call_deepseek_digest(user_prompt: str) -> str:
                 content = data["choices"][0]["message"]["content"]
                 logger.info("Digest generated: %d chars", len(content))
                 return content.strip()
+            except httpx.HTTPStatusError as e:
+                body = e.response.text[:500] if e.response else "N/A"
+                logger.error(
+                    "Digest DeepSeek API HTTP %s (attempt %d/%d): %s | body: %s",
+                    e.response.status_code if e.response else "?",
+                    attempt, max_retries, repr(e), body,
+                )
             except Exception as e:
                 logger.error(
-                    "Digest DeepSeek API error (attempt %d/%d): %s",
-                    attempt, settings.DEEPSEEK_MAX_RETRIES, e,
+                    "Digest DeepSeek API error (attempt %d/%d): %r",
+                    attempt, max_retries, e,
                 )
-                if attempt < settings.DEEPSEEK_MAX_RETRIES:
-                    import asyncio
-                    await asyncio.sleep(3 * attempt)
-                    continue
+
+            if attempt < max_retries:
+                import asyncio
+                await asyncio.sleep(3 * attempt)
+            else:
                 return ""
 
     return ""

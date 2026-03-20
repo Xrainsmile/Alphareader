@@ -36,6 +36,7 @@ from app.services.data_fetcher import incremental_update_quotes
 from app.services.sandbox_nav import compute_nav_core
 from app.services.screener.pipeline import ScreenerPipeline
 from app.services.screener.trend_pipeline import TrendPipeline
+from app.services.briefing_service import generate_briefing
 from app.services.digest_service import generate_digest
 
 logger = logging.getLogger("alphareader.scheduler")
@@ -267,6 +268,26 @@ async def _digest_job(period_label: str):
         raise
 
 
+async def _briefing_job():
+    """每日综合分析报告 — 工作日 16:00 触发（所有 screener 跑完后）。
+
+    聚合 VCP/趋势白名单 + 行情 + 新闻概览 + 模拟仓，
+    调用 DeepSeek 生成含交易建议的分析报告。
+    """
+    try:
+        logger.info("Briefing job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        result = await generate_briefing()
+        logger.info("Briefing job completed: %s", result)
+        return result
+    except Exception as e:
+        logger.exception("Briefing job failed: %s", e)
+        await send_alert(
+            "🔴 Daily Briefing Job Failed",
+            f"{type(e).__name__}: {e}",
+        )
+        raise
+
+
 def start_scheduler():
     """注册 Cron 定时任务并启动调度器。
 
@@ -466,6 +487,22 @@ def start_scheduler():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
+    # ── 每日综合分析报告（工作日 16:00，在 Screener 15:45 之后）──
+    scheduler.add_job(
+        _briefing_job,
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="16",
+            minute="0",
+            timezone=settings.TIMEZONE,
+        ),
+        id="daily_briefing",
+        name=f"Daily Briefing (Mon-Fri 16:00 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
     scheduler.start()
 
     alert_status = "enabled" if settings.ALERT_WEBHOOK_URL else "disabled"
@@ -498,6 +535,11 @@ def start_scheduler():
         dj = scheduler.get_job(label)
         dn = dj.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if dj and dj.next_run_time else "N/A"
         logger.info("Digest %s scheduled daily %s (next: %s)", label, desc, dn)
+
+    # Daily Briefing status
+    bj = scheduler.get_job("daily_briefing")
+    bn = bj.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if bj and bj.next_run_time else "N/A"
+    logger.info("Daily Briefing scheduled Mon-Fri 16:00 (next: %s)", bn)
 
 
 def stop_scheduler():

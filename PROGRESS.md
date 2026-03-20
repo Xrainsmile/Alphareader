@@ -1,5 +1,55 @@
 # AlphaReader 开发进度记录
 
+## 2026-03-20: Daily Briefing — 每日收盘智能简报
+
+### 问题/需求
+需要一个每日收盘后自动生成的智能市场简报，整合新闻、行情、策略白名单、价投观察池、模拟仓表现等多维度数据，由 DeepSeek AI 分析生成结构化日报，供用户快速了解当日市场全貌和操作建议。
+
+### 解决方案
+**8 个文件新增/修改**：
+
+| 文件 | 类型 | 职责 |
+|------|------|------|
+| `app/models/daily_briefing.py` | 新增 | DailyBriefing ORM 模型（日期、内容、token数、耗时等） |
+| `app/models/__init__.py` | 修改 | 导出 DailyBriefing 模型 |
+| `app/services/briefing_service.py` | 新增 | 核心服务：7 大数据源收集 + DeepSeek prompt 构建 + AI 生成 + 入库 |
+| `app/api/v1/briefings.py` | 新增 | REST API（GET 列表 + GET 详情 + POST 手动触发） |
+| `app/api/v1/router.py` | 修改 | 注册 briefings 路由 |
+| `app/services/scheduler.py` | 修改 | 新增每日 16:00 定时任务自动生成简报 |
+| `app/services/data_fetcher.py` | 修改 | 增强数据获取支持 briefing 所需字段 |
+| `alembic/versions/l1m2n3o4p5q6_add_daily_briefings_table.py` | 新增 | 数据库迁移脚本 |
+
+### 数据源（7 大维度）
+1. **新闻概览**：当日 morning + midday 两批新闻摘要
+2. **VCP 策略白名单**：当日筛选结果（价格/涨跌/VCP得分/RS/EMA120）
+3. **趋势跟踪白名单**：突破追踪标的（价格/MA50/RS）
+4. **价投观察池**：长期持仓标的的当日表现和入选理由
+5. **模拟仓**：净值/盈亏/仓位/持仓明细
+6. **大盘行情**：上证/深证/创业板/科创板/北证指数
+7. **RS Rating Top 20**：相对强度排名前 20 标的
+
+### 技术要点
+1. **AI 分析**：DeepSeek V3 模型，结构化 prompt 引导输出 5 大板块（大盘→策略→价投→模拟仓→明日关注）
+2. **容错机制**：最多 3 次重试（指数退避），单数据源失败不影响整体报告
+3. **涨跌幅精度**：统一 `.2f` 格式化，入选理由为空时显示"暂无"
+4. **成本控制**：每次生成约 ¥0.02-0.03（~700 prompt tokens + ~1000 output tokens）
+5. **定时触发**：工作日 16:00（screener 15:40-15:45 完成后）
+
+### 验证结果（2026-03-20）
+- ✅ dry-run 数据收集正常：morning 50 条 + midday 50 条新闻，价投 2 标的，模拟仓净值 0.9839
+- ✅ 完整生成成功：2105 字符，53.8s，报告质量高
+- ✅ 涨跌幅精度修复：`-0.198...%` → `-0.20%`
+- ✅ 数据库迁移成功（alembic stamp + upgrade head）
+
+### 防范措施
+- 所有数据库读操作使用现有 Session，写入仅限 `daily_briefings` 新表
+- DeepSeek API 调用带重试和超时保护
+- 定时任务独立于现有 screener/news pipeline，互不影响
+
+**Commit**: d9fbec0 (branch: feat/daily-briefing)
+
+---
+
 ## 2026-03-13: News API — 全端点 API Token 鉴权
 
 ### 问题/需求

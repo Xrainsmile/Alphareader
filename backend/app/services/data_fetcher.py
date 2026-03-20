@@ -299,7 +299,11 @@ async def save_to_db(df: pd.DataFrame) -> int:
             stmt = stmt.on_conflict_do_update(
                 constraint="uq_quote_code_date",
                 set_={
-                    "name": stmt.excluded.name,
+                    # 防止空 name 覆盖已有的非空 name
+                    "name": func.coalesce(
+                        func.nullif(stmt.excluded.name, ""),
+                        StockDailyQuote.name,
+                    ),
                     "open": stmt.excluded.open,
                     "close": stmt.excluded.close,
                     "high": stmt.excluded.high,
@@ -824,13 +828,23 @@ def _sync_fetch_stock_list_tencent() -> pd.DataFrame:
 
 
 async def fetch_stock_list_from_db() -> pd.DataFrame:
-    """从数据库中获取已有的股票代码列表（当在线接口不可用时的备选）。"""
+    """从数据库中获取已有的股票代码列表（当在线接口不可用时的备选）。
+
+    优先取非空 name，避免返回空名称导致增量更新时覆盖已有名称。
+    """
+    from sqlalchemy import text as sa_text
+
+    # 使用 DISTINCT ON + ORDER BY 优先取 name 非空的行
+    sql = sa_text("""
+        SELECT DISTINCT ON (ts_code) ts_code, name
+        FROM stock_daily_quote
+        ORDER BY ts_code,
+                 CASE WHEN name IS NOT NULL AND name != '' THEN 0 ELSE 1 END,
+                 trade_date DESC
+    """)
+
     async with async_session() as session:
-        result = await session.execute(
-            select(StockDailyQuote.ts_code, StockDailyQuote.name)
-            .distinct(StockDailyQuote.ts_code)
-            .order_by(StockDailyQuote.ts_code)
-        )
+        result = await session.execute(sql)
         rows = result.all()
 
     if not rows:
