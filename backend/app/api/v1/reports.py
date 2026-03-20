@@ -7,14 +7,12 @@ Endpoints:
   GET    /api/v1/reports/{id}   — Get single report by id
 """
 
-from __future__ import annotations
-
 import logging
 from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +30,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 class ReportSyncRequest(BaseModel):
     sync_id: str
     title: str
-    date: date | None = None  # YYYY-MM-DD string auto-parsed to date
+    date: Optional[date] = None  # YYYY-MM-DD string auto-parsed to date
     cover: str = ""
     summary: str = ""
     content: str
@@ -42,7 +40,7 @@ class ReportSyncResponse(BaseModel):
     code: int = 0
     action: str
     msg: str
-    id: int | None = None
+    id: Optional[int] = None
 
 
 class ReportListItem(BaseModel):
