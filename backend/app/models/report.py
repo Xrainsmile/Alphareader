@@ -9,9 +9,9 @@ Fields align with frontend parseFrontMatter() output:
   content  — raw Markdown body (without Front Matter)
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Index, Integer, String, Text, func
+from sqlalchemy import Date, DateTime, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -23,7 +23,7 @@ class Report(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     sync_id: Mapped[str] = mapped_column(String(256), nullable=False, unique=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
-    date: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     cover: Mapped[str | None] = mapped_column(String(2048), nullable=True, default="")
     summary: Mapped[str | None] = mapped_column(String(1024), nullable=True, default="")
     content: Mapped[str] = mapped_column(Text, nullable=False)

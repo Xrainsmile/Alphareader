@@ -77,7 +77,7 @@ class SandboxAnalysis(Base):
     ts_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
 
     # 1. 综合评分 (0-5, 支持一位小数)
-    score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    score: Mapped[Decimal] = mapped_column(Numeric(3, 1), nullable=False, default=0)
 
     # 2. 趋势判断
     trend: Mapped[str] = mapped_column(String(500), nullable=False, default="")
@@ -156,13 +156,12 @@ class SandboxNav(Base):
     cash: Mapped[Decimal] = mapped_column(
         Numeric(16, 4), nullable=False
     )  # 剩余现金
-    nav: Mapped[float] = mapped_column(Float, nullable=False)  # 单位净值
-    total_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 累计盈亏%
+    nav: Mapped[Decimal] = mapped_column(Numeric(16, 4), nullable=False)  # 单位净值
+    total_pnl: Mapped[Decimal] = mapped_column(Numeric(16, 4), nullable=False, default=0)  # 累计盈亏%
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     __table_args__ = (
         UniqueConstraint("trade_date", name="uq_sandbox_nav_date"),
-        Index("ix_nav_date", "trade_date"),
     )

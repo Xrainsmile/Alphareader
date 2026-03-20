@@ -8,9 +8,10 @@ Endpoints:
 """
 
 import logging
+from datetime import date
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +29,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 class ReportSyncRequest(BaseModel):
     sync_id: str
     title: str
-    date: str = ""
+    date: date | None = None  # YYYY-MM-DD string auto-parsed to date
     cover: str = ""
     summary: str = ""
     content: str
@@ -45,7 +46,7 @@ class ReportListItem(BaseModel):
     id: int
     sync_id: str
     title: str
-    date: str
+    date: date
     cover: str
     summary: str
 
@@ -57,7 +58,7 @@ class ReportDetail(BaseModel):
     id: int
     sync_id: str
     title: str
-    date: str
+    date: date
     cover: str
     summary: str
     content: str

@@ -12,6 +12,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Float,
+    Index,
     Integer,
     String,
     Text,
@@ -95,6 +96,7 @@ class WatchlistDaily(Base):
 
     __table_args__ = (
         UniqueConstraint("run_date", "ts_code", name="uq_watchlist_daily"),
+        Index("ix_watchlist_date_score", "run_date", vcp_score.desc()),
     )
 
 
@@ -164,4 +166,5 @@ class TrendWatchlistDaily(Base):
 
     __table_args__ = (
         UniqueConstraint("run_date", "ts_code", name="uq_trend_watchlist_daily"),
+        Index("ix_trend_watchlist_date_score", "run_date", trend_score.desc()),
     )

@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from sqlalchemy import (
+    BigInteger,
     Date,
     DateTime,
     Float,
@@ -39,7 +40,7 @@ class StockDailyQuote(Base):
     close: Mapped[float] = mapped_column(Float, nullable=True)
     high: Mapped[float] = mapped_column(Float, nullable=True)
     low: Mapped[float] = mapped_column(Float, nullable=True)
-    volume: Mapped[int] = mapped_column(Integer, nullable=True)
+    volume: Mapped[int] = mapped_column(BigInteger, nullable=True)
     amount: Mapped[float] = mapped_column(Float, nullable=True)
     turnover: Mapped[float | None] = mapped_column(Float, nullable=True)
     amplitude: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -51,7 +52,6 @@ class StockDailyQuote(Base):
 
     __table_args__ = (
         UniqueConstraint("ts_code", "trade_date", name="uq_quote_code_date"),
-        Index("ix_quote_code_date", "ts_code", "trade_date"),
     )
 
 
