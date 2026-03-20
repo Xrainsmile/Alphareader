@@ -132,4 +132,4 @@ async def generate_digest_endpoint(payload: GenerateRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception("Generate digest failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="摘要生成失败，请稍后重试")

@@ -7,6 +7,7 @@
 配置项 NEWS_API_KEY 为空时不启用鉴权（仅限开发环境）。
 """
 
+import hmac
 import logging
 from fastapi import Depends, HTTPException, Query, Request, Security
 from fastapi.security import APIKeyHeader

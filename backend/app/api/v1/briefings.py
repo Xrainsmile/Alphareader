@@ -150,4 +150,4 @@ async def generate_briefing_endpoint(payload: GenerateBriefingRequest):
         return {"code": 0, "msg": "ok", **result}
     except Exception as e:
         logger.exception("Generate briefing failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="研报生成失败，请稍后重试")
