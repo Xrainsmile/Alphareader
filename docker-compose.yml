@@ -22,6 +22,7 @@ services:
       web:
         condition: service_healthy
     restart: unless-stopped
+    mem_limit: 128m
     logging: &default-logging
       driver: json-file
       options:
@@ -55,6 +56,7 @@ services:
       retries: 3
       start_period: 40s
     restart: unless-stopped
+    mem_limit: 1536m
     logging: *default-logging
     volumes:
       - /data/alphareader/ema_snapshots:/data/ema_snapshots:rw
@@ -79,6 +81,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    mem_limit: 768m
     logging: *default-logging
     labels:
       service: db
@@ -97,6 +100,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    mem_limit: 384m
     logging: *default-logging
     labels:
       service: cache
