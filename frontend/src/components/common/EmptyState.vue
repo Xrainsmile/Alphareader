@@ -46,7 +46,7 @@ defineProps({
 
 .empty-text {
   font-size: 28rpx;
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
 }
 
 @media screen and (min-width: 768px) {

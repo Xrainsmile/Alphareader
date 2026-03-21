@@ -78,6 +78,7 @@ import { ref, computed, onMounted } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
 import { renderMarkdown } from '@/utils/markdown'
 import { fetchBriefingDetail } from '@/utils/api'
+import { detailTagStyle, formatDateWithWeekday, reportStatusLabel, sentimentEmoji } from '@/utils/formatters'
 
 const briefing = ref(null)
 
@@ -86,44 +87,12 @@ const htmlContent = computed(() => {
   return renderMarkdown(briefing.value.content)
 })
 
-// 通过 tag-style 属性注入内联样式（能穿透 rich-text 组件）
-const tagStyle = {
-  h1: 'font-size:22px;font-weight:800;color:#1a1a2e;margin:36px 0 16px;padding:4px 0;line-height:1.5;',
-  h2: 'font-size:18px;font-weight:700;color:#1a1a2e;margin:28px 0 14px;padding:4px 0 4px 12px;border-left:3px solid #4285f4;line-height:1.5;',
-  h3: 'font-size:16px;font-weight:600;color:#2a2a3e;margin:24px 0 12px;padding:4px 0;line-height:1.5;',
-  h4: 'font-size:15px;font-weight:600;color:#3a3a4a;margin:20px 0 10px;padding:2px 0;line-height:1.5;',
-  p: 'font-size:15px;color:#3a3a4a;line-height:1.8;margin:14px 0;padding:2px 0;',
-  strong: 'color:#1a1a2e;font-weight:600;',
-  ul: 'padding-left:20px;margin:14px 0;',
-  ol: 'padding-left:20px;margin:14px 0;',
-  li: 'font-size:15px;color:#3a3a4a;line-height:1.8;margin:6px 0;padding:2px 0;',
-  table: 'width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;',
-  th: 'padding:10px 8px;background:#f7f8fa;border:1px solid #e8e8ed;font-weight:600;color:#1a1a2e;text-align:left;',
-  td: 'padding:10px 8px;border:1px solid #e8e8ed;color:#3a3a4a;',
-  blockquote: 'margin:20px 0;padding:14px 18px;background:#f7f8fa;border-left:3px solid #4285f4;border-radius:0 8px 8px 0;color:#5a5a6e;font-size:14px;line-height:1.8;',
-  hr: 'border:none;border-top:1px solid #eee;margin:28px 0;',
-  code: 'background:#f5f5f5;padding:2px 6px;border-radius:4px;font-size:13px;color:#e74c3c;',
-}
+// 通过 tag-style 属性注入内联样式（从 formatters 导入详情版）
+const tagStyle = detailTagStyle
 
-function formatDate(dateStr) {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${days[d.getDay()]}`
-}
-
-function statusLabel(status) {
-  if (status === 'ok') return '已生成'
-  if (status === 'failed') return '生成失败'
-  if (status === 'empty') return '无数据'
-  return status
-}
-
-function sentimentEmoji(sentiment) {
-  if (sentiment === '偏多') return '🟢'
-  if (sentiment === '偏空') return '🔴'
-  return '🟡'
-}
+// formatDate/statusLabel/sentimentEmoji imported from formatters.js
+const formatDate = formatDateWithWeekday
+const statusLabel = reportStatusLabel
 
 onMounted(async () => {
   const pages = getCurrentPages()
@@ -148,7 +117,7 @@ onMounted(async () => {
 <style scoped>
 .detail-container {
   min-height: 100vh;
-  background: #ffffff;
+  background: var(--color-bg-card);
   padding: 0 32rpx;
 }
 
@@ -164,35 +133,35 @@ onMounted(async () => {
 .article-title {
   font-size: 40rpx;
   font-weight: 800;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   line-height: 1.4;
-  font-family: 'PingFang SC', 'SF Pro Display', -apple-system, sans-serif;
+  font-family: var(--font-display);
 }
 .status-badge {
   padding: 4rpx 16rpx;
   border-radius: 8rpx;
 }
 .status-ok {
-  background: #e8f5e9;
+  background: var(--color-bg-success-soft);
 }
 .status-failed {
-  background: #FFEBEE;
+  background: var(--color-bg-danger-light);
 }
 .status-empty {
-  background: #f5f5f5;
+  background: var(--color-bg-neutral-soft);
 }
 .status-ok .status-text {
-  color: #2e7d32;
+  color: var(--color-success-text);
   font-size: 22rpx;
   font-weight: 500;
 }
 .status-failed .status-text {
-  color: #c62828;
+  color: var(--color-danger-dark);
   font-size: 22rpx;
   font-weight: 500;
 }
 .status-empty .status-text {
-  color: #8c8c9a;
+  color: var(--color-text-muted);
   font-size: 22rpx;
   font-weight: 500;
 }
@@ -205,12 +174,12 @@ onMounted(async () => {
 }
 .article-date {
   font-size: 24rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
 }
 .article-badge {
   font-size: 22rpx;
-  color: #4285f4;
-  background: #e8f0fe;
+  color: var(--color-brand);
+  background: var(--color-bg-info-soft);
   padding: 4rpx 16rpx;
   border-radius: 8rpx;
   font-weight: 500;
@@ -223,7 +192,7 @@ onMounted(async () => {
   gap: 12rpx;
   margin-top: 20rpx;
   padding: 16rpx 24rpx;
-  background: linear-gradient(135deg, #f7f8fa 0%, #eef1f5 100%);
+  background: var(--gradient-briefing-bg);
   border-radius: 12rpx;
 }
 .sentiment-emoji {
@@ -232,7 +201,7 @@ onMounted(async () => {
 .sentiment-text {
   font-size: 26rpx;
   font-weight: 600;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
 }
 
 /* ── Meta Stats ── */
@@ -241,7 +210,7 @@ onMounted(async () => {
   gap: 24rpx;
   margin-top: 24rpx;
   padding: 20rpx 24rpx;
-  background: #f7f8fa;
+  background: var(--color-bg-section);
   border-radius: 12rpx;
 }
 .stat-item {
@@ -253,28 +222,28 @@ onMounted(async () => {
 .stat-value {
   font-size: 36rpx;
   font-weight: 700;
-  color: #1a1a2e;
-  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+  color: var(--color-text-primary);
+  font-family: var(--font-numeric);
 }
 .stat-label {
   font-size: 20rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
   margin-top: 4rpx;
 }
 .tier-s .stat-value {
-  color: #e65100;
+  color: var(--color-warning);
 }
 .tier-a .stat-value {
-  color: #1a1a2e;
+  color: var(--color-text-primary);
 }
 .tier-x .stat-value {
-  color: #c62828;
+  color: var(--color-danger-dark);
 }
 
 /* ── Divider ── */
 .article-divider {
   height: 1rpx;
-  background: #f0f0f2;
+  background: var(--color-border-light);
   margin-bottom: 8rpx;
 }
 
@@ -296,7 +265,7 @@ onMounted(async () => {
 }
 .failed-text {
   font-size: 28rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
 }
 
 /* ── Loading ── */
@@ -308,7 +277,7 @@ onMounted(async () => {
 }
 .loading-text {
   font-size: 28rpx;
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
 }
 
 /* ── Article Footer ── */
@@ -325,16 +294,16 @@ onMounted(async () => {
 }
 .footer-detail {
   font-size: 22rpx;
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
 }
 .footer-divider {
   width: 80rpx;
   height: 2rpx;
-  background: #e0e0e6;
+  background: var(--color-border-divider);
 }
 .footer-text {
   font-size: 24rpx;
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
   letter-spacing: 2rpx;
 }
 

@@ -223,6 +223,7 @@ import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
 import { rawReports } from '@/data/reports'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import { listTagStyle, formatDate, reportStatusLabel, sentimentEmoji } from '@/utils/formatters'
 
 // ── Tab State ──
 const activeTab = ref('briefing')
@@ -263,17 +264,8 @@ const briefingList = ref([])
 const briefingLoading = ref(true)
 const briefingDays = ref(7)
 
-// Markdown tag styles (for mp-html in digest cards)
-const tagStyle = {
-  h1: 'font-size:17px;font-weight:700;color:#1a1a2e;margin:12px 0 8px;line-height:1.5;',
-  h2: 'font-size:15px;font-weight:600;color:#1a1a2e;margin:10px 0 6px;padding:2px 0 2px 10px;border-left:3px solid #4285f4;line-height:1.5;',
-  h3: 'font-size:14px;font-weight:600;color:#2a2a3e;margin:8px 0 4px;line-height:1.5;',
-  p: 'font-size:14px;color:#3a3a4a;line-height:1.7;margin:6px 0;',
-  strong: 'color:#1a1a2e;font-weight:600;',
-  ul: 'padding-left:18px;margin:6px 0;',
-  ol: 'padding-left:18px;margin:6px 0;',
-  li: 'font-size:14px;color:#3a3a4a;line-height:1.7;margin:4px 0;',
-}
+// Markdown tag styles (from shared formatters)
+const tagStyle = listTagStyle
 
 // ── Helpers ──
 
@@ -304,11 +296,7 @@ function formatDigestDate(item) {
   return `${month}月${day}日 ${startH}:${startM}~${endStr}`
 }
 
-const formatDate = (dateStr) => {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
-}
+// formatDate imported from formatters.js
 
 // ── Data Loading ──
 
@@ -347,18 +335,8 @@ function formatBriefingWeekday(dateStr) {
   return days[d.getDay()]
 }
 
-function statusLabel(status) {
-  if (status === 'ok') return '已生成'
-  if (status === 'failed') return '生成失败'
-  if (status === 'empty') return '无数据'
-  return status
-}
-
-function sentimentEmoji(sentiment) {
-  if (sentiment === '偏多') return '🟢'
-  if (sentiment === '偏空') return '🔴'
-  return '🟡'
-}
+// statusLabel → reportStatusLabel, sentimentEmoji imported from formatters.js
+const statusLabel = reportStatusLabel
 
 function getPreview(content) {
   if (!content) return '暂无内容'
@@ -466,7 +444,7 @@ onMounted(() => {
 <style scoped>
 .reports-container {
   min-height: 100vh;
-  background: #ffffff;
+  background: var(--color-bg-card);
   padding: 0 32rpx;
 }
 
@@ -477,14 +455,14 @@ onMounted(() => {
 .reports-title {
   font-size: 44rpx;
   font-weight: 800;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   letter-spacing: 1rpx;
-  font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
+  font-family: var(--font-display);
   display: block;
 }
 .reports-subtitle {
   font-size: 24rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
   margin-top: 6rpx;
   letter-spacing: 1rpx;
   display: block;
@@ -494,7 +472,7 @@ onMounted(() => {
 .tab-bar {
   display: flex;
   position: relative;
-  border-bottom: 1rpx solid #f0f0f2;
+  border-bottom: 1rpx solid var(--color-border-light);
   margin-bottom: 8rpx;
 }
 .tab-item {
@@ -507,12 +485,12 @@ onMounted(() => {
 }
 .tab-text {
   font-size: 30rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
   font-weight: 500;
   transition: color 0.2s;
 }
 .tab-item.active .tab-text {
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   font-weight: 700;
 }
 .tab-indicator {
@@ -520,7 +498,7 @@ onMounted(() => {
   bottom: 0;
   width: 33.33%;
   height: 4rpx;
-  background: #4285f4;
+  background: var(--color-brand);
   border-radius: 2rpx;
   transition: left 0.25s ease;
 }
@@ -557,19 +535,19 @@ onMounted(() => {
   width: 20rpx;
   height: 20rpx;
   border-radius: 50%;
-  background: #4285f4;
+  background: var(--color-brand);
   flex-shrink: 0;
   z-index: 1;
 }
-.dot-morning { background: #FF9800; }
-.dot-midday  { background: #F44336; }
-.dot-evening { background: #9C27B0; }
-.dot-night   { background: #3F51B5; }
+.dot-morning { background: var(--color-time-morning); }
+.dot-midday  { background: var(--color-time-midday); }
+.dot-evening { background: var(--color-time-evening); }
+.dot-night   { background: var(--color-time-night); }
 
 .timeline-line {
   width: 3rpx;
   flex: 1;
-  background: #e8e8ec;
+  background: var(--color-border);
   margin-top: 4rpx;
 }
 
@@ -577,10 +555,10 @@ onMounted(() => {
 .digest-card {
   flex: 1;
   margin-left: 16rpx;
-  background: #fafbfc;
+  background: var(--color-bg-hover);
   border-radius: 16rpx;
   padding: 24rpx;
-  border: 1rpx solid #f0f0f2;
+  border: 1rpx solid var(--color-border-light);
   margin-bottom: 20rpx;
   cursor: pointer;
   transition: box-shadow 0.15s;
@@ -599,12 +577,12 @@ onMounted(() => {
   gap: 8rpx;
   padding: 6rpx 16rpx;
   border-radius: 20rpx;
-  background: #e8f0fe;
+  background: var(--color-bg-info-soft);
 }
-.badge-morning { background: #FFF3E0; }
-.badge-midday  { background: #FFEBEE; }
-.badge-evening { background: #F3E5F5; }
-.badge-night   { background: #E8EAF6; }
+.badge-morning { background: var(--color-bg-time-morning); }
+.badge-midday  { background: var(--color-bg-danger-light); }
+.badge-evening { background: var(--color-bg-time-evening); }
+.badge-night   { background: var(--color-bg-time-night); }
 
 .badge-icon {
   font-size: 28rpx;
@@ -612,13 +590,13 @@ onMounted(() => {
 .badge-text {
   font-size: 24rpx;
   font-weight: 600;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
 }
 
 .digest-time {
   font-size: 22rpx;
-  color: #8c8c9a;
-  font-family: 'SF Pro Text', -apple-system, sans-serif;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
 }
 
 /* Content area with collapse */
@@ -642,24 +620,24 @@ onMounted(() => {
 }
 .toggle-text {
   font-size: 24rpx;
-  color: #4285f4;
+  color: var(--color-brand);
   font-weight: 500;
 }
 .toggle-arrow {
   font-size: 20rpx;
-  color: #4285f4;
+  color: var(--color-brand);
 }
 
 .digest-footer {
   display: flex;
   align-items: center;
   padding-top: 12rpx;
-  border-top: 1rpx solid #f0f0f2;
+  border-top: 1rpx solid var(--color-border-light);
   margin-top: 12rpx;
 }
 .footer-stat {
   font-size: 22rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
 }
 
 /* Load more */
@@ -671,7 +649,7 @@ onMounted(() => {
 }
 .load-more-text {
   font-size: 26rpx;
-  color: #4285f4;
+  color: var(--color-brand);
   font-weight: 500;
 }
 
@@ -689,10 +667,10 @@ onMounted(() => {
 }
 
 .briefing-card {
-  background: #fafbfc;
+  background: var(--color-bg-hover);
   border-radius: 16rpx;
   padding: 28rpx;
-  border: 1rpx solid #f0f0f2;
+  border: 1rpx solid var(--color-border-light);
   cursor: pointer;
   transition: box-shadow 0.15s, transform 0.15s;
 }
@@ -713,13 +691,13 @@ onMounted(() => {
 .briefing-date-day {
   font-size: 32rpx;
   font-weight: 700;
-  color: #1a1a2e;
-  font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
+  color: var(--color-text-primary);
+  font-family: var(--font-display);
 }
 
 .briefing-date-weekday {
   font-size: 24rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
   font-weight: 500;
 }
 
@@ -731,43 +709,43 @@ onMounted(() => {
   border-radius: 20rpx;
 }
 .status-ok {
-  background: #e8f5e9;
+  background: var(--color-bg-success-soft);
 }
 .status-failed {
-  background: #FFEBEE;
+  background: var(--color-bg-danger-light);
 }
 .status-empty {
-  background: #f5f5f5;
+  background: var(--color-bg-neutral-soft);
 }
 .status-dot {
   font-size: 14rpx;
 }
 .status-ok .status-dot {
-  color: #34c759;
+  color: var(--color-down);
 }
 .status-failed .status-dot {
-  color: #ff3b30;
+  color: var(--color-up);
 }
 .status-empty .status-dot {
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
 }
 .status-text {
   font-size: 22rpx;
   font-weight: 500;
 }
 .status-ok .status-text {
-  color: #2e7d32;
+  color: var(--color-success-text);
 }
 .status-failed .status-text {
-  color: #c62828;
+  color: var(--color-danger-dark);
 }
 .status-empty .status-text {
-  color: #8c8c9a;
+  color: var(--color-text-muted);
 }
 
 .briefing-preview {
   font-size: 26rpx;
-  color: #5a5a6e;
+  color: var(--color-text-tertiary);
   line-height: 1.65;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -781,7 +759,7 @@ onMounted(() => {
   justify-content: space-between;
   margin-top: 16rpx;
   padding-top: 16rpx;
-  border-top: 1rpx solid #f0f0f2;
+  border-top: 1rpx solid var(--color-border-light);
 }
 
 .meta-tags {
@@ -792,33 +770,33 @@ onMounted(() => {
 
 .meta-tag {
   font-size: 22rpx;
-  color: #4285f4;
-  background: #e8f0fe;
+  color: var(--color-brand);
+  background: var(--color-bg-info-soft);
   padding: 4rpx 14rpx;
   border-radius: 8rpx;
   font-weight: 500;
 }
 .tag-sentiment {
-  color: #5a5a6e;
-  background: #f0f0f2;
+  color: var(--color-text-tertiary);
+  background: var(--color-border-light);
 }
 .tag-s {
-  color: #e65100;
-  background: #fff3e0;
+  color: var(--color-warning);
+  background: var(--color-bg-warning-light);
 }
 .tag-a {
-  color: #4285f4;
-  background: #e8f0fe;
+  color: var(--color-brand);
+  background: var(--color-bg-info-soft);
 }
 .tag-x {
-  color: #c62828;
-  background: #ffebee;
+  color: var(--color-danger-dark);
+  background: var(--color-bg-danger-light);
 }
 
 .briefing-gen-time {
   font-size: 22rpx;
-  color: #b0b0be;
-  font-family: 'SF Pro Text', -apple-system, sans-serif;
+  color: var(--color-text-placeholder);
+  font-family: var(--font-sans);
 }
 
 /* ═══════════════════════════════════
@@ -838,7 +816,7 @@ onMounted(() => {
   flex-direction: row;
   align-items: center;
   padding: 28rpx 0;
-  border-bottom: 1rpx solid #f0f0f2;
+  border-bottom: 1rpx solid var(--color-border-light);
   cursor: pointer;
   gap: 24rpx;
 }
@@ -864,17 +842,17 @@ onMounted(() => {
 .card-title {
   font-size: 34rpx;
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-family: 'PingFang SC', 'SF Pro Text', -apple-system, sans-serif;
+  font-family: var(--font-sans);
 }
 .card-summary {
   font-size: 26rpx;
-  color: #6b6b7b;
+  color: var(--color-text-hint);
   line-height: 1.6;
   margin-top: 12rpx;
   display: -webkit-box;
@@ -890,8 +868,8 @@ onMounted(() => {
 }
 .card-date {
   font-size: 24rpx;
-  color: #b0b0be;
-  font-family: 'SF Pro Text', -apple-system, sans-serif;
+  color: var(--color-text-placeholder);
+  font-family: var(--font-sans);
 }
 .card-actions {
   display: flex;
@@ -908,7 +886,7 @@ onMounted(() => {
 }
 .action-icon {
   font-size: 28rpx;
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
   font-weight: 500;
 }
 
@@ -1082,12 +1060,12 @@ onMounted(() => {
   }
   .report-card {
     padding: 20px 0;
-    border-bottom: 1px solid #f0f0f2;
+    border-bottom: 1px solid var(--color-border-light);
     gap: 20px;
     transition: background-color 0.15s;
   }
   .report-card:hover {
-    background-color: #fafafa;
+    background-color: var(--color-bg-hover);
   }
   .card-cover {
     width: 70px;
@@ -1117,7 +1095,7 @@ onMounted(() => {
     height: 28px;
   }
   .action-btn:hover {
-    background: #eee;
+    background: var(--color-border);
   }
   .action-icon {
     font-size: 14px;

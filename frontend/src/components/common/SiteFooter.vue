@@ -53,13 +53,13 @@ const openIcp = () => {
 
 .footer-icp {
   font-size: 22rpx;
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
   text-decoration: underline;
 }
 
 .footer-copy {
   font-size: 22rpx;
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
 }
 
 @media screen and (min-width: 768px) {
@@ -74,7 +74,7 @@ const openIcp = () => {
   }
 
   .footer-icp:hover {
-    color: #8c8c9a;
+    color: var(--color-text-muted);
   }
 
   .footer-copy {

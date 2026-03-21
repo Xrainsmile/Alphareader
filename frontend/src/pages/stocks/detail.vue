@@ -142,15 +142,15 @@
 import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { fetchSandboxStockDetail } from '@/utils/api'
+import { stockStatusLabel, formatDateTime } from '@/utils/formatters'
 
 const loading = ref(true)
 const stock = ref(null)
 const analyses = ref([])
 const trades = ref([])
 
-const statusLabel = (s) => ({ holding: '持仓', watching: '观察', exited: '退出' }[s] || s)
-
-
+// statusLabel, formatDate imported from formatters.js
+const statusLabel = stockStatusLabel
 
 const scoreClass = (score) => {
   if (score >= 4) return 'a-score-high'
@@ -158,11 +158,7 @@ const scoreClass = (score) => {
   return 'a-score-low'
 }
 
-const formatDate = (iso) => {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+const formatDate = formatDateTime
 
 onLoad(async (options) => {
   const id = options?.id
@@ -192,7 +188,7 @@ onLoad(async (options) => {
 <style scoped>
 .detail-container {
   min-height: 100vh;
-  background: #f0f2f5;
+  background: var(--color-bg);
   padding: 0 24rpx 48rpx;
 }
 
@@ -201,7 +197,7 @@ onLoad(async (options) => {
   justify-content: center;
   padding: 200rpx 0;
 }
-.loading-text { font-size: 28rpx; color: #b0b0be; }
+.loading-text { font-size: 28rpx; color: var(--color-text-placeholder); }
 
 /* ── Header ── */
 .detail-header {
@@ -213,34 +209,34 @@ onLoad(async (options) => {
 .header-info { display: flex; flex-direction: column; }
 .header-name-row { display: flex; align-items: baseline; gap: 4rpx; }
 .detail-name {
-  font-size: 36rpx; font-weight: 800; color: #1a1a2e;
-  font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
+  font-size: 36rpx; font-weight: 800; color: var(--color-text-primary);
+  font-family: var(--font-display);
 }
 .detail-code {
-  font-size: 24rpx; color: #8c8c9a; font-weight: 500;
+  font-size: 24rpx; color: var(--color-text-muted); font-weight: 500;
 }
 .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8rpx; }
 .status-badge {
   padding: 6rpx 18rpx; border-radius: 16rpx;
 }
 .status-text { font-size: 24rpx; font-weight: 600; }
-.status-holding { background: #dcfce7; }
-.status-holding .status-text { color: #16a34a; }
-.status-watching { background: #dbeafe; }
-.status-watching .status-text { color: #2563eb; }
-.status-exited { background: #f3f4f6; }
-.status-exited .status-text { color: #6b7280; }
+.status-holding { background: var(--color-bg-success-light); }
+.status-holding .status-text { color: var(--color-success-dark); }
+.status-watching { background: var(--color-bg-info-light); }
+.status-watching .status-text { color: var(--color-info-hover); }
+.status-exited { background: var(--color-bg-neutral-light); }
+.status-exited .status-text { color: var(--color-neutral); }
 
 /* ── Reason Card ── */
 .reason-card {
-  background: #ffffff;
+  background: var(--color-bg-card);
   border-radius: 16rpx;
   padding: 20rpx 24rpx;
   margin-bottom: 16rpx;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
 }
-.reason-label { font-size: 22rpx; color: #8c8c9a; font-weight: 600; display: block; margin-bottom: 6rpx; }
-.reason-text { font-size: 26rpx; color: #4a4a5a; line-height: 1.6; display: block; }
+.reason-label { font-size: 22rpx; color: var(--color-text-muted); font-weight: 600; display: block; margin-bottom: 6rpx; }
+.reason-text { font-size: 26rpx; color: var(--color-text-body); line-height: 1.6; display: block; }
 
 /* ── Section Header ── */
 .section-header {
@@ -249,23 +245,23 @@ onLoad(async (options) => {
   justify-content: space-between;
   padding: 20rpx 4rpx 12rpx;
 }
-.section-title { font-size: 30rpx; font-weight: 700; color: #1a1a2e; }
-.section-count { font-size: 24rpx; color: #b0b0be; }
+.section-title { font-size: 30rpx; font-weight: 700; color: var(--color-text-primary); }
+.section-count { font-size: 24rpx; color: var(--color-text-placeholder); }
 
 /* ── Empty Card ── */
 .empty-card {
-  background: #ffffff;
+  background: var(--color-bg-card);
   border-radius: 16rpx;
   padding: 80rpx 0;
   text-align: center;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
 }
-.empty-text { font-size: 28rpx; color: #b0b0be; }
+.empty-text { font-size: 28rpx; color: var(--color-text-placeholder); }
 
 /* ═══ Analysis Cards — 设计稿风格 ═══ */
 .analysis-list { }
 .analysis-card {
-  background: #ffffff;
+  background: var(--color-bg-card);
   border-radius: 16rpx;
   padding: 28rpx;
   margin-bottom: 16rpx;
@@ -277,20 +273,20 @@ onLoad(async (options) => {
   display: flex; align-items: baseline; justify-content: space-between;
   margin-bottom: 20rpx;
   padding-bottom: 18rpx;
-  border-bottom: 1rpx solid #f0f0f2;
+  border-bottom: 1rpx solid var(--color-border-light);
 }
 .a-score-left { display: flex; align-items: baseline; gap: 6rpx; }
-.a-score-label { font-size: 24rpx; color: #8c8c9a; font-weight: 500; }
+.a-score-label { font-size: 24rpx; color: var(--color-text-muted); font-weight: 500; }
 .a-score-big {
   font-size: 48rpx; font-weight: 900;
-  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+  font-family: var(--font-numeric);
   line-height: 1;
 }
-.a-score-high { color: #1a1a2e; }
-.a-score-mid { color: #f59e0b; }
-.a-score-low { color: #ef4444; }
-.a-score-max { font-size: 24rpx; color: #b0b0be; font-weight: 500; }
-.a-created-time { font-size: 22rpx; color: #b0b0be; white-space: nowrap; }
+.a-score-high { color: var(--color-text-primary); }
+.a-score-mid { color: var(--color-warning-alt); }
+.a-score-low { color: var(--color-up-alt); }
+.a-score-max { font-size: 24rpx; color: var(--color-text-placeholder); font-weight: 500; }
+.a-created-time { font-size: 22rpx; color: var(--color-text-placeholder); white-space: nowrap; }
 
 /* 盘面逻辑推演 */
 .a-logic-section {
@@ -301,10 +297,10 @@ onLoad(async (options) => {
   margin-bottom: 20rpx;
 }
 .a-logic-bar {
-  width: 6rpx; height: 28rpx; background: #3b82f6; border-radius: 3rpx;
+  width: 6rpx; height: 28rpx; background: var(--color-info); border-radius: 3rpx;
 }
 .a-logic-title {
-  font-size: 28rpx; font-weight: 700; color: #1a1a2e;
+  font-size: 28rpx; font-weight: 700; color: var(--color-text-primary);
 }
 
 /* 统一的 6 个平行 block 样式 */
@@ -315,28 +311,28 @@ onLoad(async (options) => {
   margin-bottom: 0;
 }
 .a-block-heading {
-  font-size: 28rpx; font-weight: 700; color: #1a1a2e;
+  font-size: 28rpx; font-weight: 700; color: var(--color-text-primary);
   display: block; margin-bottom: 8rpx;
 }
 .a-block-body {
-  font-size: 24rpx; color: #6a6a7a; line-height: 1.7;
+  font-size: 24rpx; color: var(--color-text-hint); line-height: 1.7;
   display: block;
 }
 
 /* 哨子 Verdict 特殊背景 */
 .a-block-verdict {
-  background: #f0f4ff; border-radius: 12rpx;
+  background: var(--color-bg-info-blend); border-radius: 12rpx;
   padding: 16rpx 20rpx;
 }
 .a-verdict-body {
-  color: #1a1a2e; font-weight: 600; font-size: 26rpx;
+  color: var(--color-text-primary); font-weight: 600; font-size: 26rpx;
 }
 
 
 
 /* ── Trade List ── */
 .trade-list {
-  background: #ffffff;
+  background: var(--color-bg-card);
   border-radius: 16rpx;
   overflow: hidden;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
@@ -346,7 +342,7 @@ onLoad(async (options) => {
   justify-content: space-between;
   align-items: center;
   padding: 20rpx 24rpx;
-  border-bottom: 1rpx solid #f0f0f2;
+  border-bottom: 1rpx solid var(--color-border-light);
 }
 .trade-row:last-child { border-bottom: none; }
 .trade-left { display: flex; align-items: center; gap: 14rpx; }
@@ -355,18 +351,18 @@ onLoad(async (options) => {
 }
 .action-text { font-size: 24rpx; font-weight: 700; }
 .action-buy { background: rgba(255, 59, 48, 0.1); }
-.action-buy .action-text { color: #ff3b30; }
+.action-buy .action-text { color: var(--color-up); }
 .action-sell { background: rgba(52, 199, 89, 0.1); }
-.action-sell .action-text { color: #34c759; }
+.action-sell .action-text { color: var(--color-down); }
 .trade-info { display: flex; flex-direction: column; }
-.trade-date { font-size: 24rpx; color: #4a4a5a; font-weight: 500; }
-.trade-note { font-size: 22rpx; color: #b0b0be; margin-top: 2rpx; }
+.trade-date { font-size: 24rpx; color: var(--color-text-body); font-weight: 500; }
+.trade-note { font-size: 22rpx; color: var(--color-text-placeholder); margin-top: 2rpx; }
 .trade-right { display: flex; flex-direction: column; align-items: flex-end; }
 .trade-price {
-  font-size: 28rpx; font-weight: 700; color: #1a1a2e;
-  font-family: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
+  font-size: 28rpx; font-weight: 700; color: var(--color-text-primary);
+  font-family: var(--font-numeric);
 }
-.trade-shares { font-size: 22rpx; color: #8c8c9a; margin-top: 2rpx; }
+.trade-shares { font-size: 22rpx; color: var(--color-text-muted); margin-top: 2rpx; }
 
 /* ═══ PC 适配 ═══ */
 @media screen and (min-width: 768px) {
