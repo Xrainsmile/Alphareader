@@ -1,5 +1,12 @@
 # ── AlphaReader Nginx Production Config (HTTPS) ──
 
+# API Key 注入：客户端未携带时自动使用服务端配置的 key
+# map 在 rewrite 阶段之前求值，比 if+set 更可靠
+map $http_x_api_key $final_api_key {
+    default $http_x_api_key;
+    ""      "${NGINX_API_KEY}";
+}
+
 # Rate limiting zones
 # General API: 30 requests/minute per IP (burst up to 15)
 limit_req_zone $binary_remote_addr zone=api:10m rate=30r/m;
@@ -68,11 +75,7 @@ server {
         proxy_read_timeout 180s;
         proxy_connect_timeout 10s;
 
-        set $api_key $http_x_api_key;
-        if ($api_key = '') {
-            set $api_key '${NGINX_API_KEY}';
-        }
-        proxy_set_header X-API-Key $api_key;
+        proxy_set_header X-API-Key $final_api_key;
     }
 
     # API reverse proxy (general rate limit: 30 req/min per IP)
@@ -89,13 +92,7 @@ server {
         proxy_read_timeout 120s;
         proxy_connect_timeout 10s;
 
-        # 如果前端未携带 API Key，由 Nginx 自动注入（兜底）
-        # NGINX_API_KEY 通过 docker-compose 环境变量 + envsubst 注入
-        set $api_key $http_x_api_key;
-        if ($api_key = '') {
-            set $api_key '${NGINX_API_KEY}';
-        }
-        proxy_set_header X-API-Key $api_key;
+        proxy_set_header X-API-Key $final_api_key;
     }
 
     # API Docs page (reverse proxy to backend)
