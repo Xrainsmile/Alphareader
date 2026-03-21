@@ -39,7 +39,7 @@ async def require_api_key(
         )
 
     if not hmac.compare_digest(api_key.encode(), settings.NEWS_API_KEY.encode()):
-        logger.warning("无效的 API Key: %s %s (received=%r, expected=%r)", request.method, request.url.path, api_key, settings.NEWS_API_KEY)
+        logger.warning("无效的 API Key: %s %s", request.method, request.url.path)
         raise HTTPException(
             status_code=403,
             detail={"error": "forbidden", "message": "API Key 无效"},

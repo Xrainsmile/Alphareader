@@ -4,6 +4,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_KEY: ${NEWS_API_KEY}
     container_name: alpha-frontend
     ports:
       - "80:80"
