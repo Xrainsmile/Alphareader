@@ -769,7 +769,7 @@ class ValueWatchlistResponse(BaseModel):
     items: list[ValueStockItem]
 
 
-@router.get("/value_watchlist", response_model=ValueWatchlistResponse)
+@router.get("/value_watchlist")
 async def get_value_watchlist():
     """查询价投策略白名单。
 

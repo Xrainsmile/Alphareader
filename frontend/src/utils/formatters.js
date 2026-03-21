@@ -141,48 +141,53 @@ export function sentimentEmoji(sentiment) {
 
 // ── mp-html Tag Style 常量 ──
 
-/** 详情页 mp-html tag-style */
+/** 详情页 mp-html tag-style
+ *  注意：mp-html 的 tag-style 是内联样式，uni-app 构建时不会转换其中的 rpx，
+ *  因此必须使用浏览器可识别的单位（px / rem）。
+ */
 export const detailTagStyle = {
-  p: 'font-size: 28rpx; color: #4a4a5a; line-height: 1.8; margin-bottom: 16rpx;',
-  h1: 'font-size: 36rpx; font-weight: 800; color: #1a1a2e; margin: 24rpx 0 12rpx;',
-  h2: 'font-size: 32rpx; font-weight: 700; color: #1a1a2e; margin: 20rpx 0 10rpx;',
-  h3: 'font-size: 30rpx; font-weight: 600; color: #1a1a2e; margin: 16rpx 0 8rpx;',
-  h4: 'font-size: 28rpx; font-weight: 600; color: #3a3a4a; margin: 12rpx 0 6rpx;',
-  ul: 'padding-left: 32rpx; margin-bottom: 12rpx;',
-  ol: 'padding-left: 32rpx; margin-bottom: 12rpx;',
-  li: 'font-size: 28rpx; color: #4a4a5a; line-height: 1.8; margin-bottom: 6rpx;',
-  blockquote: 'border-left: 6rpx solid #e0e0e6; padding-left: 20rpx; color: #6b6b7b; margin: 12rpx 0;',
-  code: 'font-size: 24rpx; background: #f5f5f7; padding: 2rpx 8rpx; border-radius: 4rpx; color: #d63384;',
-  pre: 'background: #f5f5f7; padding: 16rpx; border-radius: 8rpx; overflow-x: auto; margin: 12rpx 0;',
-  img: 'max-width: 100%; border-radius: 8rpx;',
-  table: 'width: 100%; border-collapse: collapse; margin: 12rpx 0;',
-  th: 'font-size: 24rpx; padding: 10rpx 12rpx; background: #f5f5f7; border: 1rpx solid #e8e8ed; text-align: left; font-weight: 600;',
-  td: 'font-size: 24rpx; padding: 10rpx 12rpx; border: 1rpx solid #e8e8ed;',
+  p: 'font-size: 15px; color: #4a4a5a; line-height: 1.8; margin-bottom: 8px;',
+  h1: 'font-size: 20px; font-weight: 800; color: #1a1a2e; margin: 14px 0 8px;',
+  h2: 'font-size: 18px; font-weight: 700; color: #1a1a2e; margin: 12px 0 6px;',
+  h3: 'font-size: 16px; font-weight: 600; color: #1a1a2e; margin: 10px 0 5px;',
+  h4: 'font-size: 15px; font-weight: 600; color: #3a3a4a; margin: 8px 0 4px;',
+  ul: 'padding-left: 18px; margin-bottom: 8px;',
+  ol: 'padding-left: 18px; margin-bottom: 8px;',
+  li: 'font-size: 15px; color: #4a4a5a; line-height: 1.8; margin-bottom: 4px;',
+  blockquote: 'border-left: 3px solid #e0e0e6; padding-left: 12px; color: #6b6b7b; margin: 8px 0;',
+  code: 'font-size: 13px; background: #f5f5f7; padding: 1px 5px; border-radius: 3px; color: #d63384;',
+  pre: 'background: #f5f5f7; padding: 10px; border-radius: 6px; overflow-x: auto; margin: 8px 0;',
+  img: 'max-width: 100%; border-radius: 6px;',
+  table: 'width: 100%; border-collapse: collapse; margin: 8px 0;',
+  th: 'font-size: 13px; padding: 6px 8px; background: #f5f5f7; border: 1px solid #e8e8ed; text-align: left; font-weight: 600;',
+  td: 'font-size: 13px; padding: 6px 8px; border: 1px solid #e8e8ed;',
   strong: 'font-weight: 700; color: #1a1a2e;',
   em: 'font-style: italic; color: #5a5a6e;',
-  hr: 'border: none; border-top: 1rpx solid #e8e8ed; margin: 20rpx 0;',
+  hr: 'border: none; border-top: 1px solid #e8e8ed; margin: 12px 0;',
   a: 'color: #4285f4; text-decoration: none;',
 }
 
-/** 列表页 mp-html tag-style（更紧凑） */
+/** 列表页 mp-html tag-style（更紧凑）
+ *  同样使用 px 而非 rpx，原因见 detailTagStyle 注释。
+ */
 export const listTagStyle = {
-  p: 'font-size: 26rpx; color: #5a5a6e; line-height: 1.7; margin-bottom: 12rpx;',
-  h1: 'font-size: 32rpx; font-weight: 700; color: #1a1a2e; margin: 16rpx 0 8rpx;',
-  h2: 'font-size: 30rpx; font-weight: 600; color: #1a1a2e; margin: 14rpx 0 6rpx;',
-  h3: 'font-size: 28rpx; font-weight: 600; color: #1a1a2e; margin: 12rpx 0 6rpx;',
-  h4: 'font-size: 26rpx; font-weight: 600; color: #3a3a4a; margin: 10rpx 0 4rpx;',
-  ul: 'padding-left: 28rpx; margin-bottom: 8rpx;',
-  ol: 'padding-left: 28rpx; margin-bottom: 8rpx;',
-  li: 'font-size: 26rpx; color: #5a5a6e; line-height: 1.7; margin-bottom: 4rpx;',
-  blockquote: 'border-left: 4rpx solid #e0e0e6; padding-left: 16rpx; color: #6b6b7b; margin: 8rpx 0;',
-  code: 'font-size: 22rpx; background: #f5f5f7; padding: 2rpx 6rpx; border-radius: 4rpx; color: #d63384;',
-  pre: 'background: #f5f5f7; padding: 12rpx; border-radius: 8rpx; overflow-x: auto; margin: 8rpx 0;',
-  img: 'max-width: 100%; border-radius: 8rpx;',
-  table: 'width: 100%; border-collapse: collapse; margin: 8rpx 0;',
-  th: 'font-size: 22rpx; padding: 8rpx 10rpx; background: #f5f5f7; border: 1rpx solid #e8e8ed; text-align: left; font-weight: 600;',
-  td: 'font-size: 22rpx; padding: 8rpx 10rpx; border: 1rpx solid #e8e8ed;',
+  p: 'font-size: 14px; color: #5a5a6e; line-height: 1.7; margin-bottom: 6px;',
+  h1: 'font-size: 18px; font-weight: 700; color: #1a1a2e; margin: 10px 0 5px;',
+  h2: 'font-size: 16px; font-weight: 600; color: #1a1a2e; margin: 8px 0 4px;',
+  h3: 'font-size: 15px; font-weight: 600; color: #1a1a2e; margin: 7px 0 4px;',
+  h4: 'font-size: 14px; font-weight: 600; color: #3a3a4a; margin: 6px 0 3px;',
+  ul: 'padding-left: 16px; margin-bottom: 5px;',
+  ol: 'padding-left: 16px; margin-bottom: 5px;',
+  li: 'font-size: 14px; color: #5a5a6e; line-height: 1.7; margin-bottom: 3px;',
+  blockquote: 'border-left: 3px solid #e0e0e6; padding-left: 10px; color: #6b6b7b; margin: 5px 0;',
+  code: 'font-size: 12px; background: #f5f5f7; padding: 1px 4px; border-radius: 3px; color: #d63384;',
+  pre: 'background: #f5f5f7; padding: 8px; border-radius: 6px; overflow-x: auto; margin: 5px 0;',
+  img: 'max-width: 100%; border-radius: 6px;',
+  table: 'width: 100%; border-collapse: collapse; margin: 5px 0;',
+  th: 'font-size: 12px; padding: 5px 6px; background: #f5f5f7; border: 1px solid #e8e8ed; text-align: left; font-weight: 600;',
+  td: 'font-size: 12px; padding: 5px 6px; border: 1px solid #e8e8ed;',
   strong: 'font-weight: 700; color: #1a1a2e;',
   em: 'font-style: italic; color: #5a5a6e;',
-  hr: 'border: none; border-top: 1rpx solid #e8e8ed; margin: 16rpx 0;',
+  hr: 'border: none; border-top: 1px solid #e8e8ed; margin: 10px 0;',
   a: 'color: #4285f4; text-decoration: none;',
 }
