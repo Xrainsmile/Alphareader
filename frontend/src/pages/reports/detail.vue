@@ -38,31 +38,15 @@ import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
 import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
 import { rawReports } from '@/data/reports'
 import { fetchReportDetail } from '@/utils/api'
+import { detailTagStyle, formatDate } from '@/utils/formatters'
 
 const meta = ref({})
 const htmlContent = ref('')
 
-// 通过 tag-style 属性注入内联样式（能穿透 rich-text 组件）
-const tagStyle = {
-  h1: 'font-size:22px;font-weight:800;color:#1a1a2e;margin:36px 0 16px;padding:4px 0;line-height:1.5;',
-  h2: 'font-size:18px;font-weight:700;color:#1a1a2e;margin:28px 0 14px;padding:4px 0 4px 12px;border-left:3px solid #4285f4;line-height:1.5;',
-  h3: 'font-size:16px;font-weight:600;color:#2a2a3e;margin:24px 0 12px;padding:4px 0;line-height:1.5;',
-  h4: 'font-size:15px;font-weight:600;color:#3a3a4a;margin:20px 0 10px;padding:2px 0;line-height:1.5;',
-  p: 'font-size:15px;color:#3a3a4a;line-height:1.5;margin:16px 0;padding:2px 0;',
-  strong: 'color:#1a1a2e;font-weight:600;',
-  ul: 'padding-left:20px;margin:16px 0;',
-  ol: 'padding-left:20px;margin:16px 0;',
-  li: 'font-size:15px;color:#3a3a4a;line-height:1.5;margin:8px 0;padding:2px 0;',
-  img: 'max-width:100%;border-radius:8px;margin:16px 0;',
-  blockquote: 'margin:20px 0;padding:14px 18px;background:#f7f8fa;border-left:3px solid #4285f4;border-radius:0 8px 8px 0;color:#5a5a6e;font-size:14px;line-height:1.8;',
-  hr: 'border:none;border-top:1px solid #eee;margin:28px 0;'
-}
+// 通过 tag-style 属性注入内联样式（从 formatters 导入详情版）
+const tagStyle = detailTagStyle
 
-const formatDate = (dateStr) => {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
-}
+// formatDate imported from formatters.js
 
 const onImageTap = (e) => {
   uni.previewImage({
@@ -111,7 +95,7 @@ onMounted(async () => {
 <style scoped>
 .detail-container {
   min-height: 100vh;
-  background: #ffffff;
+  background: var(--color-bg-card);
   padding: 0 32rpx;
 }
 
@@ -122,10 +106,10 @@ onMounted(async () => {
 .article-title {
   font-size: 40rpx;
   font-weight: 800;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   line-height: 1.4;
   display: block;
-  font-family: 'PingFang SC', 'SF Pro Display', -apple-system, sans-serif;
+  font-family: var(--font-display);
 }
 .article-meta {
   display: flex;
@@ -135,12 +119,12 @@ onMounted(async () => {
 }
 .article-date {
   font-size: 24rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
 }
 .article-badge {
   font-size: 22rpx;
-  color: #4285f4;
-  background: #e8f0fe;
+  color: var(--color-brand);
+  background: var(--color-bg-info-soft);
   padding: 4rpx 16rpx;
   border-radius: 8rpx;
   font-weight: 500;
@@ -149,7 +133,7 @@ onMounted(async () => {
 /* ── Divider ── */
 .article-divider {
   height: 1rpx;
-  background: #f0f0f2;
+  background: var(--color-border-light);
   margin-bottom: 8rpx;
 }
 
@@ -167,7 +151,7 @@ onMounted(async () => {
 }
 .loading-text {
   font-size: 28rpx;
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
 }
 
 /* ── Article Footer ── */
@@ -181,11 +165,11 @@ onMounted(async () => {
 .footer-divider {
   width: 80rpx;
   height: 2rpx;
-  background: #e0e0e6;
+  background: var(--color-border-divider);
 }
 .footer-text {
   font-size: 24rpx;
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
   letter-spacing: 2rpx;
 }
 

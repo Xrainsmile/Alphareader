@@ -174,7 +174,7 @@ class TestNewsDeduplicator:
     # ────────────────────────────────────────────
 
     @patch("app.utils.deduplicator.get_redis")
-    @patch("app.utils.deduplicator._call_zhipu_embedding", return_value=None)
+    @patch("app.utils.deduplicator._call_embedding", return_value=None)
     async def test_short_text_fallback_when_api_fails(
         self, mock_embedding, mock_get_redis, dedup
     ):

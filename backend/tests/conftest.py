@@ -22,7 +22,7 @@ from app.database import Base, get_db
 
 
 # ── SQLite ↔ PostgreSQL type adaptors ──
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID, JSONB, TSVECTOR
 from sqlalchemy.ext.compiler import compiles
 
 
@@ -34,6 +34,16 @@ def _compile_array_sqlite(type_, compiler, **kw):
 @compiles(UUID, "sqlite")
 def _compile_uuid_sqlite(type_, compiler, **kw):
     return "CHAR(36)"
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(type_, compiler, **kw):
+    return "JSON"
+
+
+@compiles(TSVECTOR, "sqlite")
+def _compile_tsvector_sqlite(type_, compiler, **kw):
+    return "TEXT"
 
 
 # Patch ARRAY so SQLite can bind/result-process list ↔ JSON string
@@ -112,6 +122,7 @@ def mock_redis():
 async def client(mock_redis) -> AsyncGenerator[AsyncClient, None]:
     """Async HTTP client hitting the real FastAPI app with test DB + mock Redis."""
     from app.main import app
+    from app.config import settings
 
     # Override dependencies
     async def _override_get_db():
@@ -119,6 +130,10 @@ async def client(mock_redis) -> AsyncGenerator[AsyncClient, None]:
             yield session
 
     app.dependency_overrides[get_db] = _override_get_db
+
+    # Disable API key auth in tests (avoid depending on local .env)
+    original_api_key = settings.NEWS_API_KEY
+    settings.NEWS_API_KEY = ""
 
     # Patch redis at module level
     import app.redis as redis_mod
@@ -132,5 +147,6 @@ async def client(mock_redis) -> AsyncGenerator[AsyncClient, None]:
         yield ac
 
     # Restore
+    settings.NEWS_API_KEY = original_api_key
     redis_mod.redis_pool = original_pool
     app.dependency_overrides.clear()

@@ -32,7 +32,29 @@ function request(url, options = {}) {
       timeout: 15000,
       success: (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(res.data)
+          // 自动解包 APIResponse / PaginatedResponse 格式
+          // 如果返回 {code, message, data, ...} 结构，取 data 字段作为实际数据
+          // 同时将 total/limit/offset 等分页字段保留到解包后的对象上
+          const body = res.data
+          if (body && typeof body === 'object' && 'code' in body && 'data' in body) {
+            if (body.code !== 0) {
+              reject(new Error(body.message || `API Error code=${body.code}`))
+              return
+            }
+            // PaginatedResponse: 将分页信息附加到 data 包装中
+            if ('total' in body && Array.isArray(body.data)) {
+              resolve({
+                items: body.data,
+                total: body.total,
+                limit: body.limit,
+                offset: body.offset,
+              })
+              return
+            }
+            resolve(body.data)
+            return
+          }
+          resolve(body)
         } else {
           reject(new Error(`HTTP ${res.statusCode}: ${JSON.stringify(res.data)}`))
         }
@@ -224,6 +246,31 @@ export function fetchSandboxStocks(status = '', statusFilter = '', q = '', holdi
  */
 export function fetchSandboxStockDetail(stockId) {
   return request(`/api/v1/sandbox/stocks/${stockId}`)
+}
+
+// ── Briefing API（每日研报使用）──
+
+/**
+ * 获取研报列表（按日期倒序）
+ * @param {number} days 获取最近几天，默认 7
+ */
+export function fetchBriefings(days = 7) {
+  return request(`/api/v1/briefings/?days=${days}`)
+}
+
+/**
+ * 获取最新一条研报
+ */
+export function fetchLatestBriefing() {
+  return request('/api/v1/briefings/latest')
+}
+
+/**
+ * 获取单条研报详情
+ * @param {number} id 研报 ID
+ */
+export function fetchBriefingDetail(id) {
+  return request(`/api/v1/briefings/${id}`)
 }
 
 // ── Analytics API（用户行为上报）──

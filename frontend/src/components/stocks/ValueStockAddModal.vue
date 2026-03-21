@@ -253,7 +253,7 @@ const submit = async () => {
   width: 640rpx;
   max-width: 340px;
   max-height: 80vh;
-  background: #ffffff;
+  background: var(--color-bg-card);
   border-radius: 24rpx;
   padding: 44rpx 36rpx 32rpx;
   box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.12);
@@ -272,13 +272,13 @@ const submit = async () => {
 .modal-title {
   font-size: 34rpx;
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   letter-spacing: 1rpx;
-  font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
+  font-family: var(--font-display);
 }
 .modal-desc {
   font-size: 24rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
   margin-top: 8rpx;
   text-align: center;
 }
@@ -287,29 +287,29 @@ const submit = async () => {
 .search-wrap {
   display: flex;
   align-items: center;
-  background: #f5f6f8;
+  background: var(--color-bg-active);
   border-radius: 16rpx;
   padding: 20rpx 24rpx;
-  border: 2rpx solid #e8e8ed;
+  border: 2rpx solid var(--color-border);
   transition: border-color 0.2s, box-shadow 0.2s;
   gap: 12rpx;
 }
 .search-focus {
-  border-color: #1a1a2e;
+  border-color: var(--color-text-primary);
   box-shadow: 0 2rpx 12rpx rgba(26, 26, 46, 0.1);
 }
 .search-icon { font-size: 28rpx; flex-shrink: 0; }
 .search-input {
   flex: 1;
   font-size: 28rpx;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   background: transparent;
   border: none;
   outline: none;
 }
 .search-clear {
   font-size: 26rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
   padding: 4rpx 8rpx;
   cursor: pointer;
   flex-shrink: 0;
@@ -320,30 +320,30 @@ const submit = async () => {
   max-height: 360rpx;
   overflow-y: auto;
   margin-top: 16rpx;
-  background: #fafbfc;
+  background: var(--color-bg-hover);
   border-radius: 12rpx;
-  border: 1rpx solid #e8e8ed;
+  border: 1rpx solid var(--color-border);
 }
 .result-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 20rpx 24rpx;
-  border-bottom: 1rpx solid #f0f0f2;
+  border-bottom: 1rpx solid var(--color-border-light);
   cursor: pointer;
   transition: background 0.15s;
 }
 .result-item:last-child { border-bottom: none; }
-.result-item:active { background: #e8e8f0; }
+.result-item:active { background: var(--color-bg-active-press); }
 .result-name {
   font-size: 28rpx;
   font-weight: 600;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
 }
 .result-code {
   font-size: 24rpx;
-  color: #8c8c9a;
-  font-family: 'SF Mono', 'Menlo', monospace;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
 }
 
 .empty-hint {
@@ -352,7 +352,7 @@ const submit = async () => {
 }
 .empty-text {
   font-size: 24rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
 }
 
 /* 已选中卡片 */
@@ -362,20 +362,20 @@ const submit = async () => {
   justify-content: space-between;
   margin-top: 20rpx;
   padding: 20rpx 24rpx;
-  background: #f0f4ff;
-  border: 2rpx solid #3b82f6;
+  background: var(--color-bg-info-blend);
+  border: 2rpx solid var(--color-info);
   border-radius: 14rpx;
 }
 .selected-info { display: flex; align-items: center; gap: 16rpx; }
 .selected-name {
   font-size: 30rpx;
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
 }
 .selected-code {
   font-size: 24rpx;
-  color: #3b82f6;
-  font-family: 'SF Mono', 'Menlo', monospace;
+  color: var(--color-info);
+  font-family: var(--font-mono);
 }
 .selected-remove {
   padding: 8rpx 12rpx;
@@ -383,7 +383,7 @@ const submit = async () => {
 }
 .remove-icon {
   font-size: 26rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
 }
 
 /* 投资理由 */
@@ -394,24 +394,24 @@ const submit = async () => {
   width: 100%;
   min-height: 120rpx;
   font-size: 26rpx;
-  color: #1a1a2e;
-  background: #f5f6f8;
+  color: var(--color-text-primary);
+  background: var(--color-bg-active);
   border-radius: 14rpx;
   padding: 20rpx 24rpx;
-  border: 2rpx solid #e8e8ed;
+  border: 2rpx solid var(--color-border);
   box-sizing: border-box;
   line-height: 1.6;
   transition: border-color 0.2s;
 }
 .reason-input:focus {
-  border-color: #1a1a2e;
+  border-color: var(--color-text-primary);
 }
 
 /* 错误提示 */
 .error-text {
   display: block;
   font-size: 22rpx;
-  color: #ff3b30;
+  color: var(--color-up);
   margin-top: 16rpx;
   text-align: center;
 }
@@ -431,12 +431,12 @@ const submit = async () => {
   transition: opacity 0.15s;
 }
 .btn:active { opacity: 0.7; }
-.btn-cancel { background: #f0f2f5; }
-.btn-confirm { background: #1a1a2e; }
+.btn-cancel { background: var(--color-bg); }
+.btn-confirm { background: var(--color-text-primary); }
 .btn-disabled { opacity: 0.4; pointer-events: none; }
 .btn-text { font-size: 28rpx; font-weight: 600; }
-.cancel-text { color: #8c8c9a; }
-.confirm-text { color: #ffffff; }
+.cancel-text { color: var(--color-text-muted); }
+.confirm-text { color: var(--color-text-white); }
 
 @media (min-width: 750px) {
   .modal-card { padding: 32px 28px 24px; border-radius: 16px; max-width: 360px; }

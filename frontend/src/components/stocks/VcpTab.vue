@@ -1,0 +1,203 @@
+<template>
+  <view>
+    <view class="stocks-header">
+      <text class="stocks-title">VCP 策略</text>
+      <text class="stocks-subtitle">波动收缩形态 · Volatility Contraction Pattern</text>
+    </view>
+
+    <view class="info-bar">
+      <text class="info-date">数据日期: {{ vcpDate || '--' }}</text>
+      <text class="info-date">共 {{ filteredList.length }}/{{ vcpList.length }} 只</text>
+    </view>
+
+    <IndustryConceptFilter
+      ref="filterRef"
+      :industry-options="industryOptions"
+      :concept-options="conceptOptions"
+      @change="onFilterChange"
+    />
+
+    <!-- VCP 表格头 -->
+    <view class="vcp-table-header">
+      <text class="vth vth-rank">#</text>
+      <text class="vth vth-name">名称/代码</text>
+      <text class="vth vth-price">收盘价</text>
+      <text class="vth vth-vcp">VCP</text>
+      <text class="vth vth-flow">资金流入</text>
+      <text class="vth vth-action">交易</text>
+    </view>
+
+    <EmptyState v-if="vcpLoading" text="加载中..." bg="var(--color-bg-card)" radius="0 0 16rpx 16rpx" />
+    <EmptyState v-else-if="filteredList.length === 0" :text="vcpList.length === 0 ? '暂无白名单数据' : '无匹配结果，请调整筛选条件'" bg="var(--color-bg-card)" radius="0 0 16rpx 16rpx" />
+    <view v-else class="stock-list">
+      <view
+        v-for="(item, idx) in filteredList"
+        :key="item.ts_code"
+        class="vcp-row"
+        :class="{ 'stock-row-alt': idx % 2 === 1 }"
+        @click="expandedIdx = expandedIdx === idx ? -1 : idx"
+      >
+        <!-- 主行第一行：核心指标 -->
+        <view class="vcp-row-main">
+          <view class="col vcp-col-rank"><text class="rank-num" :class="rankClass(idx)">{{ idx + 1 }}</text></view>
+          <view class="col vcp-col-name">
+            <text class="stock-name">{{ item.name || item.ts_code }}</text>
+            <text class="stock-code">{{ item.ts_code }}{{ item.industry ? ' · ' + item.industry : '' }}</text>
+          </view>
+          <view class="col vcp-col-price"><text class="close-price">{{ formatPrice(item.current_price) }}</text></view>
+          <view class="col vcp-col-vcp">
+            <view class="vcp-badge" :class="vcpClass(item.vcp_score)">
+              <text class="vcp-val">{{ formatVcp(item.vcp_score) }}</text>
+            </view>
+          </view>
+          <view class="col vcp-col-flow">
+            <text class="flow-val" :class="pctValClass(item.fund_flow_net)">
+              {{ item.fund_flow_net != null ? (item.fund_flow_net >= 0 ? '+' : '') + item.fund_flow_net.toFixed(0) + '万' : '--' }}
+            </text>
+          </view>
+          <view class="col vcp-col-action">
+            <!-- #ifdef H5 -->
+            <a :href="item.futu_url" class="futu-link" @click.stop>
+              <text class="futu-icon">📈</text>
+            </a>
+            <!-- #endif -->
+          </view>
+        </view>
+
+        <!-- 主行第二行：题材标签 -->
+        <view v-if="item.concepts" class="vcp-row-concepts">
+          <text
+            v-for="tag in item.concepts.split(', ').slice(0, 4)"
+            :key="tag"
+            class="concept-tag"
+          >{{ tag }}</text>
+        </view>
+
+        <!-- 展开行：完整详情 -->
+        <view v-if="expandedIdx === idx" class="vcp-expand">
+          <view class="vcp-expand-row">
+            <text class="vcp-expand-label">行业</text>
+            <text class="vcp-expand-val">{{ item.industry || '--' }}</text>
+          </view>
+          <view class="vcp-expand-row">
+            <text class="vcp-expand-label">题材</text>
+            <text class="vcp-expand-val vcp-concepts">{{ item.concepts || '--' }}</text>
+          </view>
+          <view class="vcp-expand-row">
+            <text class="vcp-expand-label">主力净流入</text>
+            <text class="vcp-expand-val" :class="pctValClass(item.fund_flow_net)">
+              {{ item.fund_flow_net != null ? (item.fund_flow_net >= 0 ? '+' : '') + item.fund_flow_net.toFixed(2) + '万' : '--' }}
+            </text>
+          </view>
+          <view class="vcp-expand-row">
+            <text class="vcp-expand-label">EPS增长</text>
+            <text class="vcp-expand-val" :class="pctValClass(item.eps_growth)">{{ formatPctVal(item.eps_growth) }}</text>
+          </view>
+          <view class="vcp-expand-row">
+            <text class="vcp-expand-label">营收同比</text>
+            <text class="vcp-expand-val" :class="pctValClass(item.revenue_yoy)">{{ formatPctVal(item.revenue_yoy) }}</text>
+          </view>
+          <view class="vcp-expand-row">
+            <text class="vcp-expand-label">主营业务</text>
+            <text class="vcp-expand-val vcp-business">{{ item.main_business || '--' }}</text>
+          </view>
+          <view class="vcp-expand-row">
+            <text class="vcp-expand-label">EMA</text>
+            <text class="vcp-expand-val">20d: {{ formatPrice(item.ema20) }}　50d: {{ formatPrice(item.ema50) }}　120d: {{ formatPrice(item.ema120) }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import IndustryConceptFilter from './IndustryConceptFilter.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import { fetchVCPWatchlist, fetchVCPFilters } from '@/utils/api'
+
+const vcpList = ref([])
+const vcpDate = ref('')
+const vcpLoading = ref(false)
+const expandedIdx = ref(-1)
+const filterRef = ref(null)
+
+// 筛选器选项
+const industryOptions = ref([])
+const conceptOptions = ref([])
+
+// 筛选器选中状态
+const filterIndustries = ref([])
+const filterConcepts = ref([])
+
+const filteredList = computed(() => {
+  let list = vcpList.value
+  if (filterIndustries.value.length > 0) {
+    list = list.filter(item => item.industry && filterIndustries.value.includes(item.industry))
+  }
+  if (filterConcepts.value.length > 0) {
+    list = list.filter(item => {
+      if (!item.concepts) return false
+      return filterConcepts.value.some(c => item.concepts.includes(c))
+    })
+  }
+  return list
+})
+
+const onFilterChange = ({ industries, concepts }) => {
+  filterIndustries.value = industries
+  filterConcepts.value = concepts
+}
+
+const loadFilters = async () => {
+  try {
+    const data = await fetchVCPFilters()
+    industryOptions.value = data.industries || []
+    conceptOptions.value = data.concepts || []
+  } catch (e) {
+    console.error('加载 VCP 筛选项失败:', e)
+  }
+}
+
+const loadData = async () => {
+  vcpLoading.value = true
+  try {
+    const data = await fetchVCPWatchlist({})
+    vcpList.value = data.items || []
+    vcpDate.value = data.date || ''
+  } catch (e) {
+    console.error('加载 VCP 白名单失败:', e)
+    uni.showToast({ title: '加载失败', icon: 'none' })
+  } finally {
+    vcpLoading.value = false
+  }
+}
+
+// 工具函数
+const formatPrice = (v) => v == null ? '--' : Number(v).toFixed(2)
+const formatVcp = (v) => v == null ? '--' : Number(v).toFixed(3)
+const vcpClass = (v) => {
+  if (v == null) return 'vcp-level-none'
+  return v >= 0.50 ? 'vcp-level-hot' : v >= 0.30 ? 'vcp-level-warm' : v >= 0.10 ? 'vcp-level-normal' : 'vcp-level-cool'
+}
+const formatPctVal = (v) => {
+  if (v == null) return '--'
+  const n = Number(v)
+  return (n >= 0 ? '+' : '') + n.toFixed(1) + '%'
+}
+const pctValClass = (v) => v == null ? '' : v > 0 ? 'val-up' : v < 0 ? 'val-down' : ''
+const rankClass = (idx) => idx < 3 ? 'rank-top' : idx < 10 ? 'rank-high' : ''
+
+// 暴露加载方法给父组件
+const init = () => {
+  loadData()
+  loadFilters()
+}
+
+defineExpose({ init })
+
+onMounted(() => {
+  init()
+})
+</script>

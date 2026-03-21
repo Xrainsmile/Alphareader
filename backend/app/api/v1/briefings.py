@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.daily_briefing import DailyBriefing
+from app.schemas.response import APIResponse
 
 logger = logging.getLogger("alphareader.briefings_api")
 
@@ -45,7 +46,7 @@ class BriefingDetail(BriefingListItem):
 
 # ── Endpoints ──
 
-@router.get("/latest", response_model=BriefingDetail | None)
+@router.get("/latest")
 async def get_latest_briefing(
     db: AsyncSession = Depends(get_db),
 ):
@@ -59,9 +60,9 @@ async def get_latest_briefing(
     b = result.scalar_one_or_none()
 
     if not b:
-        return None
+        return APIResponse(data=None)
 
-    return BriefingDetail(
+    return APIResponse(data=BriefingDetail(
         id=b.id,
         briefing_date=b.briefing_date.isoformat(),
         content=b.content,
@@ -70,10 +71,10 @@ async def get_latest_briefing(
         generation_sec=b.generation_sec,
         status=b.status,
         created_at=b.created_at.isoformat() if b.created_at else "",
-    )
+    ).model_dump())
 
 
-@router.get("/", response_model=list[BriefingListItem])
+@router.get("/")
 async def list_briefings(
     days: int = Query(7, ge=1, le=90, description="获取最近几天的报告"),
     db: AsyncSession = Depends(get_db),
@@ -89,7 +90,7 @@ async def list_briefings(
     result = await db.execute(stmt)
     briefings = result.scalars().all()
 
-    return [
+    items = [
         BriefingListItem(
             id=b.id,
             briefing_date=b.briefing_date.isoformat(),
@@ -99,12 +100,13 @@ async def list_briefings(
             generation_sec=b.generation_sec,
             status=b.status,
             created_at=b.created_at.isoformat() if b.created_at else "",
-        )
+        ).model_dump()
         for b in briefings
     ]
+    return APIResponse(data=items)
 
 
-@router.get("/{briefing_id}", response_model=BriefingDetail)
+@router.get("/{briefing_id}")
 async def get_briefing(
     briefing_id: int,
     db: AsyncSession = Depends(get_db),
@@ -117,7 +119,7 @@ async def get_briefing(
     if not b:
         raise HTTPException(status_code=404, detail="Briefing not found")
 
-    return BriefingDetail(
+    return APIResponse(data=BriefingDetail(
         id=b.id,
         briefing_date=b.briefing_date.isoformat(),
         content=b.content,
@@ -126,11 +128,11 @@ async def get_briefing(
         generation_sec=b.generation_sec,
         status=b.status,
         created_at=b.created_at.isoformat() if b.created_at else "",
-    )
+    ).model_dump())
 
 
 class GenerateBriefingRequest(BaseModel):
-    target_date: str | None = None  # "YYYY-MM-DD"，为空则用今天
+    target_date: date | None = None  # YYYY-MM-DD，为空则用今天
 
 
 @router.post("/generate")
@@ -138,16 +140,9 @@ async def generate_briefing_endpoint(payload: GenerateBriefingRequest):
     """手动触发生成分析报告（调试/补数据用）。"""
     from app.services.briefing_service import generate_briefing
 
-    target = None
-    if payload.target_date:
-        try:
-            target = date.fromisoformat(payload.target_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format, use YYYY-MM-DD")
-
     try:
-        result = await generate_briefing(target)
-        return {"code": 0, "msg": "ok", **result}
+        result = await generate_briefing(payload.target_date)
+        return APIResponse(data=result)
     except Exception as e:
         logger.exception("Generate briefing failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="研报生成失败，请稍后重试")

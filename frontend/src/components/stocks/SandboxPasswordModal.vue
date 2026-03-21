@@ -59,7 +59,7 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
 .pwd-card {
   width: 600rpx;
   max-width: 320px;
-  background: #ffffff;
+  background: var(--color-bg-card);
   border-radius: 24rpx;
   padding: 48rpx 40rpx 36rpx;
   box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.12);
@@ -80,31 +80,31 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
 .pwd-title {
   font-size: 34rpx;
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   letter-spacing: 1rpx;
-  font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
+  font-family: var(--font-display);
 }
 .pwd-desc {
   font-size: 24rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
   margin-top: 10rpx;
   text-align: center;
   line-height: 1.5;
 }
 
 .pwd-input-wrap {
-  background: #f5f6f8;
+  background: var(--color-bg-active);
   border-radius: 16rpx;
   padding: 24rpx 28rpx;
-  border: 2rpx solid #e8e8ed;
+  border: 2rpx solid var(--color-border);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .pwd-input-wrap:focus-within {
-  border-color: #1a1a2e;
+  border-color: var(--color-text-primary);
   box-shadow: 0 2rpx 12rpx rgba(26, 26, 46, 0.1);
 }
 .pwd-input-error {
-  border-color: #ff3b30 !important;
+  border-color: var(--color-up) !important;
   box-shadow: 0 2rpx 12rpx rgba(255, 59, 48, 0.15) !important;
   animation: shake 0.3s ease;
 }
@@ -117,7 +117,7 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
 .pwd-input {
   width: 100%;
   font-size: 30rpx;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   background: transparent;
   border: none;
   outline: none;
@@ -127,7 +127,7 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
 .pwd-error-text {
   display: block;
   font-size: 22rpx;
-  color: #ff3b30;
+  color: var(--color-up);
   margin-top: 12rpx;
   text-align: center;
 }
@@ -148,17 +148,17 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
 .pwd-btn:active { opacity: 0.7; }
 
 .pwd-btn-cancel {
-  background: #f0f2f5;
+  background: var(--color-bg);
 }
 .pwd-btn-confirm {
-  background: #1a1a2e;
+  background: var(--color-text-primary);
 }
 .pwd-btn-text {
   font-size: 28rpx;
   font-weight: 600;
 }
-.cancel-text { color: #8c8c9a; }
-.confirm-text { color: #ffffff; }
+.cancel-text { color: var(--color-text-muted); }
+.confirm-text { color: var(--color-text-white); }
 
 @media (min-width: 750px) {
   .pwd-card { padding: 36px 32px 28px; border-radius: 16px; }

@@ -13,6 +13,7 @@ engine = create_async_engine(
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,  # detect stale connections after DB restarts
+    pool_recycle=3600,    # recycle connections after 1 hour to avoid DB-side idle timeout
 )
 
 async_session = async_sessionmaker(

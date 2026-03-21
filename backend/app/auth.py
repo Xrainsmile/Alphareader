@@ -7,6 +7,7 @@
 配置项 NEWS_API_KEY 为空时不启用鉴权（仅限开发环境）。
 """
 
+import hmac
 import logging
 from fastapi import Depends, HTTPException, Query, Request, Security
 from fastapi.security import APIKeyHeader
@@ -37,7 +38,7 @@ async def require_api_key(
             detail={"error": "unauthorized", "message": "缺少 API Key，请在 Header 中传递 X-API-Key 或 Query 中传递 api_key"},
         )
 
-    if api_key != settings.NEWS_API_KEY:
+    if not hmac.compare_digest(api_key.encode(), settings.NEWS_API_KEY.encode()):
         logger.warning("无效的 API Key: %s %s", request.method, request.url.path)
         raise HTTPException(
             status_code=403,

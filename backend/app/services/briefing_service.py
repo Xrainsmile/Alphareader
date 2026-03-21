@@ -1,34 +1,35 @@
-"""Daily Briefing Service — 每日综合分析报告生成。
+"""Daily Briefing Service — 每日综合分析报告生成（v2）。
 
-盘后自动聚合多维数据，调用 DeepSeek 生成含交易建议的分析报告：
-  1. VCP 策略白名单（收敛形态股 + 技术面/基本面）
-  2. 右侧趋势白名单（趋势突破股 + ADX/RSI/放量）
-  3. 价投观察池（长期跟踪标的 + 当日行情）
-  4. 新闻概览（morning + midday + evening 摘要）
-  5. 模拟仓净值/盈亏
+两阶段 pipeline：
+  Stage 1  LLM 判断：将今日新闻摘要 × 合并股票池（VCP + 趋势 + 价投）发给
+           DeepSeek，让它判定每只股票受哪些新闻 "利好催化 / 中性 / 利空风险"。
+           输出 JSON，不生成任何文字报告。
+  Stage 2  代码渲染：根据 JSON 分类结果 + 行情数据，用 Python 拼接出精美、
+           格式固定的 Markdown 研报。格式完全可控，无 LLM 幻觉。
 
 节省 tokens 策略：
-  - 每只股票只传关键指标（不传全部字段）
-  - 新闻概览只传 content 前 300 字
-  - System Prompt 精简但专业
-  - 限制 max_tokens=3000
+  - LLM 只做判断不做写作 → 输出 ~500 tokens（原 3000）
+  - 新闻摘要只传 content 前 500 字
+  - 限制 max_tokens=1500
 """
 
 from __future__ import annotations
 
+import json as _json
 import logging
+import re
 import time
 from datetime import date, datetime, timedelta
 
 import httpx
 import pytz
-from sqlalchemy import select, and_, func, desc
+from sqlalchemy import select, and_
 
 from app.config import settings
 from app.database import async_session
 from app.models.daily_briefing import DailyBriefing
+from app.models.news import News
 from app.models.news_digest import NewsDigest
-from app.models.sandbox import SandboxNav, SandboxStock
 from app.models.screener import WatchlistDaily, TrendWatchlistDaily
 from app.models.stock import StockDailyQuote, StockRSRating
 
@@ -36,31 +37,62 @@ logger = logging.getLogger("alphareader.briefing")
 
 _TZ = pytz.timezone(settings.TIMEZONE)
 
-# ── System Prompt ──
+# ═══════════════════════════════════════════════════════════
+#  Stage 1 — LLM Prompt（新闻 × 股票关联判断）
+# ═══════════════════════════════════════════════════════════
 
-BRIEFING_SYSTEM_PROMPT = """\
-你是一位专业的 A 股投资分析师，擅长技术分析和量化策略解读。
-请根据以下多维数据（策略选股结果、行情数据、新闻概览、模拟仓状态），生成一份结构化的每日投资分析报告（Markdown 格式）。
+CATALYST_SYSTEM_PROMPT = """\
+你是 A 股短线交易助手。你的任务是：根据今日新闻摘要，判定给定股票池中每只股票与新闻的关联程度。
 
-## 报告要求
+## 输入
+- 今日新闻摘要（按时段分组）
+- 统一股票池（包含 VCP / 趋势 / 价投 三种策略来源的股票）
 
-1. **大盘概况**：根据新闻和整体数据，简述今日市场情绪和关键事件
-2. **VCP 策略标的分析**：逐一分析 VCP 白名单中的股票，结合价格、成交量、技术指标给出操作建议
-3. **趋势策略标的分析**：逐一分析趋势白名单中的股票，结合 ADX/RSI/放量信号给出操作建议
-4. **价投观察池追踪**：更新价投标的的最新行情和估值变化
-5. **模拟仓回顾**：简述当前净值和仓位表现
-6. **明日关注要点**：总结需要重点跟踪的标的和事件
+## 判定规则
+对每只股票，判定其属于以下 3 个分类之一：
 
-## 风格要求
-- 用数据说话，避免空洞的套话
-- 每只股票给出明确的操作建议（买入/加仓/持有/观望/减仓/止损）
-- 标注关键价位（支撑位、压力位、止损位）
-- 中文输出，专业但易读
-- 总字数控制在 2000 字以内
+**S（重点狙击）**：该股票被今日新闻中至少一条消息 **明确利好/催化**。
+  例如：公司发布超预期业绩、获重大合同、所在行业受政策扶持、产品涨价等。
+  → 必须附上 1 句话催化逻辑。
+
+**A（常规盯防）**：无明显新闻关联，或新闻与该股票/行业无直接关系。
+
+**X（风险剔除）**：该股票命中今日新闻中的 **明确利空/风险**。
+  例如：股东减持、业绩不及预期、行业利空政策、重大诉讼等。
+  → 必须附上 1 句话风险提示。
+
+## 输出格式（严格 JSON，不要附加任何文字）
+
+```json
+{
+  "market_sentiment": "偏多|中性|偏空",
+  "market_summary": "1-2句话概括今日市场核心主线",
+  "tiers": {
+    "S": [
+      {"code": "000001.SZ", "reason": "催化逻辑..."}
+    ],
+    "A": [
+      {"code": "600519.SH"}
+    ],
+    "X": [
+      {"code": "300750.SZ", "reason": "风险提示..."}
+    ]
+  }
+}
+```
+
+## ⚠️ 严格约束（违反将导致输出无效）
+- code **必须**使用输入"统一股票池"中给出的完整 ts_code（如 000001.SZ），**禁止**使用任何不在输入列表中的 code
+- **所有** 输入股票必须出现在输出的 S / A / X 三个列表之一中，不可遗漏
+- S + A + X 的 code 总数必须等于输入股票池总数
+- 没有理由强行归入 S 或 X，宁可放入 A
+- 只输出 JSON，不要有任何其他文字、解释、markdown
 """
 
 
-# ── 数据收集 ──
+# ═══════════════════════════════════════════════════════════
+#  数据收集
+# ═══════════════════════════════════════════════════════════
 
 async def _fetch_vcp_watchlist(target_date: date) -> list[dict]:
     """获取当日 VCP 策略白名单。"""
@@ -77,8 +109,9 @@ async def _fetch_vcp_watchlist(target_date: date) -> list[dict]:
         {
             "ts_code": r.ts_code,
             "name": r.name or r.ts_code,
+            "strategy": "VCP",
             "price": r.current_price,
-            "vcp_score": r.vcp_score,
+            "score": r.vcp_score,
             "ema20": r.ema20,
             "ema50": r.ema50,
             "ema120": r.ema120,
@@ -107,13 +140,14 @@ async def _fetch_trend_watchlist(target_date: date) -> list[dict]:
         {
             "ts_code": r.ts_code,
             "name": r.name or r.ts_code,
+            "strategy": "趋势",
             "price": r.current_price,
+            "score": r.trend_score,
             "ma20": r.ma20,
             "ma50": r.ma50,
             "adx": r.adx,
             "rsi": r.rsi,
             "volume_ratio": r.volume_ratio,
-            "trend_score": r.trend_score,
             "industry": r.industry,
             "concepts": (r.concepts or "")[:100],
             "fund_flow": r.fund_flow_net,
@@ -122,8 +156,10 @@ async def _fetch_trend_watchlist(target_date: date) -> list[dict]:
     ]
 
 
-async def _fetch_value_stocks() -> list[dict]:
+async def _fetch_value_stocks(target_date: date) -> list[dict]:
     """获取价投观察池中状态为 watching/holding 的标的。"""
+    from app.models.sandbox import SandboxStock
+
     async with async_session() as db:
         stmt = (
             select(SandboxStock)
@@ -142,20 +178,20 @@ async def _fetch_value_stocks() -> list[dict]:
         {
             "ts_code": r.ts_code,
             "name": r.name,
-            "status": r.status,
-            "reason": (r.reason or "")[:100],
+            "strategy": "价投",
+            "industry": "",
+            "concepts": "",
         }
         for r in rows
     ]
 
 
 async def _fetch_stock_quotes(ts_codes: list[str], target_date: date) -> dict[str, dict]:
-    """批量获取指定股票的当日行情（如果当日无数据，取最近一个交易日的）。"""
+    """批量获取指定股票的当日行情。"""
     if not ts_codes:
         return {}
 
     async with async_session() as db:
-        # 先尝试 target_date，如果没有则回退到最近 5 天
         lookback = target_date - timedelta(days=5)
         stmt = (
             select(StockDailyQuote)
@@ -171,7 +207,6 @@ async def _fetch_stock_quotes(ts_codes: list[str], target_date: date) -> dict[st
         result = await db.execute(stmt)
         rows = result.scalars().all()
 
-    # 每只股票取最新一条
     quotes = {}
     for r in rows:
         if r.ts_code not in quotes:
@@ -229,175 +264,111 @@ async def _fetch_news_digests(target_date: date) -> list[dict]:
         {
             "period": r.period_label,
             "news_count": r.news_count,
-            "content": (r.content or "")[:500],  # 截断节省 tokens
+            "content": (r.content or "")[:500],
         }
         for r in rows
     ]
 
 
-async def _fetch_nav(target_date: date) -> dict | None:
-    """获取当日或最近的模拟仓净值。"""
+async def _fetch_high_score_news(target_date: date, min_score: int = 6) -> list[dict]:
+    """获取当日高评分原始新闻（用于更精确的关联分析）。"""
     async with async_session() as db:
+        day_start = datetime.combine(target_date, datetime.min.time()).replace(
+            tzinfo=pytz.UTC
+        )
+        day_end = day_start + timedelta(days=1)
+
         stmt = (
-            select(SandboxNav)
-            .where(SandboxNav.trade_date <= target_date)
-            .order_by(SandboxNav.trade_date.desc())
-            .limit(1)
+            select(News)
+            .where(
+                and_(
+                    News.created_at >= day_start,
+                    News.created_at < day_end,
+                    News.ai_score >= min_score,
+                )
+            )
+            .order_by(News.ai_score.desc())
+            .limit(30)
         )
         result = await db.execute(stmt)
-        nav = result.scalar_one_or_none()
+        rows = result.scalars().all()
 
-    if not nav:
-        return None
-    return {
-        "trade_date": nav.trade_date.isoformat(),
-        "nav": float(nav.nav),
-        "total_pnl": float(nav.total_pnl),
-        "total_market_value": float(nav.total_market_value),
-        "cash": float(nav.cash),
-    }
+    return [
+        {
+            "title": r.title,
+            "summary": (r.ai_summary or r.title)[:200],
+            "score": r.ai_score,
+            "catalyst_type": r.catalyst_type or "",
+            "sentiment_entity": r.sentiment_entity or "",
+            "tags": r.tags or [],
+        }
+        for r in rows
+    ]
 
 
-# ── Prompt 构建 ──
+# ═══════════════════════════════════════════════════════════
+#  Stage 1 — LLM 调用（新闻×股票关联判断）
+# ═══════════════════════════════════════════════════════════
 
-def _build_briefing_prompt(
+def _build_catalyst_prompt(
     target_date: date,
-    vcp_list: list[dict],
-    trend_list: list[dict],
-    value_list: list[dict],
-    quotes: dict[str, dict],
-    rs_ratings: dict[str, int],
+    pool: list[dict],
     digests: list[dict],
-    nav: dict | None,
+    top_news: list[dict],
 ) -> str:
-    """拼装发送给 DeepSeek 的 user prompt。"""
-    sections = []
-    sections.append(f"# 每日数据概要 — {target_date}\n")
+    """构建 Stage 1 的 user prompt。"""
+    parts = [f"# 日期: {target_date}\n"]
 
-    # 1. 新闻概览
+    # 新闻部分
+    parts.append("## 今日新闻摘要\n")
     if digests:
-        sections.append("## 📰 今日新闻概览")
         for d in digests:
-            sections.append(f"### {d['period']}（{d['news_count']}条新闻）")
-            sections.append(d["content"])
-        sections.append("")
+            parts.append(f"### {d['period']}（{d['news_count']}条）")
+            parts.append(d["content"])
+            parts.append("")
 
-    # 2. VCP 策略白名单
-    sections.append(f"## 📊 VCP 策略白名单（{len(vcp_list)} 只）")
-    if vcp_list:
-        for s in vcp_list:
-            code = s["ts_code"]
-            q = quotes.get(code, {})
-            rs = rs_ratings.get(code, "N/A")
-            price = f"{s['price']:.2f}" if s.get("price") else "N/A"
-            vcp = f"{s['vcp_score']:.1f}" if s.get("vcp_score") else "N/A"
-            ema20 = f"{s['ema20']:.2f}" if s.get("ema20") else "N/A"
-            ema50 = f"{s['ema50']:.2f}" if s.get("ema50") else "N/A"
-            ema120 = f"{s['ema120']:.2f}" if s.get("ema120") else "N/A"
-            pct_raw = q.get("pct_change")
-            pct = f"{pct_raw:.2f}" if pct_raw is not None else "N/A"
-            line = (
-                f"- **{s['name']}** ({code}) | "
-                f"价格:{price} | 涨跌:{pct}% | "
-                f"VCP得分:{vcp} | RS:{rs} | "
-                f"EMA20:{ema20} EMA50:{ema50} EMA120:{ema120} | "
-                f"EPS增长:{s.get('eps_growth', 'N/A')}% 营收YoY:{s.get('revenue_yoy', 'N/A')}% | "
-                f"行业:{s.get('industry', 'N/A')} | 资金流:{s.get('fund_flow', 'N/A')}"
+    if top_news:
+        parts.append("### 高分新闻速报")
+        for n in top_news:
+            tags_str = ", ".join(n["tags"][:5]) if n["tags"] else ""
+            entity = f" [{n['sentiment_entity']}]" if n["sentiment_entity"] else ""
+            parts.append(
+                f"- 【{n['score']}分】{n['title']}{entity}"
+                + (f" — {tags_str}" if tags_str else "")
             )
-            if q.get("amount"):
-                line += f" | 成交额:{q['amount']/10000:.0f}万"
-            if q.get("turnover"):
-                line += f" | 换手:{q['turnover']:.1f}%"
-            sections.append(line)
-    else:
-        sections.append("今日无 VCP 策略入选标的。")
-    sections.append("")
+        parts.append("")
 
-    # 3. 趋势策略白名单
-    sections.append(f"## 📈 趋势策略白名单（{len(trend_list)} 只）")
-    if trend_list:
-        for s in trend_list:
-            code = s["ts_code"]
-            q = quotes.get(code, {})
-            rs = rs_ratings.get(code, "N/A")
-            price = f"{s['price']:.2f}" if s.get("price") else "N/A"
-            tscore = f"{s['trend_score']:.1f}" if s.get("trend_score") else "N/A"
-            adx = f"{s['adx']:.1f}" if s.get("adx") else "N/A"
-            rsi = f"{s['rsi']:.1f}" if s.get("rsi") else "N/A"
-            vratio = f"{s['volume_ratio']:.1f}" if s.get("volume_ratio") else "N/A"
-            ma20 = f"{s['ma20']:.2f}" if s.get("ma20") else "N/A"
-            ma50 = f"{s['ma50']:.2f}" if s.get("ma50") else "N/A"
-            pct_raw = q.get("pct_change")
-            pct = f"{pct_raw:.2f}" if pct_raw is not None else "N/A"
-            line = (
-                f"- **{s['name']}** ({code}) | "
-                f"价格:{price} | 涨跌:{pct}% | "
-                f"趋势得分:{tscore} | RS:{rs} | "
-                f"ADX:{adx} RSI:{rsi} 放量倍数:{vratio} | "
-                f"MA20:{ma20} MA50:{ma50} | "
-                f"行业:{s.get('industry', 'N/A')} | 资金流:{s.get('fund_flow', 'N/A')}"
-            )
-            if q.get("amount"):
-                line += f" | 成交额:{q['amount']/10000:.0f}万"
-            if q.get("turnover"):
-                line += f" | 换手:{q['turnover']:.1f}%"
-            sections.append(line)
-    else:
-        sections.append("今日无趋势策略入选标的。")
-    sections.append("")
+    # 股票池部分
+    parts.append(f"## 统一股票池（{len(pool)} 只）\n")
+    # 先列出所有合法 code，让 LLM 明确知道只能用这些
+    all_codes = [s['ts_code'] for s in pool]
+    parts.append(f"**合法 code 列表（输出中只允许使用以下 code）：** {', '.join(all_codes)}\n")
+    for s in pool:
+        line = f"- {s['name']}（{s['ts_code']}）| 策略:{s['strategy']} | 行业:{s.get('industry', 'N/A')}"
+        concepts = s.get("concepts", "")
+        if concepts:
+            line += f" | 题材:{concepts[:60]}"
+        parts.append(line)
 
-    # 4. 价投观察池
-    sections.append(f"## 💰 价投观察池（{len(value_list)} 只）")
-    if value_list:
-        for s in value_list:
-            code = s["ts_code"]
-            q = quotes.get(code, {})
-            rs = rs_ratings.get(code, "N/A")
-            pct_raw = q.get("pct_change")
-            pct = f"{pct_raw:.2f}" if pct_raw is not None else "N/A"
-            reason = s["reason"] or "暂无"
-            line = (
-                f"- **{s['name']}** ({code}) [{s['status']}] | "
-                f"涨跌:{pct}% | RS:{rs} | "
-                f"入选理由:{reason}"
-            )
-            if q.get("close"):
-                line += f" | 收盘:{q['close']:.2f}"
-            sections.append(line)
-    else:
-        sections.append("当前无价投观察标的。")
-    sections.append("")
-
-    # 5. 模拟仓
-    sections.append("## 🏦 模拟仓状态")
-    if nav:
-        sections.append(
-            f"- 净值: {nav['nav']:.4f} | 累计盈亏: {nav['total_pnl']:.2f}% | "
-            f"市值: {nav['total_market_value']:.0f}元 | 现金: {nav['cash']:.0f}元 | "
-            f"截至: {nav['trade_date']}"
-        )
-    else:
-        sections.append("尚无模拟仓数据。")
-
-    return "\n".join(sections)
+    parts.append("\n请按照 system prompt 的要求，输出 JSON 判定结果。")
+    return "\n".join(parts)
 
 
-# ── DeepSeek 调用 ──
-
-async def _call_deepseek_briefing(user_prompt: str) -> str:
-    """调用 DeepSeek API 生成分析报告。"""
+async def _call_deepseek_catalyst(user_prompt: str) -> dict | None:
+    """调用 DeepSeek 做新闻-股票关联判断，返回解析后的 dict。"""
     if not settings.DEEPSEEK_API_KEY or settings.DEEPSEEK_API_KEY.startswith("sk-your"):
-        logger.warning("DeepSeek API key not configured, returning empty briefing")
-        return ""
+        logger.warning("DeepSeek API key not configured")
+        return None
 
     payload = {
         "model": settings.DEEPSEEK_MODEL,
         "messages": [
-            {"role": "system", "content": BRIEFING_SYSTEM_PROMPT},
+            {"role": "system", "content": CATALYST_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.4,
-        "max_tokens": 3000,
+        "temperature": 0.2,
+        "max_tokens": 1500,
+        "stream": True,
     }
 
     headers = {
@@ -407,40 +378,429 @@ async def _call_deepseek_briefing(user_prompt: str) -> str:
 
     max_retries = max(settings.DEEPSEEK_MAX_RETRIES, 3)
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=120.0)) as client:
         for attempt in range(1, max_retries + 1):
             try:
-                resp = await client.post(
-                    settings.DEEPSEEK_API_URL, json=payload, headers=headers
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                logger.info("Briefing generated: %d chars", len(content))
-                return content.strip()
+                chunks: list[str] = []
+                async with client.stream(
+                    "POST",
+                    settings.DEEPSEEK_API_URL,
+                    json=payload,
+                    headers=headers,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data_str = line[len("data:"):].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = _json.loads(data_str)
+                            delta = data["choices"][0].get("delta", {})
+                            if "content" in delta and delta["content"]:
+                                chunks.append(delta["content"])
+                        except (_json.JSONDecodeError, KeyError, IndexError):
+                            continue
+
+                raw = "".join(chunks).strip()
+                if not raw:
+                    logger.warning("Catalyst LLM returned empty (attempt %d/%d)", attempt, max_retries)
+                    continue
+
+                # 提取 JSON（LLM 可能包裹在 ```json ... ``` 中）
+                json_match = re.search(r'\{[\s\S]*\}', raw)
+                if not json_match:
+                    logger.warning("No JSON found in catalyst response: %s", raw[:300])
+                    continue
+
+                result = _json.loads(json_match.group())
+                logger.info("Catalyst analysis complete: S=%d, A=%d, X=%d",
+                            len(result.get("tiers", {}).get("S", [])),
+                            len(result.get("tiers", {}).get("A", [])),
+                            len(result.get("tiers", {}).get("X", [])))
+                return result
+
             except httpx.HTTPStatusError as e:
                 body = e.response.text[:500] if e.response else "N/A"
-                logger.error(
-                    "Briefing DeepSeek API HTTP %s (attempt %d/%d): %s | body: %s",
-                    e.response.status_code if e.response else "?",
-                    attempt, max_retries, repr(e), body,
-                )
+                logger.error("Catalyst HTTP %s (attempt %d/%d): %s",
+                             e.response.status_code if e.response else "?",
+                             attempt, max_retries, body)
+            except _json.JSONDecodeError as e:
+                logger.error("Catalyst JSON parse error (attempt %d/%d): %s", attempt, max_retries, e)
             except Exception as e:
-                logger.error(
-                    "Briefing DeepSeek API error (attempt %d/%d): %r",
-                    attempt, max_retries, e,
-                )
+                logger.error("Catalyst error (attempt %d/%d): %r", attempt, max_retries, e)
 
             if attempt < max_retries:
                 import asyncio
                 await asyncio.sleep(3 * attempt)
+
+    return None
+
+
+def _normalize_tier_codes(catalyst: dict, pool_map: dict[str, dict]) -> dict:
+    """标准化 LLM 返回的 tiers 中的 code，使其匹配 pool_map 的 key。
+
+    LLM 可能返回 '000001.SZ'（完整）、'000001'（无后缀）、'000001.sz'（小写后缀）等，
+    需要统一映射到 pool_map 中的实际 key（如 '000001.SZ'）。
+    """
+    # 构建反向索引：纯数字 code → 完整 ts_code
+    code_index: dict[str, str] = {}
+    for full_code in pool_map:
+        code_index[full_code] = full_code
+        code_index[full_code.upper()] = full_code
+        code_index[full_code.lower()] = full_code
+        base = full_code.split(".")[0]
+        code_index[base] = full_code
+
+    tiers = catalyst.get("tiers", {})
+    normalized_count = 0
+    for tier_key in ("S", "A", "X"):
+        items = tiers.get(tier_key, [])
+        for item in items:
+            raw_code = item.get("code", "")
+            if raw_code not in pool_map:
+                mapped = (
+                    code_index.get(raw_code)
+                    or code_index.get(raw_code.upper())
+                    or code_index.get(raw_code.lower())
+                )
+                if mapped:
+                    item["code"] = mapped
+                    normalized_count += 1
+                else:
+                    logger.warning("Unknown code in tier %s: %s (not in pool_map)", tier_key, raw_code)
+
+    if normalized_count:
+        logger.info("Normalized %d tier codes to match pool_map", normalized_count)
+
+    return catalyst
+
+
+def _validate_and_fix_tiers(catalyst: dict, pool_map: dict[str, dict]) -> dict:
+    """校验 LLM 返回的 tiers 结果，确保所有 pool_map 中的股票都被覆盖。
+
+    修正策略：
+    1. 移除 LLM 编造的、不在 pool_map 中的 code
+    2. pool_map 中未被覆盖的股票自动补入 Tier A
+    """
+    tiers = catalyst.get("tiers", {})
+    all_pool_codes = set(pool_map.keys())
+
+    # 收集 LLM 覆盖的有效 codes，同时清理无效 codes
+    covered_codes: set[str] = set()
+    for tier_key in ("S", "A", "X"):
+        items = tiers.get(tier_key, [])
+        valid_items = []
+        for item in items:
+            code = item.get("code", "")
+            if code in all_pool_codes:
+                valid_items.append(item)
+                covered_codes.add(code)
             else:
-                return ""
+                logger.warning("Removing invalid code from tier %s: %s", tier_key, code)
+        tiers[tier_key] = valid_items
 
-    return ""
+    # 找出未被覆盖的股票，补入 Tier A
+    missing_codes = all_pool_codes - covered_codes
+    if missing_codes:
+        logger.warning(
+            "LLM missed %d/%d stocks, auto-adding to Tier A: %s",
+            len(missing_codes), len(all_pool_codes),
+            ", ".join(sorted(missing_codes)[:10]),
+        )
+        a_items = tiers.get("A", [])
+        for code in sorted(missing_codes):
+            a_items.append({"code": code})
+        tiers["A"] = a_items
+
+    catalyst["tiers"] = tiers
+
+    logger.info(
+        "Tiers after validation: S=%d, A=%d, X=%d (pool=%d)",
+        len(tiers.get("S", [])), len(tiers.get("A", [])),
+        len(tiers.get("X", [])), len(all_pool_codes),
+    )
+    return catalyst
 
 
-# ── 存储 ──
+# ═══════════════════════════════════════════════════════════
+#  Stage 2 — 代码渲染精美 Markdown 研报
+# ═══════════════════════════════════════════════════════════
+
+def _fmt(val, fmt_str: str = ".2f", fallback: str = "—") -> str:
+    """安全格式化数值。"""
+    if val is None:
+        return fallback
+    try:
+        return f"{val:{fmt_str}}"
+    except (ValueError, TypeError):
+        return fallback
+
+
+def _pct_badge(pct) -> str:
+    """涨跌幅格式化（带 emoji）。"""
+    if pct is None:
+        return "—"
+    if pct > 0:
+        return f"🔴 +{pct:.2f}%"
+    elif pct < 0:
+        return f"🟢 {pct:.2f}%"
+    return f"⚪ {pct:.2f}%"
+
+
+def _render_stock_row(
+    s: dict,
+    quote: dict,
+    rs: int | str,
+    reason: str | None = None,
+) -> str:
+    """渲染单只股票的 Markdown 段落。"""
+    code = s["ts_code"]
+    name = s["name"]
+    strategy = s.get("strategy", "")
+    price = _fmt(quote.get("close") or s.get("price"), ".2f")
+    pct = _pct_badge(quote.get("pct_change"))
+    amount = quote.get("amount")
+    amount_str = f"{amount / 10000:.0f}万" if amount else "—"
+    turnover = _fmt(quote.get("turnover"), ".1f")
+    industry = s.get("industry", "—") or "—"
+
+    # 构建指标行
+    if strategy == "VCP":
+        score_label = f"VCP {_fmt(s.get('score'), '.1f')}"
+        tech = f"EMA20 {_fmt(s.get('ema20'), '.2f')} / EMA50 {_fmt(s.get('ema50'), '.2f')}"
+    elif strategy == "趋势":
+        score_label = f"趋势 {_fmt(s.get('score'), '.1f')}"
+        adx = _fmt(s.get('adx'), '.1f')
+        rsi = _fmt(s.get('rsi'), '.1f')
+        vr = _fmt(s.get('volume_ratio'), '.1f')
+        tech = f"ADX {adx} / RSI {rsi} / 放量 {vr}x"
+    else:
+        score_label = strategy
+        tech = ""
+
+    lines = [
+        f"**{name}** `{code}`",
+        f"",
+        f"| 指标 | 数值 |",
+        f"|:---|:---|",
+        f"| 策略来源 | {score_label} |",
+        f"| 最新价 | {price} |",
+        f"| 今日涨跌 | {pct} |",
+        f"| RS 评分 | {rs} |",
+        f"| 行业 | {industry} |",
+    ]
+    if tech:
+        lines.append(f"| 技术指标 | {tech} |")
+    lines.append(f"| 成交额 | {amount_str} |")
+    lines.append(f"| 换手率 | {turnover}% |")
+
+    if reason:
+        lines.append(f"")
+        lines.append(f"> {reason}")
+
+    return "\n".join(lines)
+
+
+def _render_briefing_markdown(
+    target_date: date,
+    catalyst: dict,
+    pool_map: dict[str, dict],
+    quotes: dict[str, dict],
+    rs_ratings: dict[str, int],
+    digests: list[dict],
+    top_news: list[dict],
+    pool_stats: dict,
+) -> str:
+    """Stage 2：根据 LLM 判定结果 + 数据，拼接精美 Markdown 研报。"""
+
+    weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    wd = weekdays[target_date.weekday()]
+    date_str = f"{target_date.year}年{target_date.month}月{target_date.day}日"
+
+    tiers = catalyst.get("tiers", {})
+    tier_s = tiers.get("S", [])
+    tier_a = tiers.get("A", [])
+    tier_x = tiers.get("X", [])
+
+    # 构建 reason 映射
+    s_reasons = {item["code"]: item.get("reason", "") for item in tier_s}
+    x_reasons = {item["code"]: item.get("reason", "") for item in tier_x}
+    s_codes = set(s_reasons.keys())
+    a_codes = {item["code"] for item in tier_a}
+    x_codes = set(x_reasons.keys())
+
+    sentiment = catalyst.get("market_sentiment", "中性")
+    market_summary = catalyst.get("market_summary", "")
+
+    # 情绪 emoji
+    sentiment_emoji = {"偏多": "🟢", "中性": "🟡", "偏空": "🔴"}.get(sentiment, "🟡")
+
+    sections = []
+
+    # ── 标题 ──
+    sections.append(f"# 📊 每日投资研报")
+    sections.append(f"")
+    sections.append(f"> **{date_str} {wd}** · 股票池 {len(pool_map)} 只 · VCP {pool_stats.get('vcp', 0)} / 趋势 {pool_stats.get('trend', 0)} / 价投 {pool_stats.get('value', 0)}")
+    sections.append(f"")
+
+    # ── 市场情绪 ──
+    sections.append(f"## {sentiment_emoji} 市场情绪：{sentiment}")
+    sections.append(f"")
+    if market_summary:
+        sections.append(f"{market_summary}")
+        sections.append(f"")
+
+    # ── 今日要闻速报 ──
+    if top_news:
+        sections.append(f"## 📰 今日要闻速报")
+        sections.append(f"")
+        for n in top_news[:10]:
+            score = n["score"]
+            # 评分对应的 emoji
+            if score >= 8:
+                icon = "🔥"
+            elif score >= 6:
+                icon = "📌"
+            else:
+                icon = "📋"
+            entity = f" `{n['sentiment_entity']}`" if n.get("sentiment_entity") else ""
+            sections.append(f"- {icon} **{n['title']}**{entity}")
+        sections.append(f"")
+
+    # ── Tier S：重点狙击 ──
+    sections.append(f"---")
+    sections.append(f"")
+    sections.append(f"## 🎯 Tier S · 重点狙击")
+    sections.append(f"")
+    if tier_s:
+        sections.append(f"> 命中今日消息面明确利好催化的标的，建议重点关注。")
+        sections.append(f"")
+        for item in tier_s:
+            code = item["code"]
+            s = pool_map.get(code)
+            if not s:
+                continue
+            q = quotes.get(code, {})
+            rs = rs_ratings.get(code, "—")
+            reason = item.get("reason", "")
+            sections.append(_render_stock_row(s, q, rs, f"🔥 **催化逻辑**：{reason}" if reason else None))
+            sections.append(f"")
+    else:
+        sections.append(f"*今日无明确利好催化命中，全部标的归入常规盯防。*")
+        sections.append(f"")
+
+    # ── Tier A：常规盯防 ──
+    sections.append(f"---")
+    sections.append(f"")
+    sections.append(f"## 📋 Tier A · 常规盯防")
+    sections.append(f"")
+    if tier_a:
+        sections.append(f"> 无明显消息关联的标的，按原有策略信号跟踪。")
+        sections.append(f"")
+        # Tier A 用简洁表格展示
+        sections.append(f"| 股票 | 策略 | 最新价 | 涨跌 | RS | 行业 | 成交额 |")
+        sections.append(f"|:---|:---|---:|:---|---:|:---|---:|")
+        for item in tier_a:
+            code = item["code"]
+            s = pool_map.get(code)
+            if not s:
+                continue
+            q = quotes.get(code, {})
+            rs = rs_ratings.get(code, "—")
+            price = _fmt(q.get("close") or s.get("price"), ".2f")
+            pct_raw = q.get("pct_change")
+            if pct_raw is not None:
+                pct_str = f"+{pct_raw:.2f}%" if pct_raw > 0 else f"{pct_raw:.2f}%"
+            else:
+                pct_str = "—"
+            amount = q.get("amount")
+            amount_str = f"{amount / 10000:.0f}万" if amount else "—"
+            industry = s.get("industry", "—") or "—"
+            sections.append(
+                f"| **{s['name']}** `{code}` | {s.get('strategy', '')} | {price} | {pct_str} | {rs} | {industry} | {amount_str} |"
+            )
+        sections.append(f"")
+    else:
+        sections.append(f"*所有标的已被分入 Tier S 或 Tier X。*")
+        sections.append(f"")
+
+    # ── Tier X：风险剔除 ──
+    sections.append(f"---")
+    sections.append(f"")
+    sections.append(f"## ⚠️ Tier X · 风险剔除")
+    sections.append(f"")
+    if tier_x:
+        sections.append(f"> 命中今日消息面利空信号，建议规避或减仓。")
+        sections.append(f"")
+        for item in tier_x:
+            code = item["code"]
+            s = pool_map.get(code)
+            if not s:
+                continue
+            q = quotes.get(code, {})
+            rs = rs_ratings.get(code, "—")
+            reason = item.get("reason", "")
+            sections.append(_render_stock_row(s, q, rs, f"⚠️ **风险提示**：{reason}" if reason else None))
+            sections.append(f"")
+    else:
+        sections.append(f"*今日无利空信号命中，股票池整体安全。* ✅")
+        sections.append(f"")
+
+    # ── Tier 统计概览 ──
+    sections.append(f"---")
+    sections.append(f"")
+    sections.append(f"## 📈 Tier 分布概览")
+    sections.append(f"")
+    total = len(tier_s) + len(tier_a) + len(tier_x)
+    if total > 0:
+        s_pct = len(tier_s) / total * 100
+        a_pct = len(tier_a) / total * 100
+        x_pct = len(tier_x) / total * 100
+        sections.append(f"| Tier | 数量 | 占比 | 含义 |")
+        sections.append(f"|:---|---:|---:|:---|")
+        sections.append(f"| 🎯 **S** | {len(tier_s)} | {s_pct:.0f}% | 重点狙击 |")
+        sections.append(f"| 📋 **A** | {len(tier_a)} | {a_pct:.0f}% | 常规盯防 |")
+        sections.append(f"| ⚠️ **X** | {len(tier_x)} | {x_pct:.0f}% | 风险剔除 |")
+        sections.append(f"| **合计** | **{total}** | 100% | |")
+    sections.append(f"")
+
+    # ── 免责声明 ──
+    sections.append(f"---")
+    sections.append(f"")
+    sections.append(f"*本报告由 AlphaReader AI 自动生成，仅供参考，不构成投资建议。投资有风险，入市需谨慎。*")
+
+    return "\n".join(sections)
+
+
+def _render_fallback_briefing(
+    target_date: date,
+    pool_map: dict[str, dict],
+    quotes: dict[str, dict],
+    rs_ratings: dict[str, int],
+    pool_stats: dict,
+) -> str:
+    """LLM 分析失败时的兜底：所有股票归入 Tier A，不做新闻关联。"""
+    # 构建一个全 A 的 catalyst 结果
+    fallback_catalyst = {
+        "market_sentiment": "中性",
+        "market_summary": "AI 新闻关联分析暂不可用，所有标的按常规盯防处理。",
+        "tiers": {
+            "S": [],
+            "A": [{"code": code} for code in pool_map.keys()],
+            "X": [],
+        },
+    }
+    return _render_briefing_markdown(
+        target_date, fallback_catalyst, pool_map, quotes, rs_ratings, [], [], pool_stats,
+    )
+
+
+# ═══════════════════════════════════════════════════════════
+#  存储
+# ═══════════════════════════════════════════════════════════
 
 async def _save_briefing(
     briefing_date: date,
@@ -476,102 +836,125 @@ async def _save_briefing(
         await db.commit()
 
 
-# ── 主入口 ──
+# ═══════════════════════════════════════════════════════════
+#  主入口
+# ═══════════════════════════════════════════════════════════
 
 async def generate_briefing(target_date: date | None = None) -> dict:
-    """生成每日综合分析报告。
-
-    Args:
-        target_date: 目标日期（默认今天）。
+    """生成每日综合分析报告（v2 两阶段 pipeline）。
 
     Returns:
-        {"status": "ok"/"empty"/"failed", "vcp_count": N, "trend_count": N, ...}
+        {"status": "ok"/"empty"/"failed", "tier_s": N, "tier_a": N, "tier_x": N, ...}
     """
     if target_date is None:
         target_date = datetime.now(_TZ).date()
 
-    logger.info("Generating daily briefing for %s", target_date)
+    logger.info("Generating daily briefing (v2) for %s", target_date)
     t0 = time.monotonic()
 
-    # 1. 并行收集所有数据
+    # ── 1. 并行收集所有数据 ──
     import asyncio
 
     vcp_task = asyncio.create_task(_fetch_vcp_watchlist(target_date))
     trend_task = asyncio.create_task(_fetch_trend_watchlist(target_date))
-    value_task = asyncio.create_task(_fetch_value_stocks())
+    value_task = asyncio.create_task(_fetch_value_stocks(target_date))
     digest_task = asyncio.create_task(_fetch_news_digests(target_date))
-    nav_task = asyncio.create_task(_fetch_nav(target_date))
+    news_task = asyncio.create_task(_fetch_high_score_news(target_date))
 
     vcp_list = await vcp_task
     trend_list = await trend_task
     value_list = await value_task
     digests = await digest_task
-    nav = await nav_task
+    top_news = await news_task
 
-    # 收集所有需要查行情的股票代码
-    all_codes = list(set(
-        [s["ts_code"] for s in vcp_list]
-        + [s["ts_code"] for s in trend_list]
-        + [s["ts_code"] for s in value_list]
-    ))
+    # 合并统一股票池（去重，VCP 优先）
+    pool_map: dict[str, dict] = {}
+    for s in vcp_list:
+        pool_map[s["ts_code"]] = s
+    for s in trend_list:
+        if s["ts_code"] not in pool_map:
+            pool_map[s["ts_code"]] = s
+    for s in value_list:
+        if s["ts_code"] not in pool_map:
+            pool_map[s["ts_code"]] = s
+
+    pool_list = list(pool_map.values())
+
+    all_codes = list(pool_map.keys())
 
     quotes_task = asyncio.create_task(_fetch_stock_quotes(all_codes, target_date))
     rs_task = asyncio.create_task(_fetch_rs_ratings(all_codes, target_date))
     quotes = await quotes_task
     rs_ratings = await rs_task
 
-    vcp_count = len(vcp_list)
-    trend_count = len(trend_list)
-    value_count = len(value_list)
-    digest_count = len(digests)
-
-    logger.info(
-        "Briefing data collected: VCP=%d, Trend=%d, Value=%d, Digests=%d, Quotes=%d",
-        vcp_count, trend_count, value_count, digest_count, len(quotes),
-    )
-
-    # 如果所有策略都没有数据且没有新闻，跳过
-    if vcp_count == 0 and trend_count == 0 and value_count == 0 and digest_count == 0:
-        logger.info("No data available for briefing on %s, skipping", target_date)
-        await _save_briefing(target_date, "今日无可用数据，跳过分析报告生成。", {}, 0, 0, "empty")
-        return {"status": "empty", "vcp_count": 0, "trend_count": 0}
-
-    # 2. 构建 prompt
-    user_prompt = _build_briefing_prompt(
-        target_date, vcp_list, trend_list, value_list,
-        quotes, rs_ratings, digests, nav,
-    )
-    prompt_tokens_est = len(user_prompt) // 2  # 粗略估算（中文约 2 字符/token）
-
-    logger.info(
-        "Briefing prompt built: ~%d chars, ~%d tokens est.",
-        len(user_prompt), prompt_tokens_est,
-    )
-
-    # 3. 调用 DeepSeek
-    content = await _call_deepseek_briefing(user_prompt)
-    generation_sec = time.monotonic() - t0
-
-    meta = {
-        "vcp_count": vcp_count,
-        "trend_count": trend_count,
-        "value_count": value_count,
-        "digest_count": digest_count,
-        "quote_count": len(quotes),
+    pool_stats = {
+        "vcp": len(vcp_list),
+        "trend": len(trend_list),
+        "value": len(value_list),
     }
 
-    if not content:
-        logger.warning("DeepSeek returned empty content for briefing %s", target_date)
-        content = "AI 分析报告生成失败，请稍后重试。"
-        await _save_briefing(target_date, content, meta, prompt_tokens_est, generation_sec, "failed")
-        return {"status": "failed", **meta, "generation_sec": round(generation_sec, 1)}
+    logger.info(
+        "Data collected: VCP=%d, Trend=%d, Value=%d, Pool=%d, Digests=%d, TopNews=%d",
+        len(vcp_list), len(trend_list), len(value_list),
+        len(pool_map), len(digests), len(top_news),
+    )
 
-    # 4. 存入数据库
+    # 如果股票池为空且无新闻，跳过
+    if len(pool_map) == 0 and len(digests) == 0:
+        logger.info("No data available for briefing on %s, skipping", target_date)
+        await _save_briefing(target_date, "今日无可用数据，跳过分析报告生成。", {}, 0, 0, "empty")
+        return {"status": "empty", "tier_s": 0, "tier_a": 0, "tier_x": 0}
+
+    # ── 2. Stage 1：LLM 新闻-股票关联判断 ──
+    catalyst_prompt = _build_catalyst_prompt(target_date, pool_list, digests, top_news)
+    prompt_tokens_est = len(catalyst_prompt) // 2
+
+    logger.info("Catalyst prompt: ~%d chars, ~%d tokens est.", len(catalyst_prompt), prompt_tokens_est)
+
+    catalyst = await _call_deepseek_catalyst(catalyst_prompt)
+
+    # ── 2.5 标准化 + 校验 LLM 返回的 tiers ──
+    if catalyst:
+        catalyst = _normalize_tier_codes(catalyst, pool_map)
+        catalyst = _validate_and_fix_tiers(catalyst, pool_map)
+
+    # ── 3. Stage 2：代码渲染 Markdown ──
+    if catalyst:
+        content = _render_briefing_markdown(
+            target_date, catalyst, pool_map, quotes, rs_ratings, digests, top_news, pool_stats,
+        )
+    else:
+        logger.warning("Catalyst analysis failed, using fallback rendering")
+        content = _render_fallback_briefing(
+            target_date, pool_map, quotes, rs_ratings, pool_stats,
+        )
+
+    generation_sec = time.monotonic() - t0
+
+    tiers = catalyst.get("tiers", {}) if catalyst else {}
+    tier_s_count = len(tiers.get("S", []))
+    tier_a_count = len(tiers.get("A", []))
+    tier_x_count = len(tiers.get("X", []))
+
+    meta = {
+        "vcp_count": len(vcp_list),
+        "trend_count": len(trend_list),
+        "value_count": len(value_list),
+        "pool_count": len(pool_map),
+        "digest_count": len(digests),
+        "tier_s": tier_s_count,
+        "tier_a": tier_a_count,
+        "tier_x": tier_x_count,
+        "market_sentiment": catalyst.get("market_sentiment", "中性") if catalyst else "中性",
+    }
+
+    # 保存
     await _save_briefing(target_date, content, meta, prompt_tokens_est, generation_sec, "ok")
 
     logger.info(
-        "Briefing saved: %s, %d chars, %.1fs, VCP=%d Trend=%d",
-        target_date, len(content), generation_sec, vcp_count, trend_count,
+        "Briefing saved: %s, %d chars, %.1fs, S=%d A=%d X=%d",
+        target_date, len(content), generation_sec,
+        tier_s_count, tier_a_count, tier_x_count,
     )
     return {
         "status": "ok",

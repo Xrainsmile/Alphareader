@@ -33,6 +33,9 @@ Thumbs.db
 # Postgres data
 pgdata/
 
+# Debug scripts (prevent accidental commits)
+backend/debug_*.py
+
 # Stock data SQLite cache (legacy)
 *.db
 backend/app/services/data/

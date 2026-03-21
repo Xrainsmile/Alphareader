@@ -487,7 +487,24 @@ def start_scheduler():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
-    # ── 每日综合分析报告（工作日 16:00，在 Screener 15:45 之后）──
+    # ── 每日综合分析报告（工作日 09:00 盘前 + 16:00 盘后）──
+    # 09:00 盘前研报：基于隔夜新闻 + 前一日选股结果
+    scheduler.add_job(
+        _briefing_job,
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="9",
+            minute="0",
+            timezone=settings.TIMEZONE,
+        ),
+        id="daily_briefing_0900",
+        name=f"Daily Briefing AM (Mon-Fri 09:00 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # 16:00 盘后研报：基于全天新闻 + 当日选股结果
     scheduler.add_job(
         _briefing_job,
         trigger=CronTrigger(
@@ -497,7 +514,7 @@ def start_scheduler():
             timezone=settings.TIMEZONE,
         ),
         id="daily_briefing",
-        name=f"Daily Briefing (Mon-Fri 16:00 {settings.TIMEZONE})",
+        name=f"Daily Briefing PM (Mon-Fri 16:00 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,
@@ -537,9 +554,11 @@ def start_scheduler():
         logger.info("Digest %s scheduled daily %s (next: %s)", label, desc, dn)
 
     # Daily Briefing status
-    bj = scheduler.get_job("daily_briefing")
-    bn = bj.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if bj and bj.next_run_time else "N/A"
-    logger.info("Daily Briefing scheduled Mon-Fri 16:00 (next: %s)", bn)
+    bj_am = scheduler.get_job("daily_briefing_0900")
+    bn_am = bj_am.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if bj_am and bj_am.next_run_time else "N/A"
+    bj_pm = scheduler.get_job("daily_briefing")
+    bn_pm = bj_pm.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if bj_pm and bj_pm.next_run_time else "N/A"
+    logger.info("Daily Briefing scheduled Mon-Fri 09:00 (next: %s) & 16:00 (next: %s)", bn_am, bn_pm)
 
 
 def stop_scheduler():

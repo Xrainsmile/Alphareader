@@ -55,4 +55,6 @@ class News(Base):
         Index("ix_news_source_score", "source", ai_score.desc()),
         # GIN index for full-text search
         Index("ix_news_search_vector", "search_vector", postgresql_using="gin"),
+        # GIN index for ARRAY tags filtering (e.g., tags @> ARRAY['sector'])
+        Index("ix_news_tags", "tags", postgresql_using="gin"),
     )

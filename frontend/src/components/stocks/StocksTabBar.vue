@@ -54,7 +54,7 @@ defineEmits(['select-rs', 'select-vcp', 'select-trend', 'select-value', 'select-
 .tab-bar {
   display: flex;
   gap: 0;
-  background: #ffffff;
+  background: var(--color-bg-card);
   border-radius: 12rpx;
   margin: 16rpx 0 12rpx;
   padding: 4rpx;
@@ -69,15 +69,15 @@ defineEmits(['select-rs', 'select-vcp', 'select-trend', 'select-value', 'select-
   cursor: pointer;
 }
 .tab-active {
-  background: #1a1a2e;
+  background: var(--color-text-primary);
 }
 .tab-text {
   font-size: 28rpx;
   font-weight: 600;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
 }
 .tab-active .tab-text {
-  color: #ffffff;
+  color: var(--color-text-white);
 }
 
 @media screen and (min-width: 768px) {

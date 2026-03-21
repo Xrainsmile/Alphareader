@@ -8,6 +8,7 @@ Endpoints:
 
 import logging
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.news_digest import NewsDigest
 from app.services.digest_service import PERIOD_ICONS, PERIOD_LABELS
+from app.schemas.response import APIResponse
 
 logger = logging.getLogger("alphareader.digests_api")
 
@@ -47,7 +49,7 @@ class DigestDetail(DigestListItem):
 
 # ── Endpoints ──
 
-@router.get("/", response_model=list[DigestListItem])
+@router.get("/")
 async def list_digests(
     days: int = Query(7, ge=1, le=30, description="获取最近几天的概览"),
     db: AsyncSession = Depends(get_db),
@@ -64,7 +66,7 @@ async def list_digests(
     result = await db.execute(stmt)
     digests = result.scalars().all()
 
-    return [
+    items = [
         DigestListItem(
             id=d.id,
             digest_date=d.digest_date.isoformat(),
@@ -76,12 +78,13 @@ async def list_digests(
             news_count=d.news_count,
             content=d.content,
             created_at=d.created_at.isoformat() if d.created_at else "",
-        )
+        ).model_dump()
         for d in digests
     ]
+    return APIResponse(data=items)
 
 
-@router.get("/{digest_id}", response_model=DigestDetail)
+@router.get("/{digest_id}")
 async def get_digest(
     digest_id: int,
     db: AsyncSession = Depends(get_db),
@@ -94,7 +97,7 @@ async def get_digest(
     if not d:
         raise HTTPException(status_code=404, detail="Digest not found")
 
-    return DigestDetail(
+    return APIResponse(data=DigestDetail(
         id=d.id,
         digest_date=d.digest_date.isoformat(),
         period_label=d.period_label,
@@ -105,12 +108,12 @@ async def get_digest(
         news_count=d.news_count,
         content=d.content,
         created_at=d.created_at.isoformat() if d.created_at else "",
-    )
+    ).model_dump())
 
 
 class GenerateRequest(BaseModel):
-    period_label: str  # "morning" / "midday" / "evening" / "night"
-    target_date: str | None = None  # "YYYY-MM-DD"，为空则用今天
+    period_label: Literal["morning", "midday", "evening", "night"]
+    target_date: date | None = None  # YYYY-MM-DD，为空则用今天
 
 
 @router.post("/generate")
@@ -118,18 +121,11 @@ async def generate_digest_endpoint(payload: GenerateRequest):
     """手动触发生成指定时段的摘要（调试/补数据用）。"""
     from app.services.digest_service import generate_digest
 
-    target = None
-    if payload.target_date:
-        try:
-            target = date.fromisoformat(payload.target_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format, use YYYY-MM-DD")
-
     try:
-        result = await generate_digest(payload.period_label, target)
-        return {"code": 0, "msg": "ok", **result}
+        result = await generate_digest(payload.period_label, payload.target_date)
+        return APIResponse(data=result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception("Generate digest failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="摘要生成失败，请稍后重试")

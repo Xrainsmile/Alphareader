@@ -17,7 +17,7 @@
   - REDIS_URL：根据 Redis 各字段动态拼接 DSN
 """
 
-from pydantic import computed_field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     # ── 应用基础 ──
     APP_ENV: str = "development"       # 运行环境：development / production
-    DEBUG: bool = True                  # 调试模式开关
+    DEBUG: bool = False                 # 调试模式开关（默认关闭，生产安全）
     TIMEZONE: str = "Asia/Shanghai"     # 调度器和日志使用的时区
 
     # ── 日志 ──
@@ -44,27 +44,27 @@ class Settings(BaseSettings):
     LOG_FORMAT: str = "text"         # 日志格式："text" 人类可读 / "json" 结构化
 
     # ── 跨域（CORS）──
-    CORS_ORIGINS: str = "*"  # 逗号分隔的允许源，如 "https://example.com,http://localhost:3000"
+    CORS_ORIGINS: str = "https://alphareader.site,http://localhost:5173"  # 逗号分隔的允许源
 
     # ── Finnhub 市场新闻 ──
-    FINNHUB_API_KEY: str = ""                                       # Finnhub API Token (https://finnhub.io)
+    FINNHUB_API_KEY: str = Field("", repr=False)                        # Finnhub API Token (https://finnhub.io)
 
     # ── Embedding 去重 — 提供商切换 ──
     # 可选值："zhipu"（智谱 AI）或 "siliconflow"（硅基流动，免费）
     EMBEDDING_PROVIDER: str = "siliconflow"
 
     # ── 智谱 AI（短文本 Embedding 去重）──
-    ZHIPU_API_KEY: str = ""                                         # 智谱 API Key (https://open.bigmodel.cn)
+    ZHIPU_API_KEY: str = Field("", repr=False)                          # 智谱 API Key (https://open.bigmodel.cn)
     ZHIPU_EMBEDDING_MODEL: str = "embedding-3"                      # Embedding 模型：embedding-3（可自定义维度）或 embedding-2（固定1024维）
 
     # ── 硅基流动 SiliconFlow（免费 Embedding + 免费 LLM 评分）──
-    SILICONFLOW_API_KEY: str = ""                                   # SiliconFlow API Key (https://cloud.siliconflow.cn)
+    SILICONFLOW_API_KEY: str = Field("", repr=False)                    # SiliconFlow API Key (https://cloud.siliconflow.cn)
     SILICONFLOW_EMBEDDING_MODEL: str = "BAAI/bge-m3"               # 免费模型：BAAI/bge-m3(1024维) / BAAI/bge-large-zh-v1.5(1024维)
     SILICONFLOW_LLM_MODEL: str = "Qwen/Qwen3-8B"                  # 免费 LLM 模型（用于评分/情绪分析）
     SILICONFLOW_API_URL: str = "https://api.siliconflow.cn/v1/chat/completions"  # SiliconFlow Chat API
 
     # ── DeepSeek AI（摘要专用，评分已迁移至 SiliconFlow）──
-    DEEPSEEK_API_KEY: str = ""                                      # API 密钥
+    DEEPSEEK_API_KEY: str = Field("", repr=False)                       # API 密钥
     DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # API 地址
     DEEPSEEK_MODEL: str = "deepseek-chat"                           # 模型名称（仅 digest 使用）
     DEEPSEEK_BATCH_SIZE: int = 20                                   # 每批评分条数
@@ -82,20 +82,20 @@ class Settings(BaseSettings):
     ALERT_WEBHOOK_URL: str = ""
 
     # ── Reports 同步鉴权 ──
-    REPORT_SYNC_TOKEN: str = ""  # Node.js 上传脚本使用的 Bearer Token，生产环境必须设置
+    REPORT_SYNC_TOKEN: str = Field("", repr=False)  # Node.js 上传脚本使用的 Bearer Token，生产环境必须设置
 
     # ── API Key 全局鉴权 ──
-    NEWS_API_KEY: str = ""  # 为空则不启用鉴权（仅限开发环境）
+    NEWS_API_KEY: str = Field("", repr=False)  # 为空则不启用鉴权（仅限开发环境）
 
     # ── Dashboard 密码保护 ──
-    DASHBOARD_PASSWORD: str = ""  # 为空则不保护（不推荐生产环境）
+    DASHBOARD_PASSWORD: str = Field("", repr=False)  # 为空则不保护（不推荐生产环境）
 
     # ── Sandbox（模拟仓）访问密码 ──
-    SANDBOX_PASSWORD: str = ""  # 为空则不需要密码（不推荐生产环境）
+    SANDBOX_PASSWORD: str = Field("", repr=False)  # 为空则不需要密码（不推荐生产环境）
 
     # ── PostgreSQL 数据库 ──
     POSTGRES_USER: str = "alphareader"     # 数据库用户名
-    POSTGRES_PASSWORD: str = ""       # 数据库密码（必须通过 .env 设置）
+    POSTGRES_PASSWORD: str = Field("", repr=False)       # 数据库密码（必须通过 .env 设置）
     POSTGRES_DB: str = "alphareader"       # 数据库名
     POSTGRES_HOST: str = "db"              # 主机（Docker 容器名）
     POSTGRES_PORT: int = 5432              # 端口
@@ -106,6 +106,7 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "cache"              # 主机（Docker 容器名）
     REDIS_PORT: int = 6379                 # 端口
     REDIS_DB: int = 0                      # 数据库编号
+    REDIS_PASSWORD: str = Field("", repr=False)  # Redis 密码（生产环境必须设置）
     REDIS_MAX_CONNECTIONS: int = 20        # 最大连接数
 
     @computed_field  # type: ignore[prop-decorator]
@@ -120,7 +121,9 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def REDIS_URL(self) -> str:
-        """根据各 Redis 字段动态拼接 Redis 连接字符串。"""
+        """根据各 Redis 字段动态拼接 Redis 连接字符串（含密码）。"""
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
     @property

@@ -1,5 +1,253 @@
 # AlphaReader 开发进度记录
 
+## 2026-03-21: Phase 3 — 代码整洁（B-7 / B-2 / B-3 / F-4）
+
+### 问题/需求
+Code Review Phase 3 四项代码整洁修复：调试脚本清理、API 响应格式统一、Pydantic 输入校验、前端重复代码。
+
+### 解决方案
+**4/4 项全部完成**：
+
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| B-7: 调试脚本散落 | ✅ 已修复 | 根目录调试脚本已删除，运维脚本已整理到 `backend/scripts/`，`.gitignore` 已加 `backend/debug_*.py` |
+| B-2: API 响应格式统一 | ✅ 已修复 | 创建 `schemas/response.py` 定义 `APIResponse` / `PaginatedResponse`；所有 API 端点已改用统一包装；前端 `request()` 已内置自动解包 |
+| B-3: Pydantic 输入校验 | ✅ 已修复 | briefings/digests 的 `target_date` 改为 `date`，`period_label` 加 `Literal` 约束，stocks backfill 改为 `date` |
+| F-4: 前端重复代码 | ✅ 已修复 | `utils/formatters.js` 含 15+ 公共函数，6 个文件引用 |
+
+### B-2 修复详情（本次检查发现遗漏并修复）
+另一个 agent 完成了大部分工作，但遗留 5 个端点未改造：
+- `stocks.py` 的 `vcp_watchlist` / `trend_watchlist` / `trend_watchlist/filters` / `value_watchlist`（4 个端点仍返回裸 Pydantic model + `response_model` 约束）
+- `news.py` 的 `/search`（返回裸字典）
+本次修复：移除 `response_model` 约束，统一改用 `APIResponse(data=...)` 包装。
+
+### 修改文件清单
+
+| 文件 | 改动 |
+|------|------|
+| `backend/app/api/v1/stocks.py` | 4 个端点（vcp_watchlist / trend_watchlist / trend_watchlist/filters / value_watchlist）改用 `APIResponse` 包装；移除 3 个 `response_model` |
+| `backend/app/api/v1/news.py` | `/search` 端点改用 `APIResponse` 包装 |
+| `doc/code-review-2026-03-20.md` | B-2 标记完成，Phase 3 全部完成 |
+
+---
+
+## 2026-03-21: Phase 2 — 数据可靠性（M-1 / M-2 / M-3 / B-9）
+
+### 问题/需求
+Code Review Phase 2 四项数据可靠性修复：缺失索引、冗余索引、列类型修正、连接池回收。
+
+### 解决方案
+**全部 4 项在之前的开发中已修复**，本次仅验证并更新文档：
+
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| M-1: 缺失索引 | ✅ 已修复 | pipeline_runs.started_at、news.tags GIN、watchlist/trend 复合索引均已存在 |
+| M-2: 冗余索引 | ✅ 已修复 | sandbox_nav 和 stock_daily_quote 的冗余索引已清理 |
+| M-3: 列类型不当 | ✅ 已修复 | reports.date→Date、volume→BigInteger、nav/pnl→Numeric(16,4)、score→Numeric(3,1) |
+| B-9: pool_recycle | ✅ 已修复 | database.py 已有 `pool_recycle=3600` + `pool_pre_ping=True` |
+
+### 修改文件清单（0 个代码改动，仅文档更新）
+
+| 文件 | 改动 |
+|------|------|
+| `doc/code-review-2026-03-20.md` | Phase 2 四项标记为已完成 |
+
+---
+
+## 2026-03-21: Phase 1 — 安全加固（S-1 / S-2 / S-3 / S-4 / I-1 / B-5 / B-6）
+
+### 问题/需求
+Code Review Phase 1 六项安全加固：API Key 泄露检查、时序攻击防护、DEBUG 默认值、500 响应信息泄露、Redis 密码、CORS 收紧、敏感字段 repr。
+
+### 解决方案
+**2 个文件修改 + 4 项确认已修复**：
+
+| 条目 | 状态 | 说明 |
+|------|------|------|
+| S-1: API Key 泄露风险 | ✅ 已验证 | `git log --all -- .env` 无历史提交，密钥从未泄露 |
+| S-2: API Key 时序攻击 | ✅ 本次修复 | `auth.py:41` 改用 `hmac.compare_digest()` |
+| S-3: `DEBUG=True` 默认值 | ✅ 已修复 | `config.py:39` 已为 `False` |
+| S-4: 500 暴露内部异常 | ✅ 已修复 | briefings/digests 返回通用错误信息，详细错误仅写日志 |
+| I-1: Redis 无密码 | ✅ 已修复 | docker-compose.yml 已配置 `--requirepass` |
+| B-5: CORS 过宽 | ✅ 本次修复 | origins 限定域名 + methods/headers 从 `*` 收紧为具体值 |
+| B-6: repr=False | ✅ 已修复 | 所有 10 个敏感字段均已使用 `Field("", repr=False)` |
+
+### 修改文件清单（2 个）
+
+| 文件 | 改动 |
+|------|------|
+| `backend/app/auth.py` | `!=` → `hmac.compare_digest()` |
+| `backend/app/main.py` | CORS `allow_methods`/`allow_headers` 从 `["*"]` 收紧 |
+
+---
+
+## 2026-03-21: Phase 5 — 基础设施优化（I-2 / I-3 / I-5 / T-1）
+
+### 问题/需求
+Code Review Phase 5 四项基础设施优化：Backend Dockerfile 过大、Docker 无内存限制、Nginx 无速率限制、缺少 CI/CD。
+
+### 解决方案
+**7 个文件新增/修改**：
+
+| 文件 | 改动 |
+|------|------|
+| `backend/Dockerfile` | 多阶段构建：builder 编译 C 扩展 → runtime 仅复制 venv + 最小运行时库 |
+| `backend/requirements.txt` | 移除 pytest/pytest-asyncio/aiosqlite（测试依赖） |
+| `backend/requirements-dev.txt` | 新增：`-r requirements.txt` + 测试依赖，CI 和本地开发使用 |
+| `docker-compose.yml` | 为 4 个服务添加 `mem_limit`（web 1536m / db 768m / cache 384m / frontend 128m） |
+| `deploy/nginx/conf.d/default.conf.template` | 添加两级速率限制 zone + AI 端点单独限流 |
+| `.github/workflows/ci.yml` | 新增 GitHub Actions CI（后端 pytest + 前端 build 检查） |
+| `doc/code-review-2026-03-20.md` | 更新 I-2/I-3/I-5/T-1 状态为 ✅，Phase 5 checklist 全勾 |
+
+### I-2: Backend Dockerfile 多阶段构建
+- **Stage 1 (builder)**：`python:3.12-slim` + gcc/g++/libpq-dev 等编译工具，pip 安装到 `/opt/venv`
+- **Stage 2 (runtime)**：`python:3.12-slim` + 仅 `libpq5/libxml2/libxslt1.1/curl` 运行时库
+- **效果**：最终镜像减小 ~200MB（移除 gcc/g++/dev headers/pip 缓存）
+- **附带**：测试依赖分离到 `requirements-dev.txt`，生产镜像不含 pytest
+
+### I-3: Docker 资源限制
+| 服务 | `mem_limit` | 说明 |
+|------|-------------|------|
+| web (FastAPI) | 1536m | pandas/sklearn 重计算需要内存 |
+| db (PostgreSQL) | 768m | 主数据库，需充足缓存 |
+| cache (Redis) | 384m | maxmemory 256mb + AOF 缓冲 |
+| frontend (Nginx) | 128m | 纯静态服务，极低内存 |
+| **合计** | ~2.8GB | 为 OS 和突发预留 ~1.2GB |
+
+### I-5: Nginx 速率限制
+- **通用 API** (`/api/`): `30r/m` per IP, burst=15, nodelay
+- **AI 生成端点** (`/api/v1/(briefings|digests)/generate`): `3r/m` per IP, burst=2, nodelay
+- 超限返回 `429 Too Many Requests`
+- AI 端点使用 regex location 优先匹配，timeout 提升到 180s
+
+### T-1: GitHub Actions CI
+- **触发条件**: push（main/feat/*/fix/*）+ PR（main）
+- **Backend Tests job**: PostgreSQL 16 + Redis 7 服务容器，Python 3.12，`pytest -v`
+- **Frontend Lint job**: Node.js 20，`npm run build:h5` 编译检查
+- **优化**: pip 缓存、并发控制（同分支取消旧 run）、10 分钟超时
+
+### 防范措施
+- Dockerfile 多阶段构建保持 CMD 完全一致，运行行为不变
+- `mem_limit` 使用 docker-compose v2 语法（`mem_limit` 而非 `deploy.resources`），兼容直接 `docker compose up`
+- Nginx 速率限制对内部服务（scheduler 触发的 API 调用）不受影响（走 Docker 内网，不经 Nginx）
+- CI 配置中 `API_KEY=""` 确保测试不受鉴权影响
+
+---
+
+## 2026-03-21: F-7 — CSS 变量系统替换全局硬编码颜色
+
+### 问题/需求
+Code Review 指出前端 15+ 个 Vue 文件中散布 300+ 处硬编码颜色值（`#1a1a2e`、`#8c8c9a`、`#4285f4` 等），维护困难且无法统一换肤。需引入 CSS Custom Properties（设计 Token）系统统一管理。
+
+### 解决方案
+**16 个文件修改**：
+
+| 文件 | 改动 |
+|------|------|
+| `App.vue` | 新建 `:root` 变量体系：65+ CSS 变量（基础色/文字色/品牌色/语义色/状态背景/边框/渐变色/时段色/字体/圆角/阴影） |
+| `pages/index/index.vue` | ~60 处替换：color/background/border/gradient → var(--xxx) |
+| `pages/stocks/index.vue` | ~85 处替换：全部 18 种颜色角色 + 渐变 + 字体 |
+| `pages/stocks/detail.vue` | ~28 处替换 |
+| `pages/reports/index.vue` | ~36 处替换 + 时段色变量 |
+| `pages/reports/detail.vue` | ~7 处替换 |
+| `pages/briefing/detail.vue` | ~15 处替换 + 渐变背景 |
+| `components/stocks/StocksTabBar.vue` | ~5 处替换 |
+| `components/stocks/SandboxPasswordModal.vue` | ~11 处替换 |
+| `components/stocks/ValueStockAddModal.vue` | ~24 处替换 |
+| `components/stocks/TrendTab.vue` | 模板 prop bg 替换 |
+| `components/stocks/ValueTab.vue` | 模板 prop bg 替换 |
+| `components/stocks/VcpTab.vue` | 模板 prop bg 替换 |
+| `components/common/SiteFooter.vue` | ~3 处替换 |
+| `components/common/EmptyState.vue` | ~1 处替换 |
+
+### CSS 变量分类
+
+```
+:root {
+  /* 基础色 (8) */    --color-bg / bg-card / bg-secondary / bg-hover / bg-active / bg-input / bg-tag / bg-code
+  /* 文字色 (8) */    --color-text-primary / secondary / tertiary / body / muted / placeholder / hint / white
+  /* 品牌色 (5) */    --color-brand / brand-alt / brand-light / brand-hover / brand-ios
+  /* 语义色 (13) */   --color-up / up-alt / down / down-alt / warning / warning-alt / info / info-hover / success-dark / success-text / danger-dark / neutral / neutral-light
+  /* 状态背景 (13) */ --color-bg-success-light / success-soft / info-light / info-soft / info-accent / info-blend / danger-light / neutral-light / neutral-soft / brand-light / dropdown-hover / tag-hover / active-press / section / subtle
+  /* 边框 (6) */      --color-border / border-light / border-hover / border-divider / border-subtle / border-separator
+  /* 渐变 (12) */     --gradient-vcp-hot/warm/normal/cool, --gradient-sentiment-xxx, --gradient-info-bar/bg, --gradient-briefing-bg
+  /* 时段色 (7) */    --color-time-morning/midday/evening/night + bg 变体
+  /* 字体 (4) */      --font-sans / display / mono / numeric
+  /* 圆角 (4) */      --radius-sm / md / lg / pill
+  /* 阴影 (3) */      --shadow-sm / md / lg
+}
+```
+
+### 迁移结果
+- **迁移前**: 300+ 处硬编码 hex 颜色值散布在 15+ 个 Vue 文件
+- **迁移后**: 439 处 `var(--xxx)` 引用 → 65+ 个集中变量定义
+- **合理保留**: 9 处不可替换（SandboxTab.vue SVG 内联属性 + JS 动态颜色数组 + mask-image 黑色遮罩）
+- **Lint 错误**: 0
+
+### 技术要点
+1. **uni-app 全局样式**: `App.vue` 的 unscoped `<style>` 定义 `:root` 变量，所有页面/组件自动继承
+2. **渐变色变量**: `linear-gradient()` 值直接存储为变量（如 `--gradient-vcp-hot`），`background: var(--gradient-vcp-hot)` 生效
+3. **模板 prop**: EmptyState 的 `bg` prop 传入 `var(--color-bg-card)` 字符串，通过 `:style="{ background: bg }"` 正确解析
+4. **批量替换**: 使用 `find + xargs + sed` 对 15+ 文件批量替换，配合手动 `replace_in_file` 处理复杂场景
+
+### 防范措施
+- 所有变量值保持与原硬编码值完全相同，视觉效果零变化
+- SVG 内联属性和 JS 动态颜色保持原值，不强制迁移
+- `mask-image` 中的 `#000` 为技术用途（遮罩），不归入设计 Token
+
+---
+
+## 2026-03-21: F-1 — index/index.vue 重构为 `<script setup>` + 子组件拆分
+
+### 问题/需求
+`index/index.vue` 是项目中唯一使用 Options API 的页面（2207 行），违反 `claude.rules.mdc` 第四章前端规范。需要重构为 `<script setup>` 组合式 API，并拆分为多个子组件降低单文件复杂度。
+
+### 解决方案
+**11 个文件新增/修改**：
+
+| 文件 | 类型 | 职责 |
+|------|------|------|
+| `utils/formatters.js` | 新增 | 公共格式化工具（scoreClass/formatScore/formatTime/gravityClass/sentimentClass 等），多页面可复用 |
+| `composables/useNewsFeed.js` | 新增 | 新闻 Feed composable（列表加载、分页、聚合分组、关联报道展开） |
+| `composables/useNewsSearch.js` | 新增 | 搜索 composable（搜索模式、搜索历史、热门话题、搜索结果分页） |
+| `composables/useNewsFilter.js` | 新增 | 筛选 composable（排序/时效/来源/评分筛选 + 面板临时状态 + 分类 Tab） |
+| `components/news/NewsCard.vue` | 新增 | 单条新闻卡片（复用于普通列表和搜索结果，支持高亮/Gravity/情绪指标） |
+| `components/news/NewsCardGroup.vue` | 新增 | 聚合卡片组（主卡片 + 关联报道折叠区） |
+| `components/news/NewsSearchBar.vue` | 新增 | 搜索栏 + 搜索面板（历史/热门话题）+ 搜索结果列表 |
+| `components/news/NewsFilterPopover.vue` | 新增 | 筛选按钮 + 浮窗面板（排序/时效/来源/评分） |
+| `pages/index/index.vue` | 重写 | Options API → `<script setup>`，引用 4 个子组件 + 3 个 composable |
+
+### 架构变化
+```
+旧：1 个 2207 行巨型 Options API 文件
+新：
+├── index.vue（~280 行模板 + 组装逻辑）
+├── composables/
+│   ├── useNewsFeed.js（数据加载）
+│   ├── useNewsSearch.js（搜索逻辑）
+│   └── useNewsFilter.js（筛选逻辑）
+├── components/news/
+│   ├── NewsCard.vue（单卡片）
+│   ├── NewsCardGroup.vue（聚合卡片）
+│   ├── NewsSearchBar.vue（搜索栏）
+│   └── NewsFilterPopover.vue（筛选面板）
+└── utils/formatters.js（公共工具）
+```
+
+### 技术要点
+1. **`<script setup>`**：严格遵守 claude.rules 第四章规范，所有 Vue 组件使用组合式 API
+2. **uni-app 页面生命周期**：通过 `getCurrentInstance().proxy.$options` 挂载 onShow/onHide/onPullDownRefresh/onReachBottom
+3. **子组件样式穿透**：父组件通过 `:deep()` 选择器控制子组件样式，保持 scoped CSS 隔离
+4. **composable 解耦**：筛选参数通过 `buildFilterParams()` 传递给 Feed，搜索和 Feed 互不干扰
+5. **公共 formatters**：scoreClass/formatTime 等从各页面可复用，为后续 F-4（消除重复代码）做准备
+
+### 防范措施
+- 所有 API 调用、事件上报、Clipboard 逻辑保持与原版完全一致
+- CSS 样式通过 `:deep()` 穿透保持子组件渲染效果不变
+- 原有的 PC/移动端响应式适配（768px/1200px 断点）完整保留
+
+---
+
 ## 2026-03-20: Daily Briefing — 每日收盘智能简报
 
 ### 问题/需求

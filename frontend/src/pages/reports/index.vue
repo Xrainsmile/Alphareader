@@ -3,7 +3,7 @@
     <!-- Header -->
     <view class="reports-header">
       <text class="reports-title">Reports</text>
-      <text class="reports-subtitle">新闻概览 · 每日复盘</text>
+      <text class="reports-subtitle">每日研报 · 新闻概览 · 每日复盘</text>
     </view>
 
     <!-- Tab Bar -->
@@ -11,18 +11,25 @@
       <view
         class="tab-item"
         :class="{ active: activeTab === 'digest' }"
-        @click="activeTab = 'digest'"
+        @click="switchTab('digest')"
       >
         <text class="tab-text">新闻概览</text>
       </view>
       <view
         class="tab-item"
-        :class="{ active: activeTab === 'reports' }"
-        @click="activeTab = 'reports'"
+        :class="{ active: activeTab === 'briefing' }"
+        @click="switchTab('briefing')"
       >
-        <text class="tab-text">研报</text>
+        <text class="tab-text">每日研报</text>
       </view>
-      <view class="tab-indicator" :style="{ left: activeTab === 'digest' ? '0%' : '50%' }"></view>
+      <view
+        class="tab-item"
+        :class="{ active: activeTab === 'reports' }"
+        @click="switchTab('reports')"
+      >
+        <text class="tab-text">复盘</text>
+      </view>
+      <view class="tab-indicator" :style="{ left: tabIndicatorLeft, width: '33.33%' }"></view>
     </view>
 
     <!-- ═══════════════════════════════════════════
@@ -95,7 +102,69 @@
     </view>
 
     <!-- ═══════════════════════════════════════════
-         Tab 2: 研报（原有 Reports 列表）
+         Tab 2: 每日研报（AI 市场分析）
+         ═══════════════════════════════════════════ -->
+    <view v-if="activeTab === 'briefing'" class="briefing-tab">
+      <!-- Loading -->
+      <EmptyState
+        v-if="briefingLoading"
+        text="加载中..."
+        mobile-padding="120rpx 0"
+        desktop-padding="60px 0"
+      />
+
+      <!-- Empty -->
+      <EmptyState
+        v-if="!briefingLoading && briefingList.length === 0"
+        text="暂无研报数据"
+        mobile-padding="120rpx 0"
+        desktop-padding="60px 0"
+      />
+
+      <!-- Briefing List -->
+      <view v-if="!briefingLoading && briefingList.length > 0" class="briefing-list">
+        <view
+          v-for="item in briefingList"
+          :key="item.id"
+          class="briefing-card"
+          @click="goBriefingDetail(item.id)"
+        >
+          <!-- Card Header -->
+          <view class="briefing-card-header">
+            <view class="briefing-date-group">
+              <text class="briefing-date-day">{{ formatBriefingDay(item.briefing_date) }}</text>
+              <text class="briefing-date-weekday">{{ formatBriefingWeekday(item.briefing_date) }}</text>
+            </view>
+            <view class="briefing-status" :class="'status-' + item.status">
+              <text class="status-dot">●</text>
+              <text class="status-text">{{ statusLabel(item.status) }}</text>
+            </view>
+          </view>
+
+          <!-- Preview Content (first ~100 chars) -->
+          <text class="briefing-preview">{{ getPreview(item.content) }}</text>
+
+          <!-- Card Footer: meta stats -->
+          <view class="briefing-card-footer">
+            <view class="meta-tags">
+              <text class="meta-tag tag-sentiment" v-if="item.meta && item.meta.market_sentiment">{{ sentimentEmoji(item.meta.market_sentiment) }} {{ item.meta.market_sentiment }}</text>
+              <text class="meta-tag tag-s" v-if="item.meta && item.meta.tier_s">🎯 {{ item.meta.tier_s }}</text>
+              <text class="meta-tag tag-a" v-if="item.meta && item.meta.tier_a">📋 {{ item.meta.tier_a }}</text>
+              <text class="meta-tag tag-x" v-if="item.meta && item.meta.tier_x">⚠️ {{ item.meta.tier_x }}</text>
+            </view>
+            <text class="briefing-gen-time" v-if="item.generation_sec">⏱ {{ item.generation_sec.toFixed(1) }}s</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- Load more -->
+      <view v-if="!briefingLoading && briefingList.length > 0 && briefingDays < 30" class="load-more" @click="loadMoreBriefings">
+        <text class="load-more-text">加载更多</text>
+      </view>
+    </view>
+
+    <!-- ═══════════════════════════════════════════
+         Tab 3: 复盘（原有 Reports 列表）
          ═══════════════════════════════════════════ -->
     <view v-if="activeTab === 'reports'" class="reports-tab">
       <!-- Reports List -->
@@ -147,38 +216,56 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
-import { fetchReportsList, fetchDigests } from '@/utils/api'
+import { fetchReportsList, fetchDigests, fetchBriefings } from '@/utils/api'
 import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
 import { rawReports } from '@/data/reports'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import { listTagStyle, formatDate, reportStatusLabel, sentimentEmoji } from '@/utils/formatters'
 
 // ── Tab State ──
-const activeTab = ref('digest')
+const activeTab = ref('briefing')
+
+// ── Tab indicator position (3 tabs) ──
+const tabIndicatorLeft = computed(() => {
+  if (activeTab.value === 'digest') return '0%'
+  if (activeTab.value === 'briefing') return '33.33%'
+  return '66.66%'
+})
+
+function switchTab(tab) {
+  activeTab.value = tab
+  // 首次切换时懒加载
+  if (tab === 'digest' && digestList.value.length === 0 && !digestLoading.value) {
+    loadDigests()
+  }
+  if (tab === 'briefing' && briefingList.value.length === 0 && !briefingLoading.value) {
+    loadBriefings()
+  }
+  if (tab === 'reports' && reportsList.value.length === 0 && !reportsLoading.value) {
+    loadReports()
+  }
+}
 
 // ── Digest State ──
 const digestList = ref([])
-const digestLoading = ref(true)
+const digestLoading = ref(false)
 const digestDays = ref(7)
 const expandedIds = reactive(new Set())
 
 // ── Reports State ──
 const reportsList = ref([])
-const reportsLoading = ref(true)
+const reportsLoading = ref(false)
 
-// Markdown tag styles (for mp-html in digest cards)
-const tagStyle = {
-  h1: 'font-size:17px;font-weight:700;color:#1a1a2e;margin:12px 0 8px;line-height:1.5;',
-  h2: 'font-size:15px;font-weight:600;color:#1a1a2e;margin:10px 0 6px;padding:2px 0 2px 10px;border-left:3px solid #4285f4;line-height:1.5;',
-  h3: 'font-size:14px;font-weight:600;color:#2a2a3e;margin:8px 0 4px;line-height:1.5;',
-  p: 'font-size:14px;color:#3a3a4a;line-height:1.7;margin:6px 0;',
-  strong: 'color:#1a1a2e;font-weight:600;',
-  ul: 'padding-left:18px;margin:6px 0;',
-  ol: 'padding-left:18px;margin:6px 0;',
-  li: 'font-size:14px;color:#3a3a4a;line-height:1.7;margin:4px 0;',
-}
+// ── Briefing State ──
+const briefingList = ref([])
+const briefingLoading = ref(true)
+const briefingDays = ref(7)
+
+// Markdown tag styles (from shared formatters)
+const tagStyle = listTagStyle
 
 // ── Helpers ──
 
@@ -209,11 +296,7 @@ function formatDigestDate(item) {
   return `${month}月${day}日 ${startH}:${startM}~${endStr}`
 }
 
-const formatDate = (dateStr) => {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
-}
+// formatDate imported from formatters.js
 
 // ── Data Loading ──
 
@@ -237,6 +320,59 @@ async function loadDigests() {
 async function loadMoreDigests() {
   digestDays.value = Math.min(digestDays.value + 7, 30)
   await loadDigests()
+}
+
+// ── Briefing Helpers ──
+
+function formatBriefingDay(dateStr) {
+  const d = new Date(dateStr)
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
+function formatBriefingWeekday(dateStr) {
+  const d = new Date(dateStr)
+  const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return days[d.getDay()]
+}
+
+// statusLabel → reportStatusLabel, sentimentEmoji imported from formatters.js
+const statusLabel = reportStatusLabel
+
+function getPreview(content) {
+  if (!content) return '暂无内容'
+  // 去除 Markdown 标记，取前 120 个字符
+  const plain = content
+    .replace(/#{1,6}\s/g, '')
+    .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[-*]\s/g, '')
+    .replace(/\n+/g, ' ')
+    .trim()
+  return plain.length > 120 ? plain.slice(0, 120) + '...' : plain
+}
+
+function goBriefingDetail(id) {
+  uni.navigateTo({ url: `/pages/briefing/detail?id=${id}` })
+}
+
+// ── Briefing Data Loading ──
+
+async function loadBriefings() {
+  briefingLoading.value = true
+  try {
+    const data = await fetchBriefings(briefingDays.value)
+    briefingList.value = data || []
+  } catch (e) {
+    console.warn('加载研报失败:', e.message)
+    briefingList.value = []
+  } finally {
+    briefingLoading.value = false
+  }
+}
+
+async function loadMoreBriefings() {
+  briefingDays.value = Math.min(briefingDays.value + 7, 30)
+  await loadBriefings()
 }
 
 // 从 Mock 数据生成 fallback 列表
@@ -301,15 +437,14 @@ const onShare = (item) => {
 }
 
 onMounted(() => {
-  loadDigests()
-  loadReports()
+  loadBriefings()
 })
 </script>
 
 <style scoped>
 .reports-container {
   min-height: 100vh;
-  background: #ffffff;
+  background: var(--color-bg-card);
   padding: 0 32rpx;
 }
 
@@ -320,14 +455,14 @@ onMounted(() => {
 .reports-title {
   font-size: 44rpx;
   font-weight: 800;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   letter-spacing: 1rpx;
-  font-family: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
+  font-family: var(--font-display);
   display: block;
 }
 .reports-subtitle {
   font-size: 24rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
   margin-top: 6rpx;
   letter-spacing: 1rpx;
   display: block;
@@ -337,7 +472,7 @@ onMounted(() => {
 .tab-bar {
   display: flex;
   position: relative;
-  border-bottom: 1rpx solid #f0f0f2;
+  border-bottom: 1rpx solid var(--color-border-light);
   margin-bottom: 8rpx;
 }
 .tab-item {
@@ -350,20 +485,20 @@ onMounted(() => {
 }
 .tab-text {
   font-size: 30rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
   font-weight: 500;
   transition: color 0.2s;
 }
 .tab-item.active .tab-text {
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   font-weight: 700;
 }
 .tab-indicator {
   position: absolute;
   bottom: 0;
-  width: 50%;
+  width: 33.33%;
   height: 4rpx;
-  background: #4285f4;
+  background: var(--color-brand);
   border-radius: 2rpx;
   transition: left 0.25s ease;
 }
@@ -400,19 +535,19 @@ onMounted(() => {
   width: 20rpx;
   height: 20rpx;
   border-radius: 50%;
-  background: #4285f4;
+  background: var(--color-brand);
   flex-shrink: 0;
   z-index: 1;
 }
-.dot-morning { background: #FF9800; }
-.dot-midday  { background: #F44336; }
-.dot-evening { background: #9C27B0; }
-.dot-night   { background: #3F51B5; }
+.dot-morning { background: var(--color-time-morning); }
+.dot-midday  { background: var(--color-time-midday); }
+.dot-evening { background: var(--color-time-evening); }
+.dot-night   { background: var(--color-time-night); }
 
 .timeline-line {
   width: 3rpx;
   flex: 1;
-  background: #e8e8ec;
+  background: var(--color-border);
   margin-top: 4rpx;
 }
 
@@ -420,10 +555,10 @@ onMounted(() => {
 .digest-card {
   flex: 1;
   margin-left: 16rpx;
-  background: #fafbfc;
+  background: var(--color-bg-hover);
   border-radius: 16rpx;
   padding: 24rpx;
-  border: 1rpx solid #f0f0f2;
+  border: 1rpx solid var(--color-border-light);
   margin-bottom: 20rpx;
   cursor: pointer;
   transition: box-shadow 0.15s;
@@ -442,12 +577,12 @@ onMounted(() => {
   gap: 8rpx;
   padding: 6rpx 16rpx;
   border-radius: 20rpx;
-  background: #e8f0fe;
+  background: var(--color-bg-info-soft);
 }
-.badge-morning { background: #FFF3E0; }
-.badge-midday  { background: #FFEBEE; }
-.badge-evening { background: #F3E5F5; }
-.badge-night   { background: #E8EAF6; }
+.badge-morning { background: var(--color-bg-time-morning); }
+.badge-midday  { background: var(--color-bg-danger-light); }
+.badge-evening { background: var(--color-bg-time-evening); }
+.badge-night   { background: var(--color-bg-time-night); }
 
 .badge-icon {
   font-size: 28rpx;
@@ -455,13 +590,13 @@ onMounted(() => {
 .badge-text {
   font-size: 24rpx;
   font-weight: 600;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
 }
 
 .digest-time {
   font-size: 22rpx;
-  color: #8c8c9a;
-  font-family: 'SF Pro Text', -apple-system, sans-serif;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
 }
 
 /* Content area with collapse */
@@ -485,24 +620,24 @@ onMounted(() => {
 }
 .toggle-text {
   font-size: 24rpx;
-  color: #4285f4;
+  color: var(--color-brand);
   font-weight: 500;
 }
 .toggle-arrow {
   font-size: 20rpx;
-  color: #4285f4;
+  color: var(--color-brand);
 }
 
 .digest-footer {
   display: flex;
   align-items: center;
   padding-top: 12rpx;
-  border-top: 1rpx solid #f0f0f2;
+  border-top: 1rpx solid var(--color-border-light);
   margin-top: 12rpx;
 }
 .footer-stat {
   font-size: 22rpx;
-  color: #8c8c9a;
+  color: var(--color-text-muted);
 }
 
 /* Load more */
@@ -514,8 +649,154 @@ onMounted(() => {
 }
 .load-more-text {
   font-size: 26rpx;
-  color: #4285f4;
+  color: var(--color-brand);
   font-weight: 500;
+}
+
+/* ═══════════════════════════════════
+   Briefing Tab — 每日研报卡片列表
+   ═══════════════════════════════════ */
+.briefing-tab {
+  padding-bottom: 20rpx;
+}
+
+.briefing-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.briefing-card {
+  background: var(--color-bg-hover);
+  border-radius: 16rpx;
+  padding: 28rpx;
+  border: 1rpx solid var(--color-border-light);
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.briefing-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.briefing-date-group {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+
+.briefing-date-day {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-family: var(--font-display);
+}
+
+.briefing-date-weekday {
+  font-size: 24rpx;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.briefing-status {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+}
+.status-ok {
+  background: var(--color-bg-success-soft);
+}
+.status-failed {
+  background: var(--color-bg-danger-light);
+}
+.status-empty {
+  background: var(--color-bg-neutral-soft);
+}
+.status-dot {
+  font-size: 14rpx;
+}
+.status-ok .status-dot {
+  color: var(--color-down);
+}
+.status-failed .status-dot {
+  color: var(--color-up);
+}
+.status-empty .status-dot {
+  color: var(--color-text-placeholder);
+}
+.status-text {
+  font-size: 22rpx;
+  font-weight: 500;
+}
+.status-ok .status-text {
+  color: var(--color-success-text);
+}
+.status-failed .status-text {
+  color: var(--color-danger-dark);
+}
+.status-empty .status-text {
+  color: var(--color-text-muted);
+}
+
+.briefing-preview {
+  font-size: 26rpx;
+  color: var(--color-text-tertiary);
+  line-height: 1.65;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.briefing-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid var(--color-border-light);
+}
+
+.meta-tags {
+  display: flex;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.meta-tag {
+  font-size: 22rpx;
+  color: var(--color-brand);
+  background: var(--color-bg-info-soft);
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+  font-weight: 500;
+}
+.tag-sentiment {
+  color: var(--color-text-tertiary);
+  background: var(--color-border-light);
+}
+.tag-s {
+  color: var(--color-warning);
+  background: var(--color-bg-warning-light);
+}
+.tag-a {
+  color: var(--color-brand);
+  background: var(--color-bg-info-soft);
+}
+.tag-x {
+  color: var(--color-danger-dark);
+  background: var(--color-bg-danger-light);
+}
+
+.briefing-gen-time {
+  font-size: 22rpx;
+  color: var(--color-text-placeholder);
+  font-family: var(--font-sans);
 }
 
 /* ═══════════════════════════════════
@@ -535,7 +816,7 @@ onMounted(() => {
   flex-direction: row;
   align-items: center;
   padding: 28rpx 0;
-  border-bottom: 1rpx solid #f0f0f2;
+  border-bottom: 1rpx solid var(--color-border-light);
   cursor: pointer;
   gap: 24rpx;
 }
@@ -561,17 +842,17 @@ onMounted(() => {
 .card-title {
   font-size: 34rpx;
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--color-text-primary);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-family: 'PingFang SC', 'SF Pro Text', -apple-system, sans-serif;
+  font-family: var(--font-sans);
 }
 .card-summary {
   font-size: 26rpx;
-  color: #6b6b7b;
+  color: var(--color-text-hint);
   line-height: 1.6;
   margin-top: 12rpx;
   display: -webkit-box;
@@ -587,8 +868,8 @@ onMounted(() => {
 }
 .card-date {
   font-size: 24rpx;
-  color: #b0b0be;
-  font-family: 'SF Pro Text', -apple-system, sans-serif;
+  color: var(--color-text-placeholder);
+  font-family: var(--font-sans);
 }
 .card-actions {
   display: flex;
@@ -605,7 +886,7 @@ onMounted(() => {
 }
 .action-icon {
   font-size: 28rpx;
-  color: #b0b0be;
+  color: var(--color-text-placeholder);
   font-weight: 500;
 }
 
@@ -716,18 +997,75 @@ onMounted(() => {
     font-size: 14px;
   }
 
+  /* Briefing */
+  .briefing-list {
+    gap: 12px;
+  }
+  .briefing-card {
+    padding: 20px 24px;
+    border-radius: 12px;
+    border-width: 1px;
+  }
+  .briefing-card:hover {
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    transform: translateY(-1px);
+  }
+  .briefing-card-header {
+    margin-bottom: 12px;
+  }
+  .briefing-date-group {
+    gap: 8px;
+  }
+  .briefing-date-day {
+    font-size: 17px;
+  }
+  .briefing-date-weekday {
+    font-size: 13px;
+  }
+  .briefing-status {
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 12px;
+  }
+  .status-dot {
+    font-size: 8px;
+  }
+  .status-text {
+    font-size: 12px;
+  }
+  .briefing-preview {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .briefing-card-footer {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top-width: 1px;
+  }
+  .meta-tags {
+    gap: 8px;
+  }
+  .meta-tag {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .briefing-gen-time {
+    font-size: 12px;
+  }
+
   /* Reports */
   .reports-list {
     margin-top: 8px;
   }
   .report-card {
     padding: 20px 0;
-    border-bottom: 1px solid #f0f0f2;
+    border-bottom: 1px solid var(--color-border-light);
     gap: 20px;
     transition: background-color 0.15s;
   }
   .report-card:hover {
-    background-color: #fafafa;
+    background-color: var(--color-bg-hover);
   }
   .card-cover {
     width: 70px;
@@ -757,7 +1095,7 @@ onMounted(() => {
     height: 28px;
   }
   .action-btn:hover {
-    background: #eee;
+    background: var(--color-border);
   }
   .action-icon {
     font-size: 14px;
