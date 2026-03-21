@@ -1,0 +1,742 @@
+/* ═══════════════════════════════════════════════════════
+   stocks 页面共享样式（独立 CSS 文件，不受 uni-app 自动 scoped 影响）
+   ═══════════════════════════════════════════════════════ */
+
+.stocks-container {
+  min-height: 100vh;
+  background: var(--color-bg);
+  padding: 0 24rpx;
+}
+
+/* ── Header ── */
+.stocks-header {
+  padding: 28rpx 0 16rpx;
+}
+.stocks-title {
+  font-size: 44rpx;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  letter-spacing: 1rpx;
+  display: block;
+  font-family: var(--font-display);
+}
+.stocks-subtitle {
+  font-size: 24rpx;
+  color: var(--color-text-muted);
+  margin-top: 6rpx;
+  letter-spacing: 1rpx;
+  display: block;
+}
+
+/* ── Info Bar ── */
+.info-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 0 16rpx;
+}
+.info-date { font-size: 24rpx; color: var(--color-text-muted); }
+
+/* ── Stock List ── */
+.stock-list {
+  background: var(--color-bg-card);
+  border-radius: 0 0 16rpx 16rpx;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+.stock-row-alt { background: var(--color-bg-hover); }
+.col { display: flex; flex-direction: column; justify-content: center; }
+
+.rank-num {
+  font-size: 24rpx; color: var(--color-text-muted); font-weight: 600;
+  font-family: var(--font-numeric);
+}
+.rank-top { color: var(--color-up); font-weight: 800; }
+.rank-high { color: var(--color-warning); font-weight: 700; }
+
+.stock-name {
+  font-size: 28rpx; font-weight: 600; color: var(--color-text-primary); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.stock-code { font-size: 22rpx; color: var(--color-text-placeholder); margin-top: 4rpx; font-family: var(--font-mono); }
+
+.close-price {
+  font-size: 28rpx; font-weight: 600; color: var(--color-text-primary);
+  font-family: var(--font-numeric);
+}
+
+/* ═══════════════════════════════════════════════════════
+   VCP / Trend / Value 共享样式
+   ═══════════════════════════════════════════════════════ */
+
+/* 筛选器遮罩 */
+.icf-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 50;
+  background: transparent;
+}
+
+/* VCP 筛选器 — 胶囊搜索栏风格 */
+.vcp-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 50;
+  background: transparent;
+}
+.vcp-filters {
+  margin: 8rpx 0 12rpx;
+  position: relative;
+  z-index: 60;
+}
+.vcp-search-section {
+  margin-bottom: 12rpx;
+  position: relative;
+}
+.vcp-search-section:last-of-type { margin-bottom: 0; }
+.vcp-search-bar {
+  display: flex;
+  align-items: center;
+}
+.vcp-search-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: var(--color-bg-card);
+  border-radius: var(--radius-pill);
+  padding: 16rpx 24rpx;
+  border: 2rpx solid var(--color-border);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.vcp-search-bar-focus .vcp-search-input-wrap {
+  border-color: var(--color-brand);
+  box-shadow: 0 2rpx 12rpx rgba(66, 133, 244, 0.15);
+}
+.vcp-search-icon { font-size: 28rpx; margin-right: 12rpx; flex-shrink: 0; }
+.vcp-search-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  line-height: 1.4;
+}
+.vcp-search-badge {
+  background: var(--color-brand-ios);
+  color: var(--color-text-white);
+  font-size: 20rpx;
+  min-width: 32rpx;
+  height: 32rpx;
+  line-height: 32rpx;
+  text-align: center;
+  border-radius: 16rpx;
+  padding: 0 8rpx;
+  font-weight: 600;
+  margin-left: 8rpx;
+  flex-shrink: 0;
+}
+.vcp-search-clear { padding: 4rpx 8rpx; margin-left: 8rpx; flex-shrink: 0; cursor: pointer; }
+.vcp-search-clear-icon { font-size: 32rpx; color: var(--color-text-placeholder); font-weight: 500; }
+
+/* 下拉选项列表 */
+.vcp-dropdown {
+  position: absolute;
+  left: 0; right: 0;
+  top: 100%;
+  z-index: 100;
+  margin-top: 8rpx;
+  background: var(--color-bg-card);
+  border: 2rpx solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+.vcp-dropdown-scroll { max-height: 400rpx; }
+.vcp-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 18rpx 24rpx;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.vcp-dropdown-item:active { background: var(--color-bg-dropdown-hover); }
+.vcp-dropdown-item-active { background: var(--color-bg-brand-light); }
+.vcp-dropdown-item-active .vcp-dropdown-text { color: var(--color-brand-ios); font-weight: 500; }
+.vcp-dropdown-check {
+  width: 36rpx;
+  font-size: 26rpx;
+  color: var(--color-brand-ios);
+  font-weight: 700;
+  text-align: center;
+  flex-shrink: 0;
+}
+.vcp-dropdown-text { font-size: 28rpx; color: var(--color-text-secondary); }
+.vcp-dropdown-empty {
+  padding: 24rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--color-text-muted);
+}
+
+/* 已选标签 */
+.vcp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 10rpx;
+  padding: 0 8rpx;
+}
+.vcp-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 8rpx 18rpx;
+  background: var(--color-bg-tag);
+  color: var(--color-brand-ios);
+  font-size: 24rpx;
+  border-radius: 20rpx;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.vcp-tag:active { background: var(--color-bg-tag-hover); }
+
+/* 清除全部 */
+.vcp-clear-all {
+  display: flex;
+  justify-content: center;
+  margin-top: 12rpx;
+  padding: 8rpx 0;
+}
+.vcp-clear-all-text {
+  font-size: 24rpx;
+  color: var(--color-brand-ios);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+/* VCP 表头 */
+.vcp-table-header {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 16rpx;
+  background: var(--color-bg-card);
+  border-radius: 16rpx 16rpx 0 0;
+  border-bottom: 2rpx solid var(--color-border-light);
+}
+.vth { font-size: 22rpx; color: var(--color-text-muted); font-weight: 600; }
+.vth-rank { width: 50rpx; text-align: center; }
+.vth-name { flex: 1; padding-left: 8rpx; }
+.vth-price { width: 120rpx; text-align: right; }
+.vth-vcp { width: 110rpx; text-align: center; }
+.vth-flow { width: 140rpx; text-align: right; }
+.vth-action { width: 60rpx; text-align: center; }
+
+/* VCP 行 */
+.vcp-row {
+  background: var(--color-bg-card);
+  border-bottom: 1rpx solid var(--color-bg-subtle);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.vcp-row:last-child { border-bottom: none; }
+.vcp-row-main {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 16rpx;
+}
+.vcp-col-rank { width: 50rpx; align-items: center; }
+.vcp-col-name { flex: 1; padding-left: 8rpx; }
+.vcp-col-price { width: 120rpx; align-items: flex-end; }
+.vcp-col-vcp { width: 110rpx; align-items: center; }
+.vcp-col-flow { width: 140rpx; align-items: flex-end; }
+.vcp-col-action { width: 60rpx; align-items: center; }
+
+/* 题材标签行 */
+.vcp-row-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  padding: 0 16rpx 14rpx 66rpx;
+}
+.concept-tag {
+  font-size: 20rpx;
+  color: var(--color-brand-alt);
+  background: rgba(22, 119, 255, 0.08);
+  padding: 4rpx 14rpx;
+  border-radius: 6rpx;
+  line-height: 1.4;
+}
+.flow-val {
+  font-size: 24rpx;
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+
+/* VCP badge */
+.vcp-badge {
+  padding: 4rpx 12rpx; border-radius: 8rpx;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.vcp-val {
+  font-size: 22rpx; font-weight: 700; color: var(--color-text-white);
+  font-family: var(--font-numeric);
+}
+.vcp-level-hot { background: var(--gradient-vcp-hot); }
+.vcp-level-warm { background: var(--gradient-vcp-warm); }
+.vcp-level-normal { background: var(--gradient-vcp-normal); }
+.vcp-level-cool { background: var(--gradient-vcp-cool); }
+.vcp-level-none { background: var(--color-border); }
+.vcp-level-none .vcp-val { color: var(--color-text-muted); }
+
+/* EPS / 营收 数值 */
+.val-up { color: var(--color-up); }
+.val-down { color: var(--color-down); }
+
+/* 富途链接 */
+.futu-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 52rpx; height: 44rpx; border-radius: 8rpx;
+  background: rgba(66, 133, 244, 0.08);
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.futu-link:hover { background: rgba(66, 133, 244, 0.18); }
+.futu-icon { font-size: 24rpx; }
+
+/* 展开行 */
+.vcp-expand {
+  padding: 12rpx 20rpx 18rpx 66rpx;
+  background: var(--color-bg-hover);
+  border-top: 1rpx solid var(--color-border-light);
+}
+.vcp-expand-row {
+  display: flex; gap: 12rpx; margin-bottom: 10rpx; align-items: baseline;
+}
+.vcp-expand-row:last-child { margin-bottom: 0; }
+.vcp-expand-label {
+  font-size: 22rpx; color: var(--color-text-muted); font-weight: 500; white-space: nowrap; min-width: 120rpx;
+}
+.vcp-expand-val {
+  font-size: 22rpx; color: var(--color-text-body); line-height: 1.5; flex: 1;
+}
+.vcp-concepts {
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.vcp-business {
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+  -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+}
+
+/* 价投状态徽章 */
+.value-status-badge {
+  padding: 4rpx 14rpx; border-radius: 10rpx;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.value-status-text { font-size: 22rpx; font-weight: 600; }
+.value-status-holding { background: rgba(52, 199, 89, 0.12); }
+.value-status-holding .value-status-text { color: var(--color-down); }
+.value-status-watching { background: rgba(59, 130, 246, 0.1); }
+.value-status-watching .value-status-text { color: var(--color-info); }
+
+/* ═══════════════════════════════════════════════════════
+   模拟仓样式
+   ═══════════════════════════════════════════════════════ */
+
+/* ── 净值概览卡 ── */
+.sb-hero-card {
+  background: var(--color-bg-card);
+  border-radius: 20rpx;
+  padding: 28rpx 28rpx 24rpx;
+  margin: 16rpx 0 0;
+  box-shadow: 0 2rpx 16rpx rgba(0, 0, 0, 0.05);
+}
+.sb-hero-top { margin-bottom: 8rpx; }
+.sb-hero-since {
+  font-size: 22rpx; color: var(--color-text-muted); font-weight: 500;
+}
+.sb-hero-body {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 24rpx;
+}
+.sb-hero-left { display: flex; flex-direction: column; }
+.sb-nav-big {
+  font-size: 64rpx; font-weight: 900; color: var(--color-text-primary); line-height: 1.1;
+  font-family: var(--font-numeric);
+  letter-spacing: -1rpx;
+}
+.sb-nav-down { color: var(--color-down-alt); }
+.sb-nav-sub {
+  font-size: 22rpx; color: var(--color-text-muted); margin-top: 6rpx; font-weight: 500;
+}
+
+/* 迷你净值曲线 → SVG 圆滑曲线 */
+.sb-nav-chart { margin: 16rpx 0 24rpx; }
+.sb-nav-chart-inner {
+  width: 100%; position: relative; overflow: hidden; border-radius: 12rpx;
+  background: var(--color-bg-hover);
+}
+.sb-svg-chart { width: 100%; height: 100%; display: block; }
+
+/* 指标行 */
+.sb-metric-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx;
+}
+.sb-metric-item {
+  background: var(--color-bg-secondary); border-radius: 14rpx;
+  padding: 18rpx 20rpx;
+  display: flex; flex-direction: column; gap: 4rpx;
+}
+.sb-metric-label { font-size: 22rpx; color: var(--color-text-muted); font-weight: 500; }
+.sb-metric-val {
+  font-size: 32rpx; font-weight: 800;
+  font-family: var(--font-numeric);
+}
+.metric-up { color: var(--color-up-alt); }
+.metric-down { color: var(--color-down-alt); }
+.metric-neutral { color: var(--color-text-primary); }
+
+/* ── 观察池快照 ── */
+.sb-snapshot { margin-top: 24rpx; padding: 0 4rpx; }
+
+/* ── 持仓分布环状图 ── */
+.sb-pie-card {
+  background: var(--color-bg-card);
+  border-radius: 20rpx;
+  padding: 24rpx 28rpx;
+  margin-top: 24rpx;
+  box-shadow: 0 2rpx 16rpx rgba(0, 0, 0, 0.05);
+}
+.sb-pie-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20rpx;
+}
+.sb-pie-title { font-size: 30rpx; font-weight: 700; color: var(--color-text-primary); }
+.sb-pie-sub { font-size: 22rpx; color: var(--color-text-muted); font-weight: 500; }
+.sb-pie-body { display: flex; align-items: center; gap: 28rpx; }
+.sb-pie-svg { width: 240rpx; height: 240rpx; flex-shrink: 0; }
+.sb-pie-legend { flex: 1; display: flex; flex-direction: column; gap: 12rpx; }
+.sb-legend-item { display: flex; align-items: center; gap: 10rpx; }
+.sb-legend-dot { width: 16rpx; height: 16rpx; border-radius: 4rpx; flex-shrink: 0; }
+.sb-legend-name {
+  font-size: 24rpx; color: var(--color-text-body); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sb-legend-pct {
+  font-size: 24rpx; color: var(--color-text-primary); font-weight: 700;
+  font-family: var(--font-numeric);
+}
+
+/* ── 筛选+搜索栏 ── */
+.sb-filter-bar {
+  display: flex; align-items: center; gap: 12rpx;
+  margin-top: 16rpx;
+}
+.sb-filter-chip {
+  padding: 12rpx 24rpx;
+  border-radius: 32rpx;
+  background: var(--color-bg-secondary);
+  border: 2rpx solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.sb-filter-chip-active { background: var(--color-text-primary); border-color: var(--color-text-primary); }
+.sb-filter-chip-text { font-size: 24rpx; font-weight: 600; color: var(--color-text-hint); }
+.sb-filter-chip-active .sb-filter-chip-text { color: var(--color-text-white); }
+.sb-search-wrap {
+  flex: 1;
+  display: flex; align-items: center; gap: 8rpx;
+  background: var(--color-bg-secondary);
+  border-radius: 32rpx;
+  padding: 10rpx 20rpx;
+  border: 2rpx solid transparent;
+  transition: border-color 0.2s;
+}
+.sb-search-wrap:focus-within { border-color: var(--color-info); }
+.sb-search-icon { font-size: 24rpx; flex-shrink: 0; }
+.sb-search-input {
+  flex: 1; font-size: 24rpx; color: var(--color-text-primary); background: transparent;
+  border: none; outline: none;
+}
+.sb-search-clear {
+  font-size: 24rpx; color: var(--color-text-placeholder); cursor: pointer; flex-shrink: 0;
+  padding: 0 4rpx;
+}
+.sb-snapshot-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16rpx;
+}
+.sb-snapshot-title { font-size: 30rpx; font-weight: 700; color: var(--color-text-primary); }
+.sb-snapshot-time { font-size: 22rpx; color: var(--color-text-placeholder); }
+.sb-snapshot-tags {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx;
+}
+.sb-tag {
+  border-radius: 16rpx; padding: 20rpx 16rpx;
+  display: flex; flex-direction: column; align-items: center; gap: 6rpx;
+  cursor: pointer; transition: all 0.2s; border: 2rpx solid transparent;
+}
+.sb-tag-active { border-color: var(--color-text-primary); box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.1); }
+.sb-tag-label { font-size: 22rpx; font-weight: 600; }
+.sb-tag-num {
+  font-size: 36rpx; font-weight: 800;
+  font-family: var(--font-numeric);
+}
+.sb-tag-retain { background: var(--color-bg-info-accent); }
+.sb-tag-retain .sb-tag-label { color: var(--color-info); }
+.sb-tag-retain .sb-tag-num { color: var(--color-text-primary); }
+.sb-tag-gray { background: var(--color-bg-neutral-light); }
+.sb-tag-gray .sb-tag-label { color: var(--color-neutral); }
+.sb-tag-gray .sb-tag-num { color: var(--color-text-primary); }
+
+/* ── 股票卡片 ── */
+.sb-stock-list { margin-top: 16rpx; }
+.sb-stock-card {
+  background: var(--color-bg-card);
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
+  position: relative;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.sb-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+  padding-bottom: 14rpx;
+  border-bottom: 1rpx solid var(--color-border-light);
+}
+.sb-card-name-row { display: flex; align-items: baseline; gap: 4rpx; }
+.sb-stock-name { font-size: 32rpx; font-weight: 800; color: var(--color-text-primary); }
+.sb-stock-code { font-size: 24rpx; color: var(--color-text-muted); font-weight: 500; }
+
+.sb-status-badge {
+  padding: 6rpx 16rpx;
+  border-radius: 16rpx;
+  display: inline-flex;
+}
+.sb-status-text { font-size: 22rpx; font-weight: 600; }
+.sb-status-holding { background: var(--color-bg-success-light); }
+.sb-status-holding .sb-status-text { color: var(--color-success-dark); }
+.sb-status-watching { background: var(--color-bg-info-light); }
+.sb-status-watching .sb-status-text { color: var(--color-info-hover); }
+.sb-status-exited { background: var(--color-bg-neutral-light); }
+.sb-status-exited .sb-status-text { color: var(--color-neutral); }
+
+/* 评分 */
+.sb-score-row {
+  display: flex; align-items: baseline; gap: 6rpx; margin-bottom: 10rpx;
+}
+.sb-score-label { font-size: 24rpx; color: var(--color-text-muted); font-weight: 500; }
+.sb-score-big {
+  font-size: 42rpx; font-weight: 900;
+  font-family: var(--font-numeric);
+}
+.sb-score-high { color: var(--color-text-primary); }
+.sb-score-mid { color: var(--color-warning-alt); }
+.sb-score-low { color: var(--color-up-alt); }
+.sb-score-max { font-size: 24rpx; color: var(--color-text-placeholder); font-weight: 500; }
+
+/* Verdict */
+.sb-verdict {
+  font-size: 26rpx; color: var(--color-text-body); line-height: 1.6; display: block;
+  margin-bottom: 12rpx;
+}
+
+/* 动作标签行 */
+.sb-action-row { display: flex; align-items: center; gap: 10rpx; }
+.sb-meta-info { display: flex; align-items: center; gap: 6rpx; }
+.sb-analysis-count { font-size: 22rpx; color: var(--color-text-muted); font-weight: 500; }
+.sb-analysis-dot { font-size: 22rpx; color: var(--color-border-separator); }
+.sb-analysis-date { font-size: 22rpx; color: var(--color-text-placeholder); }
+
+.sb-card-bottom { margin-top: 10rpx; }
+.sb-shares { font-size: 22rpx; color: var(--color-text-muted); }
+
+/* 持仓比例进度条 */
+.sb-position-bar-wrap {
+  height: 6rpx;
+  background: var(--color-border-light);
+  border-radius: 3rpx;
+  overflow: hidden;
+  margin-bottom: 8rpx;
+}
+.sb-position-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-info), #60a5fa);
+  border-radius: 3rpx;
+  min-width: 4rpx;
+  transition: width 0.3s ease;
+}
+
+/* 持仓+留存 高亮卡片 */
+.sb-card-highlight {
+  border: 2rpx solid var(--color-info);
+  background: linear-gradient(180deg, #f0f7ff 0%, var(--color-bg-card) 40%);
+  box-shadow: 0 2rpx 16rpx rgba(59, 130, 246, 0.12);
+}
+.sb-highlight-bar {
+  display: flex; align-items: center; gap: 8rpx;
+  margin-bottom: 12rpx; padding-bottom: 10rpx;
+}
+.sb-highlight-icon { font-size: 16rpx; color: var(--color-info); animation: pulse 1.5s infinite; }
+.sb-highlight-text { font-size: 22rpx; color: var(--color-info); font-weight: 600; letter-spacing: 1rpx; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.sb-card-arrow {
+  position: absolute;
+  right: 24rpx;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.arrow-icon { font-size: 36rpx; color: var(--color-border-separator); font-weight: 300; }
+
+/* ═══════════════════════════════════════════════════════════
+   PC / Tablet 适配 (≥768px)
+   ═══════════════════════════════════════════════════════════ */
+@media screen and (min-width: 768px) {
+  .stocks-container {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  .stocks-header { padding: 24px 0 12px; }
+  .stocks-title { font-size: 26px; letter-spacing: 0.5px; }
+  .stocks-subtitle { font-size: 13px; margin-top: 4px; }
+
+  .info-bar { padding: 8px 0 12px; }
+  .info-date { font-size: 13px; }
+
+  .stock-list { border-radius: 0 0 12px 12px; box-shadow: 0 1px 12px rgba(0, 0, 0, 0.05); }
+  .stock-row-alt { background: var(--color-bg-hover); }
+
+  .rank-num { font-size: 13px; }
+  .stock-name { font-size: 15px; }
+  .stock-code { font-size: 12px; margin-top: 2px; }
+  .close-price { font-size: 15px; }
+
+  /* 模拟仓 PC 适配 */
+  .sb-hero-card { padding: 20px 22px 18px; border-radius: 14px; margin-top: 12px; }
+  .sb-hero-since { font-size: 12px; }
+  .sb-nav-big { font-size: 40px; }
+  .sb-nav-sub { font-size: 12px; }
+  .sb-mini-chart, .sb-nav-chart-inner { height: 100px !important; }
+  .sb-nav-chart { margin: 10px 0 18px; }
+  .sb-metric-row { gap: 8px; grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .sb-metric-item { padding: 12px 16px; border-radius: 10px; }
+  .sb-metric-label { font-size: 12px; }
+  .sb-metric-val { font-size: 18px; }
+
+  .sb-snapshot { margin-top: 18px; }
+  .sb-snapshot-title { font-size: 16px; }
+  .sb-snapshot-time { font-size: 12px; }
+  .sb-snapshot-tags { gap: 8px; grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .sb-tag { padding: 14px 12px; border-radius: 10px; }
+  .sb-tag-label { font-size: 12px; }
+  .sb-tag-num { font-size: 22px; }
+
+  /* 持仓分布环状图 PC */
+  .sb-pie-card { padding: 18px 22px; border-radius: 14px; margin-top: 18px; }
+  .sb-pie-title { font-size: 16px; }
+  .sb-pie-sub { font-size: 12px; }
+  .sb-pie-body { gap: 20px; }
+  .sb-pie-svg { width: 140px; height: 140px; }
+  .sb-pie-legend { gap: 8px; }
+  .sb-legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+  .sb-legend-name { font-size: 13px; }
+  .sb-legend-pct { font-size: 13px; }
+
+  /* 筛选搜索栏 PC */
+  .sb-filter-bar { gap: 8px; margin-top: 12px; }
+  .sb-filter-chip { padding: 7px 16px; border-radius: 20px; border-width: 1px; }
+  .sb-filter-chip-text { font-size: 13px; }
+  .sb-search-wrap { padding: 7px 14px; border-radius: 20px; border-width: 1px; gap: 6px; }
+  .sb-search-icon { font-size: 13px; }
+  .sb-search-input { font-size: 13px; }
+  .sb-search-clear { font-size: 13px; }
+
+  .sb-stock-list { margin-top: 12px; }
+  .sb-stock-card { padding: 18px; margin-bottom: 10px; border-radius: 12px; transition: box-shadow 0.15s; }
+  .sb-stock-card:hover { box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08); }
+  .sb-card-top { margin-bottom: 12px; padding-bottom: 10px; }
+  .sb-stock-name { font-size: 17px; }
+  .sb-stock-code { font-size: 13px; }
+  .sb-status-badge { padding: 3px 10px; border-radius: 10px; }
+  .sb-status-text { font-size: 12px; }
+  .sb-score-label { font-size: 13px; }
+  .sb-score-big { font-size: 26px; }
+  .sb-score-max { font-size: 13px; }
+  .sb-verdict { font-size: 14px; }
+  .sb-analysis-count { font-size: 12px; }
+  .sb-analysis-dot { font-size: 12px; }
+  .sb-analysis-date { font-size: 12px; }
+  .sb-shares { font-size: 12px; }
+  .sb-position-bar-wrap { height: 4px; margin-bottom: 6px; }
+  .sb-card-highlight { border-width: 1px; }
+  .sb-highlight-bar { margin-bottom: 8px; padding-bottom: 8px; gap: 5px; }
+  .sb-highlight-icon { font-size: 9px; }
+  .sb-highlight-text { font-size: 12px; }
+  .arrow-icon { font-size: 22px; }
+
+  /* VCP 策略 PC 适配 */
+  .vcp-filters { margin: 6px 0 10px; }
+  .vcp-search-section { margin-bottom: 8px; }
+  .vcp-search-input-wrap { border-radius: 22px; padding: 10px 18px; border-width: 1px; }
+  .vcp-search-bar-focus .vcp-search-input-wrap { box-shadow: 0 1px 8px rgba(66, 133, 244, 0.15); }
+  .vcp-search-icon { font-size: 15px; margin-right: 8px; }
+  .vcp-search-input { font-size: 14px; }
+  .vcp-search-badge { font-size: 11px; min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px; border-radius: 10px; margin-left: 6px; }
+  .vcp-search-clear-icon { font-size: 18px; }
+  .vcp-dropdown { margin-top: 4px; border-radius: 10px; border-width: 1px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1); }
+  .vcp-dropdown-scroll { max-height: 220px; }
+  .vcp-dropdown-item { padding: 10px 16px; gap: 8px; }
+  .vcp-dropdown-item:hover { background: var(--color-bg-dropdown-hover); }
+  .vcp-dropdown-check { width: 20px; font-size: 14px; }
+  .vcp-dropdown-text { font-size: 14px; }
+  .vcp-dropdown-empty { font-size: 13px; padding: 14px; }
+  .vcp-tags { gap: 6px; margin-top: 6px; padding: 0 6px; }
+  .vcp-tag { padding: 4px 12px; font-size: 12px; border-radius: 12px; }
+  .vcp-tag:hover { background: var(--color-bg-tag-hover); }
+  .vcp-clear-all { margin-top: 8px; }
+  .vcp-clear-all-text { font-size: 13px; }
+
+  .vcp-table-header { padding: 12px 12px; border-radius: 12px 12px 0 0; border-bottom-width: 1px; }
+  .vth { font-size: 12px; }
+  .vth-rank { width: 32px; }
+  .vth-name { padding-left: 6px; }
+  .vth-price { width: 80px; }
+  .vth-vcp { width: 70px; }
+  .vth-flow { width: 90px; }
+  .vth-action { width: 40px; }
+
+  .vcp-row-main { padding: 12px 12px; }
+  .vcp-row:hover { background-color: var(--color-bg-secondary); }
+  .vcp-col-rank { width: 32px; }
+  .vcp-col-name { padding-left: 6px; }
+  .vcp-col-price { width: 80px; }
+  .vcp-col-vcp { width: 70px; }
+  .vcp-col-flow { width: 90px; }
+  .vcp-col-action { width: 40px; }
+
+  .vcp-badge { padding: 2px 8px; border-radius: 5px; }
+  .vcp-val { font-size: 12px; }
+  .flow-val { font-size: 13px; }
+  .futu-link { width: 32px; height: 26px; border-radius: 5px; }
+  .futu-icon { font-size: 14px; }
+  .vcp-row-concepts { padding: 0 12px 10px 44px; gap: 5px; }
+  .concept-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+  .vcp-expand { padding: 8px 14px 12px 46px; }
+  .vcp-expand-label { font-size: 12px; min-width: 72px; }
+  .vcp-expand-val { font-size: 12px; }
+
+  /* 价投状态徽章 PC */
+  .value-status-badge { padding: 2px 10px; border-radius: 6px; }
+  .value-status-text { font-size: 12px; }
+}

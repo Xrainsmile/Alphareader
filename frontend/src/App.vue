@@ -111,19 +111,21 @@ export default {
   --font-numeric: 'SF Pro Display', 'DIN Alternate', -apple-system, sans-serif;
 
   /* 圆角 */
-  --radius-sm: 8rpx;
-  --radius-md: 16rpx;
-  --radius-lg: 20rpx;
-  --radius-pill: 36rpx;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-pill: 1.125rem;
 
   /* 阴影 */
-  --shadow-sm: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 2rpx 16rpx rgba(0, 0, 0, 0.05);
-  --shadow-lg: 0 8rpx 40rpx rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 0.03125rem 0.25rem rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 0.0625rem 0.5rem rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 0.25rem 1.25rem rgba(0, 0, 0, 0.12);
 }
 
-/* 全局样式 */
-page {
+/* 全局样式 — page 兼容小程序，body/uni-page-body 兼容 H5 */
+page,
+body,
+uni-page-body {
   background-color: var(--color-bg);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
