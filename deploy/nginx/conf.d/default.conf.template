@@ -4,7 +4,7 @@
 # map 在 rewrite 阶段之前求值，比 if+set 更可靠
 map $http_x_api_key $final_api_key {
     default $http_x_api_key;
-    ""      "${NGINX_API_KEY}";
+    ""      ${NGINX_API_KEY};
 }
 
 # Rate limiting zones
