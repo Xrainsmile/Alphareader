@@ -15,6 +15,7 @@ from app.redis import get_redis
 from app.services.pipeline import run_pipeline
 from app.services.search import get_hot_topics, get_search_suggestions, search_news
 from app.utils.ranking import calculate_ranking_score, gravity_sql_expression
+from app.schemas.response import APIResponse, PaginatedResponse
 
 logger = logging.getLogger("alphareader.api.news")
 
@@ -50,19 +51,19 @@ async def _run_pipeline_bg():
 async def trigger_pipeline(background_tasks: BackgroundTasks, _: str | None = Depends(require_api_key)):
     """Manually trigger the news pipeline (runs in background to avoid timeout)."""
     if _pipeline_status["running"]:
-        return {"message": "Pipeline already running, please wait"}
+        return APIResponse(code=1, message="Pipeline already running, please wait")
 
     background_tasks.add_task(_run_pipeline_bg)
-    return {"message": "Pipeline started in background. Check /pipeline/status for results."}
+    return APIResponse(message="Pipeline started in background. Check /pipeline/status for results.")
 
 
 @router.get("/pipeline/status")
 async def pipeline_status(_: str | None = Depends(require_api_key)):
     """Check the status of the last pipeline run."""
-    return {
+    return APIResponse(data={
         "running": _pipeline_status["running"],
         "last_result": _pipeline_status["last_result"],
-    }
+    })
 
 
 @router.delete("/pipeline/cache")
@@ -70,7 +71,7 @@ async def clear_dedup_cache(_: str | None = Depends(require_api_key)):
     """Clear the Redis dedup cache so next run re-fetches all news."""
     r = get_redis()
     deleted = await r.delete("alphareader:seen_urls")
-    return {"message": "Dedup cache cleared", "keys_deleted": deleted}
+    return APIResponse(data={"keys_deleted": deleted}, message="Dedup cache cleared")
 
 
 @router.get("/")
@@ -192,15 +193,12 @@ async def list_news(
     if use_python_sort and sort == SortMode.HOT:
         items.sort(key=lambda x: x["ranking_score"], reverse=True)
 
-    return {
-        "items": items,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "sort": sort.value,
-        "gravity": gravity,
-        "max_age_hours": max_age_hours,
-    }
+    return PaginatedResponse(
+        data=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 # ── 搜索 API ──
@@ -221,7 +219,8 @@ async def search(
     支持中英文关键词搜索和模糊匹配。
     返回结果包含标题和摘要的关键词高亮。
     """
-    return await search_news(db, q, limit=limit, offset=offset, min_score=min_score)
+    result = await search_news(db, q, limit=limit, offset=offset, min_score=min_score)
+    return APIResponse(data=result)
 
 
 @router.get("/search/suggest")
@@ -232,7 +231,7 @@ async def search_suggest(
 ):
     """搜索建议 — 根据输入前缀返回自动补全建议。"""
     suggestions = await get_search_suggestions(db, q)
-    return {"suggestions": suggestions}
+    return APIResponse(data={"suggestions": suggestions})
 
 
 @router.get("/search/hot")
@@ -242,4 +241,4 @@ async def search_hot(
 ):
     """热门话题 — 过去 24 小时高分新闻的高频标签，用于搜索推荐。"""
     topics = await get_hot_topics(db)
-    return {"topics": topics}
+    return APIResponse(data={"topics": topics})

@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.report import Report
+from app.schemas.response import APIResponse
 
 logger = logging.getLogger("alphareader.reports")
 
@@ -34,13 +35,6 @@ class ReportSyncRequest(BaseModel):
     cover: str = ""
     summary: str = ""
     content: str
-
-
-class ReportSyncResponse(BaseModel):
-    code: int = 0
-    action: str
-    msg: str
-    id: Optional[int] = None
 
 
 class ReportListItem(BaseModel):
@@ -87,7 +81,7 @@ def verify_sync_token(authorization: str = Header("")):
 
 # ── Endpoints ──
 
-@router.post("/sync", response_model=ReportSyncResponse)
+@router.post("/sync")
 async def sync_report(
     payload: ReportSyncRequest,
     _token: str = Depends(verify_sync_token),
@@ -106,7 +100,7 @@ async def sync_report(
         existing.content = payload.content
         await db.commit()
         logger.info("Report updated: %s", payload.title)
-        return ReportSyncResponse(action="updated", msg=f"已更新: {payload.title}", id=existing.id)
+        return APIResponse(data={"action": "updated", "id": existing.id}, message=f"已更新: {payload.title}")
     else:
         report = Report(
             sync_id=payload.sync_id,
@@ -120,7 +114,7 @@ async def sync_report(
         await db.commit()
         await db.refresh(report)
         logger.info("Report created: %s", payload.title)
-        return ReportSyncResponse(action="created", msg=f"已创建: {payload.title}", id=report.id)
+        return APIResponse(data={"action": "created", "id": report.id}, message=f"已创建: {payload.title}")
 
 
 @router.delete("/{report_id}")
@@ -139,10 +133,10 @@ async def delete_report(
     await db.delete(report)
     await db.commit()
     logger.info("Report deleted: %s (id=%d)", title, report_id)
-    return {"code": 0, "msg": f"已删除: {title}"}
+    return APIResponse(message=f"已删除: {title}")
 
 
-@router.get("/", response_model=list[ReportListItem])
+@router.get("/")
 async def list_reports(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -157,7 +151,7 @@ async def list_reports(
     )
     result = await db.execute(stmt)
     reports = result.scalars().all()
-    return [
+    items = [
         ReportListItem(
             id=r.id,
             sync_id=r.sync_id,
@@ -165,12 +159,13 @@ async def list_reports(
             date=r.date,
             cover=r.cover or "",
             summary=r.summary or "",
-        )
+        ).model_dump()
         for r in reports
     ]
+    return APIResponse(data=items)
 
 
-@router.get("/{report_id}", response_model=ReportDetail)
+@router.get("/{report_id}")
 async def get_report(
     report_id: int,
     db: AsyncSession = Depends(get_db),
@@ -181,7 +176,7 @@ async def get_report(
     report = result.scalar_one_or_none()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    return ReportDetail(
+    return APIResponse(data=ReportDetail(
         id=report.id,
         sync_id=report.sync_id,
         title=report.title,
@@ -189,4 +184,4 @@ async def get_report(
         cover=report.cover or "",
         summary=report.summary or "",
         content=report.content,
-    )
+    ).model_dump())

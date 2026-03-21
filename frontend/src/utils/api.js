@@ -32,7 +32,29 @@ function request(url, options = {}) {
       timeout: 15000,
       success: (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(res.data)
+          // 自动解包 APIResponse / PaginatedResponse 格式
+          // 如果返回 {code, message, data, ...} 结构，取 data 字段作为实际数据
+          // 同时将 total/limit/offset 等分页字段保留到解包后的对象上
+          const body = res.data
+          if (body && typeof body === 'object' && 'code' in body && 'data' in body) {
+            if (body.code !== 0) {
+              reject(new Error(body.message || `API Error code=${body.code}`))
+              return
+            }
+            // PaginatedResponse: 将分页信息附加到 data 包装中
+            if ('total' in body && Array.isArray(body.data)) {
+              resolve({
+                items: body.data,
+                total: body.total,
+                limit: body.limit,
+                offset: body.offset,
+              })
+              return
+            }
+            resolve(body.data)
+            return
+          }
+          resolve(body)
         } else {
           reject(new Error(`HTTP ${res.statusCode}: ${JSON.stringify(res.data)}`))
         }

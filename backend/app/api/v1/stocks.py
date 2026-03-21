@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from app.services.indicators import compute_and_save_rs_rating, load_rs_rating, backfill_rs_rating
 from app.services.data_fetcher import incremental_update_quotes, backfill_quotes
+from app.schemas.response import APIResponse
 
 logger = logging.getLogger("alphareader.api.stocks")
 router = APIRouter(prefix="/stocks", tags=["stocks"])
@@ -120,7 +121,7 @@ def _name_to_initials(name: str) -> str:
 
 # ── Endpoints ──
 
-@router.get("/rs_rating", response_model=RSRatingResponse)
+@router.get("/rs_rating")
 async def get_rs_rating(
     target_date: date | None = Query(None, description="查询日期，默认今天"),
     top_n: int = Query(100, ge=1, le=5000, description="返回前 N 名"),
@@ -139,16 +140,16 @@ async def get_rs_rating(
     if not df.empty:
         df = df.replace({np.nan: None, np.inf: None, -np.inf: None})
 
-    items = [RSRatingItem(**row) for row in df.to_dict("records")] if not df.empty else []
+    items = [RSRatingItem(**row).model_dump() for row in df.to_dict("records")] if not df.empty else []
 
     # 使用实际数据日期（可能回退到最近交易日）
-    actual_date = items[0].trade_date if items else query_date
+    actual_date = df.iloc[0]["trade_date"] if not df.empty else query_date
 
-    return RSRatingResponse(
-        count=len(items),
-        date=actual_date,
-        items=items,
-    )
+    return APIResponse(data={
+        "count": len(items),
+        "date": str(actual_date),
+        "items": items,
+    })
 
 
 @router.get("/rs_rating/status")
@@ -168,7 +169,7 @@ async def get_compute_status():
         elapsed = (datetime.now() - _task.started_at).total_seconds() if _task.started_at else 0
         result["elapsed_seconds"] = round(elapsed, 1)
         result["message"] = "计算进行中，请稍后查询"
-    return result
+    return APIResponse(data=result)
 
 
 async def _run_compute(force: bool):
@@ -201,9 +202,12 @@ async def trigger_rs_rating_compute(
         return JSONResponse(
             status_code=409,
             content={
-                "status": "conflict",
+                "code": 1,
                 "message": "已有计算任务在运行中，请通过 GET /rs_rating/status 查看进度",
-                "started_at": _task.started_at.isoformat() if _task.started_at else None,
+                "data": {
+                    "status": "conflict",
+                    "started_at": _task.started_at.isoformat() if _task.started_at else None,
+                },
             },
         )
 
@@ -213,8 +217,9 @@ async def trigger_rs_rating_compute(
     return JSONResponse(
         status_code=202,
         content={
-            "status": "accepted",
+            "code": 0,
             "message": "RS Rating 计算已在后台启动，请通过 GET /api/v1/stocks/rs_rating/status 查看进度",
+            "data": {"status": "accepted"},
         },
     )
 
@@ -235,13 +240,14 @@ async def trigger_update_quotes(
     return JSONResponse(
         status_code=202,
         content={
-            "status": "accepted",
+            "code": 0,
             "message": f"行情增量更新已在后台启动（回溯 {days} 天）",
+            "data": {"status": "accepted"},
         },
     )
 
 
-@router.get("/search", response_model=StockSearchResponse)
+@router.get("/search")
 async def search_stocks(
     q: str = Query(..., min_length=1, max_length=20, description="搜索关键词（代码/名称/拼音首字母）"),
     target_date: date | None = Query(None, description="查询日期，默认今天"),
@@ -258,7 +264,7 @@ async def search_stocks(
     df_all = await load_rs_rating(target_date=query_date, top_n=5000)
 
     if df_all.empty:
-        return StockSearchResponse(count=0, date=query_date, items=[], message=None)
+        return APIResponse(data={"count": 0, "date": str(query_date), "items": [], "message": None})
 
     # NaN/inf → None，防止 JSON 序列化报错
     df_all = df_all.replace({np.nan: None, np.inf: None, -np.inf: None})
@@ -292,25 +298,25 @@ async def search_stocks(
             ),
             reverse=True,
         )
-        items = [RSRatingItem(**r) for r in matched_rs80]
-        return StockSearchResponse(count=len(items), date=actual_date, items=items)
+        items = [RSRatingItem(**r).model_dump() for r in matched_rs80]
+        return APIResponse(data={"count": len(items), "date": str(actual_date), "items": items})
 
     # 有匹配但都不在 RS >= 80 内
     if matched_all:
-        return StockSearchResponse(
-            count=0,
-            date=actual_date,
-            items=[],
-            message=f"您搜索的标的 RS Rating ≤80",
-        )
+        return APIResponse(data={
+            "count": 0,
+            "date": str(actual_date),
+            "items": [],
+            "message": "您搜索的标的 RS Rating ≤80",
+        })
 
     # 完全无匹配
-    return StockSearchResponse(
-        count=0,
-        date=actual_date,
-        items=[],
-        message=f"未找到匹配「{q.strip()}」的股票",
-    )
+    return APIResponse(data={
+        "count": 0,
+        "date": str(actual_date),
+        "items": [],
+        "message": f"未找到匹配「{q.strip()}」的股票",
+    })
 
 
 @router.post("/rs_rating/backfill")
@@ -326,7 +332,7 @@ async def trigger_backfill(
     if _task.status == TaskStatus.RUNNING:
         return JSONResponse(
             status_code=409,
-            content={"status": "conflict", "message": "已有任务在运行中"},
+            content={"code": 1, "message": "已有任务在运行中", "data": {"status": "conflict"}},
         )
 
     async def _run():
@@ -344,16 +350,17 @@ async def trigger_backfill(
     return JSONResponse(
         status_code=202,
         content={
-            "status": "accepted",
+            "code": 0,
             "message": f"RS Rating 回填已启动: {start_date} ~ {end_date}",
+            "data": {"status": "accepted"},
         },
     )
 
 
 @router.post("/quotes/backfill")
 async def trigger_quotes_backfill(
-    start_date: str = Query(..., description="起始日期 YYYYMMDD"),
-    end_date: str = Query(..., description="结束日期 YYYYMMDD"),
+    start_date: date = Query(..., description="起始日期 YYYY-MM-DD"),
+    end_date: date = Query(..., description="结束日期 YYYY-MM-DD"),
 ):
     """回填指定日期范围的历史行情数据（后台任务，使用 akshare）。
 
@@ -362,13 +369,17 @@ async def trigger_quotes_backfill(
     if _task.status == TaskStatus.RUNNING:
         return JSONResponse(
             status_code=409,
-            content={"status": "conflict", "message": "已有任务在运行中"},
+            content={"code": 1, "message": "已有任务在运行中", "data": {"status": "conflict"}},
         )
+
+    # 底层 backfill_quotes 需要 YYYYMMDD 格式字符串
+    sd = start_date.strftime("%Y%m%d")
+    ed = end_date.strftime("%Y%m%d")
 
     async def _run():
         try:
             _task.reset()
-            result = await backfill_quotes(start_date, end_date)
+            result = await backfill_quotes(sd, ed)
             _task.complete(result["total_stocks"])
             logger.info("行情回填完成: %s", result)
         except Exception as e:
@@ -379,8 +390,9 @@ async def trigger_quotes_backfill(
     return JSONResponse(
         status_code=202,
         content={
-            "status": "accepted",
+            "code": 0,
             "message": f"历史行情回填已启动: {start_date} ~ {end_date}",
+            "data": {"status": "accepted"},
         },
     )
 
@@ -429,7 +441,7 @@ class VCPFilterOptions(BaseModel):
     concepts: list[str]
 
 
-@router.get("/vcp_watchlist/filters", response_model=VCPFilterOptions)
+@router.get("/vcp_watchlist/filters")
 async def get_vcp_filter_options(
     target_date: date | None = Query(None, description="查询日期，默认最新"),
 ):
@@ -448,7 +460,7 @@ async def get_vcp_filter_options(
             )
             query_date = max_date_q.scalar()
             if not query_date:
-                return VCPFilterOptions(industries=[], concepts=[])
+                return APIResponse(data={"industries": [], "concepts": []})
 
         # 查询所有行业（去重去空排序）
         ind_stmt = (
@@ -477,10 +489,10 @@ async def get_vcp_filter_options(
                     concept_set.add(c)
         concepts = sorted(concept_set)
 
-    return VCPFilterOptions(industries=industries, concepts=concepts)
+    return APIResponse(data={"industries": industries, "concepts": concepts})
 
 
-@router.get("/vcp_watchlist", response_model=VCPWatchlistResponse)
+@router.get("/vcp_watchlist")
 async def get_vcp_watchlist(
     target_date: date | None = Query(None, description="查询日期，默认最新"),
     industry: str | None = Query(None, description="行业筛选，多个用逗号分隔"),
@@ -507,7 +519,7 @@ async def get_vcp_watchlist(
             )
             query_date = max_date_q.scalar()
             if not query_date:
-                return VCPWatchlistResponse(count=0, date=date.today(), items=[])
+                return APIResponse(data={"count": 0, "date": str(date.today()), "items": []})
 
         # 查询白名单（兜底排除 ST 股票）
         stmt = (
@@ -558,11 +570,11 @@ async def get_vcp_watchlist(
         )
         items.append(item)
 
-    return VCPWatchlistResponse(
-        count=len(items),
-        date=query_date,
-        items=items,
-    )
+    return APIResponse(data={
+        "count": len(items),
+        "date": str(query_date),
+        "items": [i.model_dump() for i in items],
+    })
 
 
 # ── 右侧趋势策略白名单 ──
@@ -598,7 +610,7 @@ class TrendFilterOptions(BaseModel):
     concepts: list[str]
 
 
-@router.get("/trend_watchlist/filters", response_model=TrendFilterOptions)
+@router.get("/trend_watchlist/filters")
 async def get_trend_filter_options(
     target_date: date | None = Query(None, description="查询日期，默认最新"),
 ):
@@ -617,7 +629,7 @@ async def get_trend_filter_options(
             )
             query_date = max_date_q.scalar()
             if not query_date:
-                return TrendFilterOptions(industries=[], concepts=[])
+                return APIResponse(data={"industries": [], "concepts": []})
 
         # 查询所有行业（去重去空排序）
         ind_stmt = (
@@ -646,10 +658,10 @@ async def get_trend_filter_options(
                     concept_set.add(c)
         concepts = sorted(concept_set)
 
-    return TrendFilterOptions(industries=industries, concepts=concepts)
+    return APIResponse(data={"industries": industries, "concepts": concepts})
 
 
-@router.get("/trend_watchlist", response_model=TrendWatchlistResponse)
+@router.get("/trend_watchlist")
 async def get_trend_watchlist(
     target_date: date | None = Query(None, description="查询日期，默认最新"),
     industry: str | None = Query(None, description="行业筛选，多个用逗号分隔"),
@@ -677,7 +689,7 @@ async def get_trend_watchlist(
             )
             query_date = max_date_q.scalar()
             if not query_date:
-                return TrendWatchlistResponse(count=0, date=date.today(), items=[])
+                return APIResponse(data={"count": 0, "date": str(date.today()), "items": []})
 
         # 查询白名单（兜底排除 ST 股票）
         stmt = (
@@ -728,11 +740,11 @@ async def get_trend_watchlist(
         )
         items.append(item)
 
-    return TrendWatchlistResponse(
-        count=len(items),
-        date=query_date,
-        items=items,
-    )
+    return APIResponse(data={
+        "count": len(items),
+        "date": str(query_date),
+        "items": [i.model_dump() for i in items],
+    })
 
 
 # ── 价投策略白名单 ──
@@ -783,7 +795,7 @@ async def get_value_watchlist():
         stocks = result.scalars().all()
 
         if not stocks:
-            return ValueWatchlistResponse(count=0, items=[])
+            return APIResponse(data={"count": 0, "items": []})
 
         ts_codes = [s.ts_code for s in stocks]
 
@@ -843,4 +855,4 @@ async def get_value_watchlist():
             added_at=s.added_at.isoformat() if s.added_at else None,
         ))
 
-    return ValueWatchlistResponse(count=len(items), items=items)
+    return APIResponse(data={"count": len(items), "items": [i.model_dump() for i in items]})

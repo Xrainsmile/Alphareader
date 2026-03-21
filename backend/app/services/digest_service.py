@@ -136,7 +136,11 @@ def _build_digest_prompt(news_list: list[dict], period_label: str, target_date: 
 
 
 async def _call_deepseek_digest(user_prompt: str) -> str:
-    """调用 DeepSeek API 生成新闻总结，返回 Markdown 文本。"""
+    """调用 DeepSeek API 生成新闻总结（streaming 模式），返回 Markdown 文本。
+
+    使用 streaming 模式逐块接收响应，避免长回复时 DeepSeek API
+    因空闲超时导致 ReadError / ConnectError 断连。
+    """
     if not settings.DEEPSEEK_API_KEY or settings.DEEPSEEK_API_KEY.startswith("sk-your"):
         logger.warning("DeepSeek API key not configured, returning empty digest")
         return ""
@@ -149,6 +153,7 @@ async def _call_deepseek_digest(user_prompt: str) -> str:
         ],
         "temperature": 0.3,
         "max_tokens": 1500,
+        "stream": True,
     }
 
     headers = {
@@ -158,17 +163,41 @@ async def _call_deepseek_digest(user_prompt: str) -> str:
 
     max_retries = max(settings.DEEPSEEK_MAX_RETRIES, 3)  # 至少重试 3 次
 
-    async with httpx.AsyncClient(timeout=90.0) as client:
+    import json as _json
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=120.0)) as client:
         for attempt in range(1, max_retries + 1):
             try:
-                resp = await client.post(
-                    settings.DEEPSEEK_API_URL, json=payload, headers=headers
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                logger.info("Digest generated: %d chars", len(content))
-                return content.strip()
+                chunks: list[str] = []
+                async with client.stream(
+                    "POST",
+                    settings.DEEPSEEK_API_URL,
+                    json=payload,
+                    headers=headers,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data_str = line[len("data:"):].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = _json.loads(data_str)
+                            delta = data["choices"][0].get("delta", {})
+                            if "content" in delta and delta["content"]:
+                                chunks.append(delta["content"])
+                        except (_json.JSONDecodeError, KeyError, IndexError):
+                            continue
+
+                content = "".join(chunks)
+                if content:
+                    logger.info("Digest generated (stream): %d chars", len(content))
+                    return content.strip()
+                else:
+                    logger.warning("Digest stream returned empty content (attempt %d/%d)", attempt, max_retries)
+
             except httpx.HTTPStatusError as e:
                 body = e.response.text[:500] if e.response else "N/A"
                 logger.error(
