@@ -15,10 +15,12 @@ def _patch_sync_token(monkeypatch):
 
 class TestReportsAPI:
     async def test_reports_crud_flow(self, client):
-        # 1) list empty
+        # 1) list empty — APIResponse: {code, message, data: []}
         resp = await client.get("/api/v1/reports/")
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"] == []
 
         # 2) sync without token -> 401
         resp = await client.post(
@@ -27,7 +29,7 @@ class TestReportsAPI:
         )
         assert resp.status_code == 401
 
-        # 3) sync with token -> create
+        # 3) sync with token -> create — APIResponse: {data: {action, id}}
         payload_create = {
             "sync_id": "test-0212",
             "title": "测试复盘",
@@ -42,19 +44,19 @@ class TestReportsAPI:
             headers={"Authorization": "Bearer test-report-token"},
         )
         assert resp.status_code == 200
-        assert resp.json()["action"] == "created"
+        assert resp.json()["data"]["action"] == "created"
 
         # 4) list has 1+
         resp = await client.get("/api/v1/reports/")
         assert resp.status_code == 200
-        items = resp.json()
+        items = resp.json()["data"]
         assert len(items) >= 1
 
-        # 5) detail
+        # 5) detail — APIResponse: {data: {title, ...}}
         rid = items[0]["id"]
         resp = await client.get(f"/api/v1/reports/{rid}")
         assert resp.status_code == 200
-        assert resp.json()["title"] == "测试复盘"
+        assert resp.json()["data"]["title"] == "测试复盘"
 
         # 6) upsert (update)
         payload_update = {
@@ -71,7 +73,7 @@ class TestReportsAPI:
             headers={"Authorization": "Bearer test-report-token"},
         )
         assert resp.status_code == 200
-        assert resp.json()["action"] == "updated"
+        assert resp.json()["data"]["action"] == "updated"
 
         # 7) 404 detail
         resp = await client.get("/api/v1/reports/99999")

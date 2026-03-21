@@ -7,8 +7,8 @@ Endpoints:
   GET    /api/v1/reports/{id}   — Get single report by id
 """
 
+import datetime
 import logging
-from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -31,7 +31,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 class ReportSyncRequest(BaseModel):
     sync_id: str
     title: str
-    date: Optional[date] = None  # YYYY-MM-DD string auto-parsed to date
+    date: Optional[datetime.date] = None  # YYYY-MM-DD string auto-parsed to date
     cover: str = ""
     summary: str = ""
     content: str
@@ -41,7 +41,7 @@ class ReportListItem(BaseModel):
     id: int
     sync_id: str
     title: str
-    date: date
+    date: datetime.date
     cover: str
     summary: str
 
@@ -53,7 +53,7 @@ class ReportDetail(BaseModel):
     id: int
     sync_id: str
     title: str
-    date: date
+    date: datetime.date
     cover: str
     summary: str
     content: str
