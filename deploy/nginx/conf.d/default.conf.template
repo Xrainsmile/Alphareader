@@ -8,8 +8,9 @@ map $http_x_api_key $final_api_key {
 }
 
 # Rate limiting zones
-# General API: 30 requests/minute per IP (burst up to 15)
-limit_req_zone $binary_remote_addr zone=api:10m rate=30r/m;
+# General API: 10 requests/second per IP (burst up to 30)
+# 个人应用，前端页面切换时会并发多个 API 请求，需要足够的 burst 空间
+limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
 # AI-heavy endpoints (briefings/digests generate): 3 requests/minute per IP
 limit_req_zone $binary_remote_addr zone=api_ai:10m rate=3r/m;
 
@@ -78,9 +79,9 @@ server {
         proxy_set_header X-API-Key $final_api_key;
     }
 
-    # API reverse proxy (general rate limit: 30 req/min per IP)
+    # API reverse proxy (general rate limit: 10 req/s per IP)
     location /api/ {
-        limit_req zone=api burst=15 nodelay;
+        limit_req zone=api burst=30 nodelay;
         limit_req_status 429;
 
         set $backend web;
