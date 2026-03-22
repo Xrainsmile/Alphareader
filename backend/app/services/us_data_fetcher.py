@@ -1,15 +1,15 @@
 """Alphareader — 美股数据获取模块（异步版，多源架构）。
 
 职责：
-  - 通过 **腾讯财经** 获取美股前复权日线行情（OHLCV）— 主力数据源
-  - 通过 **yfinance** 作为 fallback + 抽样交叉验证
+  - 通过 **yfinance** 获取美股前复权日线行情（OHLCV）— 主力数据源
+  - 通过 **腾讯财经** 作为辅助交叉验证
   - 数据自洽性校验（写入 DB 前自动检查）
   - 持久化到 PostgreSQL（stock_daily_quote 表，market='US'）
   - 智能缓存：当天已有数据则跳过下载
 
 数据源优先级：
-  1. 腾讯财经 API — 日K线 + 实时行情（国内 CDN，速度快）
-  2. yfinance — fallback 数据源 + 周末抽样验证
+  1. yfinance — 主力数据源（美股历史K线完整）
+  2. 腾讯财经 API — 辅助验证（美股K线数据量不足，仅用于交叉验证）
   3. 新浪财经 — 最后一天实时行情抽样验证
 
 内存优化：
@@ -66,9 +66,15 @@ def _sync_fetch_us_stock_list() -> pd.DataFrame:
       3. 最终 fallback：硬编码核心 50 只
     """
     try:
-        # 获取 S&P500 成分股（通过 Wikipedia）
+        # 获取 S&P500 成分股（通过 Wikipedia，设置 timeout 避免卡住）
         sp500_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        tables = pd.read_html(sp500_url)
+        req = urllib.request.Request(sp500_url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8")
+
+        tables = pd.read_html(html)
         sp500 = tables[0][["Symbol", "Security"]].copy()
         sp500.columns = ["代码", "名称"]
         # 清理 ticker（有些有 . 如 BRK.B）
@@ -765,7 +771,7 @@ async def save_us_to_db(df: pd.DataFrame) -> int:
 
 
 # ============================================================
-# 7. 主入口 — 全量获取美股行情（腾讯主力 + yfinance fallback）
+# 7. 主入口 — 全量获取美股行情（yfinance 主力 + 腾讯交叉验证）
 # ============================================================
 
 async def get_all_us_stock_data(force_refresh: bool = False) -> pd.DataFrame:
@@ -774,10 +780,9 @@ async def get_all_us_stock_data(force_refresh: bool = False) -> pd.DataFrame:
     流程：
       1. 检查 PostgreSQL 是否已有当天美股数据
       2. 若有效则直接从数据库加载返回
-      3. 优先使用腾讯财经 API 逐只获取日K线
-      4. 腾讯失败的股票用 yfinance 批量兜底
-      5. 数据自洽性校验 → 写入 PostgreSQL
-      6. 抽样交叉验证
+      3. 使用 yfinance 批量获取日K线（主力数据源）
+      4. 数据自洽性校验 → 写入 PostgreSQL
+      5. 腾讯/新浪抽样交叉验证
 
     Args:
         force_refresh: 为 True 时强制重新下载。
@@ -800,104 +805,78 @@ async def get_all_us_stock_data(force_refresh: bool = False) -> pd.DataFrame:
     names = dict(zip(stock_list["代码"], stock_list["名称"]))
     total = len(codes)
 
-    logger.info("开始获取美股行情（腾讯主力 + yfinance fallback），共 %d 只...", total)
+    logger.info("开始获取美股行情（yfinance 主力），共 %d 只...", total)
+
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=LOOKBACK_DAYS)).strftime("%Y-%m-%d")
 
     total_records = 0
     total_stocks = 0
-    tencent_ok = 0
-    tencent_fail_tickers: list[str] = []
-    all_tencent_data: dict[str, pd.DataFrame] = {}  # 用于交叉验证
+    yf_ok = 0
+    yf_fail_tickers: list[str] = []
 
-    # ── 阶段 1: 腾讯财经逐只获取 ──
-    TENCENT_BATCH = 200  # 每 200 只写入一次 DB
-    batch_dfs: list[pd.DataFrame] = []
+    # ── 阶段 1: yfinance 批量获取（主力数据源）──
+    YF_BATCH = 20  # 每批 20 只
 
-    for idx, ticker in enumerate(codes, 1):
-        if idx % 100 == 0:
-            logger.info("腾讯美股K线进度: %d/%d (%.1f%%), 成功=%d, 失败=%d",
-                         idx, total, idx / total * 100, tencent_ok, len(tencent_fail_tickers))
+    for i in range(0, total, YF_BATCH):
+        batch_tickers = codes[i : i + YF_BATCH]
+        batch_idx = i // YF_BATCH + 1
+        total_batches = (total + YF_BATCH - 1) // YF_BATCH
 
-        df = await asyncio.to_thread(_sync_fetch_tencent_us_kline, ticker, 320)
-        if df is not None and not df.empty:
-            df["name"] = names.get(ticker, "")
-            batch_dfs.append(df)
-            all_tencent_data[ticker] = df
-            tencent_ok += 1
-        else:
-            tencent_fail_tickers.append(ticker)
+        logger.info("yfinance 批次 %d/%d: %d 只 (%s...)",
+                     batch_idx, total_batches, len(batch_tickers), batch_tickers[0])
 
-        # 每 TENCENT_BATCH 只写入一次 DB
-        if len(batch_dfs) >= TENCENT_BATCH:
-            combined = pd.concat(batch_dfs, ignore_index=True)
-            combined = combined[combined["volume"] > 0].copy()
-            combined.drop_duplicates(subset=["ts_code", "trade_date"], inplace=True)
-            if not combined.empty:
-                written = await save_us_to_db(combined)
-                total_records += written
-                total_stocks += combined["ts_code"].nunique()
-                logger.info("腾讯批次写入 DB: +%d 条（累计 %d 条，%d 只）",
-                            written, total_records, total_stocks)
-            del batch_dfs, combined
-            batch_dfs = []
-            gc.collect()
+        batch_data = await asyncio.to_thread(
+            _sync_fetch_yf_batch, batch_tickers, start_date, end_date
+        )
 
-        # 腾讯 API 间隔（较宽松）
-        await asyncio.sleep(0.3 + random.uniform(0, 0.2))
+        if batch_data:
+            all_dfs = []
+            for ticker, df in batch_data.items():
+                df["name"] = names.get(ticker, "")
+                all_dfs.append(df)
+                yf_ok += 1
 
-    # 处理最后一批
-    if batch_dfs:
-        combined = pd.concat(batch_dfs, ignore_index=True)
-        combined = combined[combined["volume"] > 0].copy()
-        combined.drop_duplicates(subset=["ts_code", "trade_date"], inplace=True)
-        if not combined.empty:
-            written = await save_us_to_db(combined)
-            total_records += written
-            total_stocks += combined["ts_code"].nunique()
-        del batch_dfs, combined
-        gc.collect()
+            if all_dfs:
+                combined = pd.concat(all_dfs, ignore_index=True)
+                combined = combined[combined["volume"] > 0].copy()
+                combined.drop_duplicates(subset=["ts_code", "trade_date"], inplace=True)
+                if not combined.empty:
+                    written = await save_us_to_db(combined)
+                    total_records += written
+                    total_stocks += combined["ts_code"].nunique()
+                    logger.info("yfinance 批次写入 DB: +%d 条（累计 %d 条，%d 只）",
+                                written, total_records, total_stocks)
+                del all_dfs, combined
+                gc.collect()
 
-    logger.info("腾讯财经阶段完成: 成功=%d, 失败=%d", tencent_ok, len(tencent_fail_tickers))
+        # 记录失败的 ticker
+        for t in batch_tickers:
+            if t not in (batch_data or {}):
+                yf_fail_tickers.append(t)
 
-    # ── 阶段 2: yfinance fallback（腾讯失败的股票）──
-    if tencent_fail_tickers:
-        logger.info("开始 yfinance fallback，补全 %d 只腾讯失败的股票...", len(tencent_fail_tickers))
+        await asyncio.sleep(1.0 + random.uniform(0, 0.5))
 
-        end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    logger.info("yfinance 阶段完成: 成功=%d, 失败=%d", yf_ok, len(yf_fail_tickers))
 
-        YF_BATCH = 20
-        yf_ok = 0
-        yf_fail = 0
+    # ── 阶段 2: yfinance 单只重试（失败的股票逐只获取）──
+    if yf_fail_tickers:
+        logger.info("开始逐只重试 %d 只 yfinance 失败的股票...", len(yf_fail_tickers))
+        retry_ok = 0
+        for ticker in yf_fail_tickers:
+            df = await asyncio.to_thread(_sync_fetch_yf_single, ticker, start_date, end_date)
+            if df is not None and not df.empty:
+                df["name"] = names.get(ticker, "")
+                df = df[df["volume"] > 0].copy()
+                df.drop_duplicates(subset=["ts_code", "trade_date"], inplace=True)
+                if not df.empty:
+                    written = await save_us_to_db(df)
+                    total_records += written
+                    total_stocks += 1
+                    retry_ok += 1
+            await asyncio.sleep(0.5 + random.uniform(0, 0.3))
 
-        for i in range(0, len(tencent_fail_tickers), YF_BATCH):
-            batch_tickers = tencent_fail_tickers[i : i + YF_BATCH]
-
-            batch_data = await asyncio.to_thread(
-                _sync_fetch_yf_batch, batch_tickers, start_date, end_date
-            )
-
-            if batch_data:
-                all_dfs = []
-                for ticker, df in batch_data.items():
-                    df["name"] = names.get(ticker, "")
-                    all_dfs.append(df)
-                    yf_ok += 1
-
-                if all_dfs:
-                    combined = pd.concat(all_dfs, ignore_index=True)
-                    combined = combined[combined["volume"] > 0].copy()
-                    combined.drop_duplicates(subset=["ts_code", "trade_date"], inplace=True)
-                    if not combined.empty:
-                        written = await save_us_to_db(combined)
-                        total_records += written
-                        total_stocks += combined["ts_code"].nunique()
-                    del all_dfs, combined
-                    gc.collect()
-
-            yf_fail += len(batch_tickers) - len(batch_data)
-            await asyncio.sleep(1.0 + random.uniform(0, 0.5))
-
-        logger.info("yfinance fallback 完成: 补全=%d, 仍失败=%d", yf_ok, yf_fail)
+        logger.info("逐只重试完成: 补全=%d, 仍失败=%d", retry_ok, len(yf_fail_tickers) - retry_ok)
 
     # ── 阶段 3: 数据冻结检测 ──
     all_data = await load_us_from_db()
@@ -906,32 +885,40 @@ async def get_all_us_stock_data(force_refresh: bool = False) -> pd.DataFrame:
         if stale:
             logger.warning("全量下载后发现 %d 只股票疑似数据冻结", len(stale))
 
-    # ── 阶段 4: 交叉验证（异步，不阻塞主流程）──
-    if all_tencent_data:
-        try:
-            report = await cross_validate_latest(all_tencent_data)
+    # ── 阶段 4: 腾讯交叉验证（抽样，不阻塞主流程）──
+    try:
+        # 抽样几只用腾讯数据验证 yfinance 结果
+        sample_tickers = random.sample(codes, min(5, len(codes)))
+        tencent_data: dict[str, pd.DataFrame] = {}
+        for ticker in sample_tickers:
+            tc_df = await asyncio.to_thread(_sync_fetch_tencent_us_kline, ticker, 10)
+            if tc_df is not None and not tc_df.empty:
+                tencent_data[ticker] = tc_df
+            await asyncio.sleep(0.3)
+
+        if tencent_data:
+            report = await cross_validate_latest(tencent_data)
             logger.info("交叉验证报告: 抽样=%d, yf匹配率=%.0f%%, 告警=%d",
                          report.get("sample_size", 0),
                          report.get("yf_match_rate", 0) * 100,
                          len(report.get("alerts", [])))
-        except Exception as e:
-            logger.warning("交叉验证异常（不影响主流程）: %s", e)
+    except Exception as e:
+        logger.warning("交叉验证异常（不影响主流程）: %s", e)
 
-    yf_fallback_count = len(tencent_fail_tickers)
-    logger.info("美股行情获取完成 ✅ 共 %d 条记录，涉及 %d 只股票（腾讯成功=%d, yfinance尝试补全=%d）",
-                total_records, total_stocks, tencent_ok, yf_fallback_count)
+    logger.info("美股行情获取完成 ✅ 共 %d 条记录，涉及 %d 只股票（yfinance 成功=%d）",
+                total_records, total_stocks, yf_ok)
 
     return await load_us_from_db()
 
 
 # ============================================================
-# 8. 增量更新（腾讯主力 + yfinance fallback）
+# 8. 增量更新（yfinance 主力 + 腾讯交叉验证）
 # ============================================================
 
 async def incremental_update_us_quotes(days: int = 10) -> int:
     """增量更新美股行情数据。
 
-    策略同全量：腾讯主力 → yfinance fallback → 自洽性校验 → 交叉验证。
+    策略：yfinance 主力批量获取 → 自洽性校验 → 腾讯抽样交叉验证。
 
     Args:
         days: 回溯天数，默认 10
@@ -954,90 +941,56 @@ async def incremental_update_us_quotes(days: int = 10) -> int:
 
     logger.info("开始美股增量更新（最近 %d 天），共 %d 只...", days, total)
 
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
     total_records = 0
-    tencent_ok = 0
-    tencent_fail_tickers: list[str] = []
-    all_tencent_data: dict[str, pd.DataFrame] = {}
 
-    # ── 腾讯财经批量获取 ──
-    batch_dfs: list[pd.DataFrame] = []
-    BATCH_WRITE = 500
+    # ── yfinance 批量获取（主力数据源）──
+    YF_BATCH = 50
 
-    for idx, ticker in enumerate(codes, 1):
-        df = await asyncio.to_thread(_sync_fetch_tencent_us_kline, ticker, days + 5)
-        if df is not None and not df.empty:
-            df["name"] = names.get(ticker, "")
-            batch_dfs.append(df)
-            all_tencent_data[ticker] = df
-            tencent_ok += 1
-        else:
-            tencent_fail_tickers.append(ticker)
+    for i in range(0, total, YF_BATCH):
+        batch_tickers = codes[i : i + YF_BATCH]
 
-        if len(batch_dfs) >= BATCH_WRITE:
-            combined = pd.concat(batch_dfs, ignore_index=True)
-            combined = combined[combined["volume"] > 0].copy()
-            combined.drop_duplicates(subset=["ts_code", "trade_date"], inplace=True)
-            if not combined.empty:
-                written = await save_us_to_db(combined)
-                total_records += written
-            del batch_dfs, combined
-            batch_dfs = []
-            gc.collect()
+        batch_data = await asyncio.to_thread(
+            _sync_fetch_yf_batch, batch_tickers, start_date, end_date
+        )
 
-        # 增量模式间隔更短
-        await asyncio.sleep(0.15 + random.uniform(0, 0.1))
+        if batch_data:
+            all_dfs = []
+            for ticker, df in batch_data.items():
+                df["name"] = names.get(ticker, "")
+                all_dfs.append(df)
+            if all_dfs:
+                combined = pd.concat(all_dfs, ignore_index=True)
+                combined = combined[combined["volume"] > 0].copy()
+                combined.drop_duplicates(subset=["ts_code", "trade_date"], inplace=True)
+                if not combined.empty:
+                    written = await save_us_to_db(combined)
+                    total_records += written
+                del all_dfs, combined
+                gc.collect()
 
-    # 处理最后一批
-    if batch_dfs:
-        combined = pd.concat(batch_dfs, ignore_index=True)
-        combined = combined[combined["volume"] > 0].copy()
-        combined.drop_duplicates(subset=["ts_code", "trade_date"], inplace=True)
-        if not combined.empty:
-            written = await save_us_to_db(combined)
-            total_records += written
-        del batch_dfs, combined
-        gc.collect()
+        await asyncio.sleep(0.5 + random.uniform(0, 0.3))
 
-    # ── yfinance fallback ──
-    if tencent_fail_tickers:
-        logger.info("增量 yfinance fallback: %d 只...", len(tencent_fail_tickers))
+    logger.info("美股增量更新完成 ✅ 共 %d 条记录（yfinance 批量获取）", total_records)
 
-        end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    # ── 腾讯抽样交叉验证（增量也做，但不阻塞）──
+    try:
+        sample = random.sample(codes, min(5, len(codes)))
+        tencent_data: dict[str, pd.DataFrame] = {}
+        for ticker in sample:
+            tc_df = await asyncio.to_thread(_sync_fetch_tencent_us_kline, ticker, days + 5)
+            if tc_df is not None and not tc_df.empty:
+                tencent_data[ticker] = tc_df
+            await asyncio.sleep(0.3)
 
-        YF_BATCH = 50
-        for i in range(0, len(tencent_fail_tickers), YF_BATCH):
-            batch_tickers = tencent_fail_tickers[i : i + YF_BATCH]
-            batch_data = await asyncio.to_thread(
-                _sync_fetch_yf_batch, batch_tickers, start_date, end_date
-            )
-            if batch_data:
-                all_dfs = []
-                for ticker, df in batch_data.items():
-                    df["name"] = names.get(ticker, "")
-                    all_dfs.append(df)
-                if all_dfs:
-                    combined = pd.concat(all_dfs, ignore_index=True)
-                    combined = combined[combined["volume"] > 0].copy()
-                    combined.drop_duplicates(subset=["ts_code", "trade_date"], inplace=True)
-                    if not combined.empty:
-                        written = await save_us_to_db(combined)
-                        total_records += written
-                    del all_dfs, combined
-                    gc.collect()
-            await asyncio.sleep(0.5 + random.uniform(0, 0.3))
-
-    logger.info("美股增量更新完成 ✅ 共 %d 条（腾讯=%d, yf补全=%d）",
-                total_records, tencent_ok, len(tencent_fail_tickers))
-
-    # ── 交叉验证（增量也做，但不阻塞）──
-    if all_tencent_data:
-        try:
-            report = await cross_validate_latest(all_tencent_data, sample_size=5)
+        if tencent_data:
+            report = await cross_validate_latest(tencent_data, sample_size=5)
             if report.get("alerts"):
                 logger.warning("增量交叉验证告警: %s", report["alerts"])
-        except Exception as e:
-            logger.debug("增量交叉验证异常: %s", e)
+    except Exception as e:
+        logger.debug("增量交叉验证异常: %s", e)
 
     return total_records
 
