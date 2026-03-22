@@ -435,6 +435,17 @@ def _generate_futu_url(ts_code: str) -> str:
     return f"https://www.futunn.com/stock/{code}-{market}"
 
 
+def _generate_stock_url(ts_code: str) -> str:
+    """根据 A 股代码生成东方财富个股详情链接（更可靠的替代方案）。
+
+    格式: https://quote.eastmoney.com/{market}{code}.html
+    沪市(6开头) → sh, 深市(0/3开头) → sz
+    """
+    code = ts_code.replace(".SZ", "").replace(".SH", "").strip()
+    market = "sh" if code.startswith(("6", "5")) else "sz"
+    return f"https://quote.eastmoney.com/{market}{code}.html"
+
+
 class VCPFilterOptions(BaseModel):
     """VCP 白名单可用的行业和概念枚举值。"""
     industries: list[str]
@@ -880,23 +891,25 @@ async def ticker_lookup(
 
     支持多种输入格式：纯数字代码（300750）、带后缀（300750.SZ）、美股代码（NVDA）。
     先从 VCP 和趋势白名单最新数据中匹配，返回是否在白名单中及相关评分。
+    若不在白名单中，从行情表兜底查询股票名称。
     """
     from sqlalchemy import select, func as sa_func
 
     from app.database import async_session
     from app.models.screener import WatchlistDaily, TrendWatchlistDaily
+    from app.models.stock import StockDailyQuote
 
     raw = code.strip().upper()
 
-    # 标准化为可匹配的格式
-    # 纯数字 → 加后缀（6开头 → .SH，其他 → .SZ）
-    # 已有后缀 → 直接用
-    # 非数字（如 NVDA）→ 保留原样用于美股匹配
+    # 标准化为纯数字代码（数据库中白名单和行情表均使用纯数字格式）
+    # 带后缀（300750.SZ） → 去后缀
+    # 纯数字（300750） → 直接用
+    # 非数字（如 NVDA） → 保留原样用于美股匹配
+    is_a_stock = False
     if raw.replace(".", "").replace("SZ", "").replace("SH", "").isdigit():
-        # A 股代码
-        digits = raw.split(".")[0]
-        suffix = ".SH" if digits.startswith("6") else ".SZ"
-        ts_code = f"{digits}{suffix}"
+        # A 股代码：统一为纯数字
+        ts_code = raw.split(".")[0]
+        is_a_stock = True
     else:
         ts_code = raw
 
@@ -954,8 +967,22 @@ async def ticker_lookup(
                 if not result_data["industry"]:
                     result_data["industry"] = trend_item.industry
 
-    # 生成富途链接（仅 A 股）
-    if ts_code.endswith((".SZ", ".SH")):
-        result_data["futu_url"] = _generate_futu_url(ts_code)
+        # 兜底：若白名单中没有名称，从行情表查询
+        if not result_data["name"] and is_a_stock:
+            name_row = await session.execute(
+                select(StockDailyQuote.name)
+                .where(StockDailyQuote.ts_code == ts_code)
+                .where(StockDailyQuote.name.isnot(None))
+                .where(StockDailyQuote.name != "")
+                .order_by(StockDailyQuote.trade_date.desc())
+                .limit(1)
+            )
+            name_val = name_row.scalar()
+            if name_val:
+                result_data["name"] = name_val
+
+    # 生成行情链接（A 股用东方财富，更可靠）
+    if is_a_stock:
+        result_data["futu_url"] = _generate_stock_url(ts_code)
 
     return APIResponse(data=result_data)
