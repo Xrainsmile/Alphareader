@@ -31,6 +31,7 @@ from app.services.us_data_fetcher import (
     _sync_fetch_yf_batch,
     _sync_fetch_yf_single,
     _tencent_us_code,
+    _try_tencent_kline,
     _us_df_to_records,
     cross_validate_latest,
     detect_stale_data,
@@ -112,24 +113,25 @@ class TestStockList:
 
 class TestTencentSource:
     def test_tencent_us_code_normal(self):
-        """普通 ticker → usXXXX 格式。"""
-        assert _tencent_us_code("AAPL") == "usAAPL"
-        assert _tencent_us_code("MSFT") == "usMSFT"
+        """普通 ticker → usXXXX.OQ/N 格式（带交易所后缀）。"""
+        assert _tencent_us_code("AAPL") == "usAAPL.OQ"  # NASDAQ
+        assert _tencent_us_code("MSFT") == "usMSFT.OQ"  # NASDAQ
+        assert _tencent_us_code("JPM") == "usJPM.N"     # NYSE
 
     def test_tencent_us_code_with_dash(self):
-        """BRK-B 中的 - 应转为 .（腾讯格式）。"""
-        assert _tencent_us_code("BRK-B") == "usBRK.B"
+        """BRK-B 中的 - 应转为 .（腾讯格式），且带交易所后缀。"""
+        assert _tencent_us_code("BRK-B") == "usBRK.B.N"  # NYSE
 
     def test_tencent_us_code_lowercase_preserved(self):
-        """转换不改变大小写。"""
-        assert _tencent_us_code("GOOGL") == "usGOOGL"
+        """转换不改变大小写，带交易所后缀。"""
+        assert _tencent_us_code("GOOGL") == "usGOOGL.OQ"
 
     @patch("app.services.us_data_fetcher.urllib.request.urlopen")
     def test_tencent_kline_parse_qfqday(self, mock_urlopen):
         """腾讯 K 线数据（qfqday 格式）能正确解析。"""
         fake_data = {
             "data": {
-                "usAAPL": {
+                "usAAPL.OQ": {
                     "qfqday": [
                         ["2025-03-17", "170.00", "172.50", "173.00", "169.00", "50000000"],
                         ["2025-03-18", "172.50", "175.00", "176.00", "171.50", "55000000"],
@@ -163,7 +165,7 @@ class TestTencentSource:
         """如果没有 qfqday，应 fallback 到 day 字段。"""
         fake_data = {
             "data": {
-                "usMSFT": {
+                "usMSFT.OQ": {
                     "day": [
                         ["2025-03-17", "400.00", "405.00", "407.00", "398.00", "30000000"],
                     ]
@@ -206,7 +208,7 @@ class TestTencentSource:
         """损坏的行应被跳过，不影响正常数据。"""
         fake_data = {
             "data": {
-                "usAAPL": {
+                "usAAPL.OQ": {
                     "qfqday": [
                         ["2025-03-17", "170.00", "172.50", "173.00", "169.00", "50000000"],
                         ["2025-03-18", "bad", "bad", "bad", "bad", "bad"],      # 坏数据
@@ -689,7 +691,7 @@ class TestEdgeCases:
             assert isinstance(r["trade_date"], date)
 
     def test_tencent_code_special_characters(self):
-        """包含特殊字符的 ticker 转换。"""
-        # 一些 ticker 可能有数字
-        assert _tencent_us_code("3M") == "us3M"
-        assert _tencent_us_code("A") == "usA"
+        """包含特殊字符的 ticker 转换（带交易所后缀）。"""
+        # 一些 ticker 可能有数字，非 NYSE 核心列表则默认 OQ
+        assert _tencent_us_code("3M") == "us3M.OQ"
+        assert _tencent_us_code("A") == "usA.OQ"
