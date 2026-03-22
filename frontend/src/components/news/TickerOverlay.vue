@@ -45,7 +45,7 @@
         <!-- 操作按钮 -->
         <view class="ticker-overlay-actions">
           <view v-if="data?.futu_url" class="ticker-action-btn ticker-action-futu" @click="$emit('open-futu')">
-            <text class="ticker-action-text">查看行情详情</text>
+            <text class="ticker-action-text">在富途查看</text>
           </view>
           <view class="ticker-action-btn ticker-action-search" @click="$emit('search-news')">
             <text class="ticker-action-text">搜索相关新闻</text>

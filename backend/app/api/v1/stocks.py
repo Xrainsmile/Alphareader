@@ -435,16 +435,6 @@ def _generate_futu_url(ts_code: str) -> str:
     return f"https://www.futunn.com/stock/{code}-{market}"
 
 
-def _generate_stock_url(ts_code: str) -> str:
-    """根据 A 股代码生成东方财富个股详情链接（更可靠的替代方案）。
-
-    格式: https://quote.eastmoney.com/{market}{code}.html
-    沪市(6开头) → sh, 深市(0/3开头) → sz
-    """
-    code = ts_code.replace(".SZ", "").replace(".SH", "").strip()
-    market = "sh" if code.startswith(("6", "5")) else "sz"
-    return f"https://quote.eastmoney.com/{market}{code}.html"
-
 
 class VCPFilterOptions(BaseModel):
     """VCP 白名单可用的行业和概念枚举值。"""
@@ -981,8 +971,8 @@ async def ticker_lookup(
             if name_val:
                 result_data["name"] = name_val
 
-    # 生成行情链接（A 股用东方财富，更可靠）
+    # 生成富途链接（A 股）
     if is_a_stock:
-        result_data["futu_url"] = _generate_stock_url(ts_code)
+        result_data["futu_url"] = _generate_futu_url(ts_code)
 
     return APIResponse(data=result_data)
