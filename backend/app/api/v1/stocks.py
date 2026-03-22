@@ -424,16 +424,20 @@ class VCPWatchlistResponse(BaseModel):
     items: list[VCPWatchlistItem]
 
 
-def _generate_futu_url(ts_code: str, is_a_stock: bool = True) -> str:
+def _generate_futu_url(ts_code: str, market: str = "A") -> str:
     """根据股票代码生成富途牛牛网页版报价链接。
 
     A 股格式: https://www.futunn.com/stock/{code}-{SH/SZ}
+    港股格式: https://www.futunn.com/stock/{code}-HK
     美股格式: https://www.futunn.com/stock/{SYMBOL}-US
     """
-    if is_a_stock:
+    if market == "A":
         code = ts_code.replace(".SZ", "").replace(".SH", "").strip()
-        market = "SH" if code.startswith("6") else "SZ"
-        return f"https://www.futunn.com/stock/{code}-{market}"
+        suffix = "SH" if code.startswith("6") else "SZ"
+        return f"https://www.futunn.com/stock/{code}-{suffix}"
+    elif market == "HK":
+        code = ts_code.strip()
+        return f"https://www.futunn.com/stock/{code}-HK"
     else:
         symbol = ts_code.upper().strip()
         return f"https://www.futunn.com/stock/{symbol}-US"
@@ -895,15 +899,21 @@ async def ticker_lookup(
 
     raw = code.strip().upper()
 
-    # 标准化为纯数字代码（数据库中白名单和行情表均使用纯数字格式）
-    # 带后缀（300750.SZ） → 去后缀
-    # 纯数字（300750） → 直接用
-    # 非数字（如 NVDA） → 保留原样用于美股匹配
-    is_a_stock = False
+    # 标准化代码并识别市场
+    # A 股：6位纯数字（如 300750、600519）或带 .SZ/.SH 后缀
+    # 港股：5位纯数字（如 00700、09988）
+    # 美股：含字母（如 NVDA、AAPL）
+    market_type = "US"  # 默认美股
     if raw.replace(".", "").replace("SZ", "").replace("SH", "").isdigit():
-        # A 股代码：统一为纯数字
-        ts_code = raw.split(".")[0]
-        is_a_stock = True
+        digits = raw.split(".")[0]
+        if len(digits) == 5:
+            # 港股：5 位纯数字
+            ts_code = digits
+            market_type = "HK"
+        else:
+            # A 股：6 位纯数字
+            ts_code = digits
+            market_type = "A"
     else:
         ts_code = raw
 
@@ -975,7 +985,7 @@ async def ticker_lookup(
             if name_val:
                 result_data["name"] = name_val
 
-    # 生成富途链接（A 股 & 美股）
-    result_data["futu_url"] = _generate_futu_url(ts_code, is_a_stock=is_a_stock)
+    # 生成富途链接（A 股 / 港股 / 美股）
+    result_data["futu_url"] = _generate_futu_url(ts_code, market=market_type)
 
     return APIResponse(data=result_data)
