@@ -424,15 +424,19 @@ class VCPWatchlistResponse(BaseModel):
     items: list[VCPWatchlistItem]
 
 
-def _generate_futu_url(ts_code: str) -> str:
-    """根据 A 股代码生成富途牛牛网页版报价链接。
+def _generate_futu_url(ts_code: str, is_a_stock: bool = True) -> str:
+    """根据股票代码生成富途牛牛网页版报价链接。
 
-    格式: https://www.futunn.com/stock/{code}-{market}
-    沪市(6开头) → -SH, 深市(0/3开头) → -SZ
+    A 股格式: https://www.futunn.com/stock/{code}-{SH/SZ}
+    美股格式: https://www.futunn.com/stock/{SYMBOL}-US
     """
-    code = ts_code.replace(".SZ", "").replace(".SH", "").strip()
-    market = "SH" if code.startswith("6") else "SZ"
-    return f"https://www.futunn.com/stock/{code}-{market}"
+    if is_a_stock:
+        code = ts_code.replace(".SZ", "").replace(".SH", "").strip()
+        market = "SH" if code.startswith("6") else "SZ"
+        return f"https://www.futunn.com/stock/{code}-{market}"
+    else:
+        symbol = ts_code.upper().strip()
+        return f"https://www.futunn.com/stock/{symbol}-US"
 
 
 
@@ -971,8 +975,7 @@ async def ticker_lookup(
             if name_val:
                 result_data["name"] = name_val
 
-    # 生成富途链接（A 股）
-    if is_a_stock:
-        result_data["futu_url"] = _generate_futu_url(ts_code)
+    # 生成富途链接（A 股 & 美股）
+    result_data["futu_url"] = _generate_futu_url(ts_code, is_a_stock=is_a_stock)
 
     return APIResponse(data=result_data)
