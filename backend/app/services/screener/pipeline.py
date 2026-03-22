@@ -48,12 +48,13 @@ class ScreenerPipeline:
     """每日白名单筛选管道 — 编排数据加载、过滤、输出全流程。
 
     使用方法：
-        pipeline = ScreenerPipeline()
+        pipeline = ScreenerPipeline(market="CN")
         result = await pipeline.run()
     """
 
     def __init__(
         self,
+        market: str = "CN",
         stage2_config: Stage2FilterConfig | None = None,
         fundamental_config: FundamentalFilterConfig | None = None,
         output_dir: str | Path | None = None,
@@ -62,12 +63,14 @@ class ScreenerPipeline:
         """初始化筛选管道。
 
         Args:
+            market: 市场标识，"CN"（A 股）或 "US"（美股）
             stage2_config: Stage2 过滤器配置，None 使用默认值
             fundamental_config: 基本面过滤器配置，None 使用默认值
             output_dir: 输出目录，默认 data/watchlists/
             dry_run: 仅打印不保存文件
         """
-        self.loader = DataLoader()
+        self.market = market.upper()
+        self.loader = DataLoader(market=self.market)
         self.stage2_screener = MinerviniScreener(stage2_config)
         self.fundamental_filter = FundamentalFilter(fundamental_config)
         self.output_dir = Path(output_dir) if output_dir else OUTPUT_DIR
@@ -82,11 +85,12 @@ class ScreenerPipeline:
         pipeline_start = time.time()
         today_str = date.today().strftime("%Y-%m-%d")
         logger.info("=" * 60)
-        logger.info("Daily Screener 启动 | %s", today_str)
+        logger.info("Daily Screener 启动 | %s | market=%s", today_str, self.market)
         logger.info("=" * 60)
 
         result = {
             "date": today_str,
+            "market": self.market,
             "watchlist": [],
             "stats": {},
             "errors": [],
@@ -107,10 +111,11 @@ class ScreenerPipeline:
             return result
         logger.info("Step 1 OHLCV 加载完成 [%.1fs]", time.time() - step_start)
 
-        # ── Step 1.5: 剔除 ST 股票 ──
+        # ── Step 1.5: 剔除 ST 股票（仅 A 股市场）──
         st_codes: set[str] = set()
         try:
-            st_codes = await self._load_st_codes()
+            from .utils import load_st_codes
+            st_codes = await load_st_codes(self.market)
             if st_codes:
                 before = ohlcv["ts_code"].nunique()
                 ohlcv = ohlcv[~ohlcv["ts_code"].isin(st_codes)]
@@ -237,7 +242,8 @@ class ScreenerPipeline:
         # 从本地 DB 批量查出股票名称（stock_daily_quote 每天入库时已带 name）
         name_map: dict[str, str] = {}
         try:
-            name_map = await self._load_stock_names(final_codes)
+            from .utils import load_stock_names
+            name_map = await load_stock_names(final_codes, self.market)
             logger.info("从 DB 加载 %d 只股票名称", len(name_map))
         except Exception as e:
             logger.warning("从 DB 加载股票名称失败（不影响后续流程）: %s", e)
@@ -247,12 +253,12 @@ class ScreenerPipeline:
         )
         result["stats"]["output_count"] = len(watchlist)
 
-        # ── Step 7.5: 补充行业/题材/主营/资金流向 ──
+        # ── Step 7.5: 补充行业/题材/主营/资金流向（仅 A 股）──
         if watchlist and not self.dry_run:
             step_start = time.time()
             try:
                 from .enricher import enrich_watchlist
-                watchlist = await enrich_watchlist(watchlist)
+                watchlist = await enrich_watchlist(watchlist, market=self.market)
                 logger.info("Step 7.5 数据补充完成 [%.1fs]", time.time() - step_start)
             except Exception as e:
                 logger.warning("Step 7.5 数据补充异常（不影响后续流程）: %s", e)
@@ -278,86 +284,6 @@ class ScreenerPipeline:
         logger.info("=" * 60)
 
         return result
-
-    async def _load_st_codes(self) -> set[str]:
-        """从数据库中查询最近完整交易日名称包含 ST 的股票代码。
-
-        匹配规则：股票简称包含 'ST'（覆盖 *ST、ST 两种情况）。
-        仅查最近的完整交易日，避免历史上曾 ST 但已摘帽的股票被误杀。
-
-        注意：不能简单取 MAX(trade_date)，因为当天数据可能还在入库中
-        （只有少量记录），会导致 ST 列表几乎为空。改为取最近一个
-        至少有 1000 只股票记录的交易日，确保数据完整。
-
-        Returns:
-            ST 股票的 ts_code 集合
-        """
-        from sqlalchemy import text as sa_text
-
-        # 取最近一个有完整数据的交易日（至少 1000 只股票）
-        sql = sa_text("""
-            WITH full_dates AS (
-                SELECT trade_date, COUNT(DISTINCT ts_code) AS cnt
-                FROM stock_daily_quote
-                GROUP BY trade_date
-                HAVING COUNT(DISTINCT ts_code) >= 1000
-                ORDER BY trade_date DESC
-                LIMIT 1
-            )
-            SELECT DISTINCT q.ts_code
-            FROM stock_daily_quote q
-            JOIN full_dates fd ON q.trade_date = fd.trade_date
-            WHERE q.name LIKE '%ST%'
-        """)
-
-        async with async_session() as session:
-            result = await session.execute(sql)
-            codes = {row[0] for row in result}
-
-        logger.info("_load_st_codes: 发现 %d 只 ST 股票", len(codes))
-        return codes
-
-    async def _load_stock_names(self, codes: set[str]) -> dict[str, str]:
-        """从 stock_daily_quote 表批量查询股票名称。
-
-        取最近一个有完整数据的交易日（与 _load_st_codes 相同策略），
-        然后一次性查出所有候选股票的 name。
-
-        Args:
-            codes: 需要查名称的 ts_code 集合
-
-        Returns:
-            {ts_code: name} 映射字典
-        """
-        if not codes:
-            return {}
-
-        from sqlalchemy import text as sa_text
-
-        # 取最近一个有足够非空 name 的交易日，避免取到 name 全空的日期
-        sql = sa_text("""
-            WITH name_date AS (
-                SELECT trade_date
-                FROM stock_daily_quote
-                WHERE name IS NOT NULL AND name != ''
-                GROUP BY trade_date
-                HAVING COUNT(DISTINCT ts_code) >= 500
-                ORDER BY trade_date DESC
-                LIMIT 1
-            )
-            SELECT q.ts_code, q.name
-            FROM stock_daily_quote q
-            JOIN name_date nd ON q.trade_date = nd.trade_date
-            WHERE q.ts_code = ANY(:codes)
-              AND q.name IS NOT NULL
-              AND q.name != ''
-        """)
-
-        async with async_session() as session:
-            result = await session.execute(sql, {"codes": list(codes)})
-            name_map = {row[0]: row[1] for row in result}
-
-        return name_map
 
     def _build_watchlist(
         self,
@@ -475,6 +401,7 @@ class ScreenerPipeline:
                 # 写入运行记录（始终追加，保留审计日志）
                 run = ScreenerRun(
                     run_date=today,
+                    market=self.market,
                     started_at=started,
                     finished_at=finished,
                     duration_sec=round(duration, 1),
@@ -491,7 +418,10 @@ class ScreenerPipeline:
 
                 # 清除当天旧白名单（若存在），再写入新数据
                 deleted = await db.execute(
-                    delete(WatchlistDaily).where(WatchlistDaily.run_date == today)
+                    delete(WatchlistDaily).where(
+                        WatchlistDaily.run_date == today,
+                        WatchlistDaily.market == self.market,
+                    )
                 )
                 if deleted.rowcount:
                     logger.info("清除当天旧白名单: %d 条", deleted.rowcount)
@@ -500,6 +430,7 @@ class ScreenerPipeline:
                 for item in watchlist:
                     entry = WatchlistDaily(
                         run_date=today,
+                        market=self.market,
                         ts_code=item["ticker"],
                         name=item.get("name"),
                         current_price=item.get("current_price"),

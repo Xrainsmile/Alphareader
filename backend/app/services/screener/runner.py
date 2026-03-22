@@ -66,6 +66,12 @@ def parse_args() -> argparse.Namespace:
         help="仅打印结果，不保存文件",
     )
     parser.add_argument(
+        "--market",
+        default="CN",
+        choices=["CN", "US"],
+        help="目标市场（默认 CN）",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -136,6 +142,7 @@ async def main():
         fundamental_config.max_revenue_decline = -9999
 
     pipeline = ScreenerPipeline(
+        market=args.market,
         stage2_config=stage2_config,
         fundamental_config=fundamental_config,
         dry_run=args.dry_run,

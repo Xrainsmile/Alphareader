@@ -1,7 +1,9 @@
 """Stock ORM models – daily quotes cache & RS Rating snapshots.
 
-StockDailyQuote: 每日 A 股前复权行情缓存（替代原 SQLite 方案）
+StockDailyQuote: 每日股票前复权行情缓存（A 股 + 美股）
 StockRSRating:   RS 相对强度评分快照（IBD/Minervini 方法）
+
+market 字段区分市场：'CN' = A 股, 'US' = 美股。
 """
 
 from __future__ import annotations
@@ -25,17 +27,22 @@ from app.database import Base
 
 
 class StockDailyQuote(Base):
-    """A 股前复权日线行情缓存。
+    """每日股票前复权行情缓存。
 
-    数据来源：akshare，每日更新一次，用于 RS Rating 计算。
+    支持 A 股和美股：
+      - A 股 ts_code: 6 位数字（如 "600519"），数据来源 akshare / 腾讯财经
+      - 美股 ts_code: ticker symbol（如 "AAPL"），数据来源 yfinance
     """
 
     __tablename__ = "stock_daily_quote"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ts_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     trade_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    market: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="CN", server_default="CN", index=True
+    )  # 'CN' = A 股, 'US' = 美股
     open: Mapped[float] = mapped_column(Float, nullable=True)
     close: Mapped[float] = mapped_column(Float, nullable=True)
     high: Mapped[float] = mapped_column(Float, nullable=True)
@@ -52,6 +59,7 @@ class StockDailyQuote(Base):
 
     __table_args__ = (
         UniqueConstraint("ts_code", "trade_date", name="uq_quote_code_date"),
+        Index("ix_quote_market_date", "market", "trade_date"),
     )
 
 
@@ -66,8 +74,11 @@ class StockRSRating(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ts_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     trade_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    market: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="CN", server_default="CN", index=True
+    )  # 'CN' = A 股, 'US' = 美股
     p3: Mapped[float | None] = mapped_column(Float, nullable=True)
     p6: Mapped[float | None] = mapped_column(Float, nullable=True)
     p9: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -81,4 +92,5 @@ class StockRSRating(Base):
     __table_args__ = (
         UniqueConstraint("ts_code", "trade_date", name="uq_rs_code_date"),
         Index("ix_rs_date_rating", "trade_date", rs_rating.desc()),
+        Index("ix_rs_market_date", "market", "trade_date"),
     )

@@ -1,48 +1,76 @@
 <template>
   <view class="tab-bar">
-    <!-- RS Rating Tab 暂时隐藏，后端服务继续运行 -->
-    <!-- <view
-      class="tab-item"
-      :class="{ 'tab-active': activeTab === 'rs' }"
-      @click="$emit('select-rs')"
-    >
-      <text class="tab-text">RS Rating</text>
-    </view> -->
-    <view
-      class="tab-item"
-      :class="{ 'tab-active': activeTab === 'vcp' }"
-      @click="$emit('select-vcp')"
-    >
-      <text class="tab-text">VCP策略</text>
-    </view>
-    <view
-      class="tab-item"
-      :class="{ 'tab-active': activeTab === 'trend' }"
-      @click="$emit('select-trend')"
-    >
-      <text class="tab-text">右侧趋势</text>
-    </view>
-    <view
-      class="tab-item"
-      :class="{ 'tab-active': activeTab === 'catalyst' }"
-      @click="$emit('select-catalyst')"
-    >
-      <text class="tab-text">🔥催化剂</text>
-    </view>
-    <view
-      class="tab-item"
-      :class="{ 'tab-active': activeTab === 'value' }"
-      @click="$emit('select-value')"
-    >
-      <text class="tab-text">价投</text>
-    </view>
-    <view
-      class="tab-item"
-      :class="{ 'tab-active': activeTab === 'sandbox' }"
-      @click="$emit('select-sandbox')"
-    >
-      <text class="tab-text">模拟仓</text>
-    </view>
+    <template v-if="market === 'CN'">
+      <!-- A股策略 Tab -->
+      <!-- RS Rating Tab 暂时隐藏，后端服务继续运行 -->
+      <!-- <view
+        class="tab-item"
+        :class="{ 'tab-active': activeTab === 'rs' }"
+        @click="$emit('select-rs')"
+      >
+        <text class="tab-text">RS Rating</text>
+      </view> -->
+      <view
+        class="tab-item"
+        :class="{ 'tab-active': activeTab === 'vcp' }"
+        @click="$emit('select-vcp')"
+      >
+        <text class="tab-text">VCP策略</text>
+      </view>
+      <view
+        class="tab-item"
+        :class="{ 'tab-active': activeTab === 'trend' }"
+        @click="$emit('select-trend')"
+      >
+        <text class="tab-text">右侧趋势</text>
+      </view>
+      <view
+        class="tab-item"
+        :class="{ 'tab-active': activeTab === 'catalyst' }"
+        @click="$emit('select-catalyst')"
+      >
+        <text class="tab-text">🔥催化剂</text>
+      </view>
+      <view
+        class="tab-item"
+        :class="{ 'tab-active': activeTab === 'value' }"
+        @click="$emit('select-value')"
+      >
+        <text class="tab-text">价投</text>
+      </view>
+      <view
+        class="tab-item"
+        :class="{ 'tab-active': activeTab === 'sandbox' }"
+        @click="$emit('select-sandbox')"
+      >
+        <text class="tab-text">模拟仓</text>
+      </view>
+    </template>
+
+    <template v-else>
+      <!-- 美股策略 Tab -->
+      <view
+        class="tab-item"
+        :class="{ 'tab-active': activeTab === 'us_vcp' }"
+        @click="$emit('select-us-vcp')"
+      >
+        <text class="tab-text">VCP策略</text>
+      </view>
+      <view
+        class="tab-item"
+        :class="{ 'tab-active': activeTab === 'us_trend' }"
+        @click="$emit('select-us-trend')"
+      >
+        <text class="tab-text">右侧趋势</text>
+      </view>
+      <view
+        class="tab-item"
+        :class="{ 'tab-active': activeTab === 'us_catalyst' }"
+        @click="$emit('select-us-catalyst')"
+      >
+        <text class="tab-text">🔥催化剂</text>
+      </view>
+    </template>
   </view>
 </template>
 
@@ -52,9 +80,17 @@ defineProps({
     type: String,
     required: true,
   },
+  market: {
+    type: String,
+    default: 'CN',
+    validator: (v) => ['CN', 'US'].includes(v),
+  },
 })
 
-defineEmits(['select-rs', 'select-vcp', 'select-trend', 'select-catalyst', 'select-value', 'select-sandbox'])
+defineEmits([
+  'select-rs', 'select-vcp', 'select-trend', 'select-catalyst', 'select-value', 'select-sandbox',
+  'select-us-vcp', 'select-us-trend', 'select-us-catalyst',
+])
 </script>
 
 <style scoped>

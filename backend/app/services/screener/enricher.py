@@ -30,16 +30,28 @@ def _clean_code(ts_code: str) -> str:
     return ts_code.split(".")[0].strip()
 
 
-async def enrich_watchlist(watchlist: list[dict]) -> list[dict]:
+async def enrich_watchlist(watchlist: list[dict], market: str = "CN") -> list[dict]:
     """为白名单补充行业、题材、主营业务、资金流向。
 
     Args:
         watchlist: pipeline 产出的白名单 list[dict]，每项至少含 ticker 字段
+        market: 市场标识，"CN"（A 股）或 "US"（美股）
 
     Returns:
         补充后的 watchlist（原地修改并返回）
     """
     if not watchlist:
+        return watchlist
+
+    # 美股暂不支持 akshare/东方财富数据补充，后续 Phase 4 可接入 yfinance
+    if market != "CN":
+        logger.info("enrich_watchlist: 市场 %s 暂不支持数据补充，跳过", market)
+        for item in watchlist:
+            item.setdefault("name", "")
+            item.setdefault("industry", "")
+            item.setdefault("main_business", "")
+            item.setdefault("concepts", "")
+            item.setdefault("fund_flow_net", None)
         return watchlist
 
     codes = [item["ticker"] for item in watchlist]

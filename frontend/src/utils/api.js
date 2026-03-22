@@ -178,9 +178,10 @@ export function fetchVCPWatchlist(params = {}) {
 
 /**
  * 获取 VCP 白名单可用的行业和概念板块枚举值（用于筛选器）
+ * @param {string} market 市场：CN=A股, US=美股
  */
-export function fetchVCPFilters() {
-  return request('/api/v1/stocks/vcp_watchlist/filters')
+export function fetchVCPFilters(market = 'CN') {
+  return request(`/api/v1/stocks/vcp_watchlist/filters?market=${market}`)
 }
 
 /**
@@ -203,9 +204,22 @@ export function fetchTrendWatchlist(params = {}) {
 
 /**
  * 获取右侧趋势白名单可用的行业和概念板块枚举值（用于筛选器）
+ * @param {string} market 市场：CN=A股, US=美股
  */
-export function fetchTrendFilters() {
-  return request('/api/v1/stocks/trend_watchlist/filters')
+export function fetchTrendFilters(market = 'CN') {
+  return request(`/api/v1/stocks/trend_watchlist/filters?market=${market}`)
+}
+
+/**
+ * 手动触发美股行情更新
+ * @param {Object} params - {days, force}
+ */
+export function triggerUSQuoteUpdate(params = {}) {
+  const query = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return request(`/api/v1/stocks/us/update_quotes${query ? '?' + query : ''}`, { method: 'POST' })
 }
 
 /**

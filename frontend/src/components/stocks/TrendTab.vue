@@ -130,6 +130,10 @@ import IndustryConceptFilter from './IndustryConceptFilter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { fetchTrendWatchlist, fetchTrendFilters, batchCheckCatalyst } from '@/utils/api'
 
+const props = defineProps({
+  market: { type: String, default: 'CN' },
+})
+
 const trendList = ref([])
 const trendDate = ref('')
 const trendLoading = ref(false)
@@ -168,7 +172,7 @@ const onFilterChange = ({ industries, concepts }) => {
 
 const loadFilters = async () => {
   try {
-    const data = await fetchTrendFilters()
+    const data = await fetchTrendFilters(props.market)
     industryOptions.value = data.industries || []
     conceptOptions.value = data.concepts || []
   } catch (e) {
@@ -179,7 +183,7 @@ const loadFilters = async () => {
 const loadData = async () => {
   trendLoading.value = true
   try {
-    const data = await fetchTrendWatchlist({})
+    const data = await fetchTrendWatchlist({ market: props.market })
     trendList.value = data.items || []
     trendDate.value = data.date || ''
 

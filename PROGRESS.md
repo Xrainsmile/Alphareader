@@ -1,5 +1,98 @@
 # AlphaReader 开发进度记录
 
+## 2026-03-22: Phase 4 — 美股定时任务 + 前端接入真实数据
+
+### 问题/需求
+Phase 3 完成了 Screener 市场抽象层，但还缺：(1) 美股定时调度任务（行情更新 + VCP/趋势 Screener），(2) 前端美股 VCP/趋势 Tab 仍为占位组件。
+
+### 解决方案
+**4 个文件修改**，完成后端调度 + 前端接入：
+
+| 序号 | 任务 | 涉及文件 | 说明 |
+|------|------|----------|------|
+| 4.1 | 美股行情定时更新 | `scheduler.py` | 每天 05:30 北京时间（≈美东 16:30 盘后），yfinance 增量更新 |
+| 4.2 | 美股 VCP/趋势 Screener 定时任务 | `scheduler.py` | VCP 05:40 + 趋势 05:45，使用 `market="US"` 的 Pipeline |
+| 4.3 | 前端美股 VCP Tab 接入真实数据 | `VcpTab.vue`, `index.vue` | VcpTab 新增 `market` prop，替换 UsStockPlaceholder |
+| 4.4 | 前端美股趋势 Tab 接入真实数据 | `TrendTab.vue`, `index.vue` | TrendTab 新增 `market` prop，替换 UsStockPlaceholder |
+
+### 修改文件清单
+
+| 文件 | 改动 |
+|------|------|
+| `services/scheduler.py` | 新增 3 个 async job 函数（`_us_quotes_job`/`_us_screener_job`/`_us_trend_screener_job`）+ 3 个 CronTrigger 注册 + 启动日志 |
+| `components/stocks/VcpTab.vue` | 新增 `market` prop（默认 `'CN'`）；`fetchVCPWatchlist`/`fetchVCPFilters` 传递 market 参数 |
+| `components/stocks/TrendTab.vue` | 新增 `market` prop（默认 `'CN'`）；`fetchTrendWatchlist`/`fetchTrendFilters` 传递 market 参数 |
+| `pages/stocks/index.vue` | 美股 VCP/趋势 Tab 从 `<UsStockPlaceholder>` 替换为 `<VcpTab market="US" />`/`<TrendTab market="US" />`；移除 `usVcpFeatures`/`usTrendFeatures` 预告数据；新增 `usVcpRef`/`usTrendRef` |
+
+### 调度时间设计（北京时间，Asia/Shanghai）
+
+| 任务 | 时间 | 说明 |
+|------|------|------|
+| 美股行情更新 | 05:30 | 对应美东 16:30 盘后，确保收盘数据可用 |
+| 美股 VCP Screener | 05:40 | 行情更新后 10 分钟 |
+| 美股趋势 Screener | 05:45 | VCP 之后 5 分钟，避免同时占用资源 |
+
+### 向后兼容
+- `VcpTab`/`TrendTab` 的 `market` prop 默认 `'CN'`，A 股 Tab 无需改动，行为与之前完全一致
+- 美股催化剂 Tab 保持占位（Phase 5 实现）
+- 后端 API 层（`vcp_watchlist`/`trend_watchlist` 端点）已在 Phase 2 完成 market 参数支持
+
+### Lint 检查
+- 全部 4 个文件 0 errors, 0 warnings ✅
+
+---
+
+## 2026-03-22: Phase 3 — 美股 Screener 适配（市场抽象层）
+
+### 问题/需求
+Phase 2 完成了后端数据基建（数据库 market 字段 + 美股数据获取模块 + API 层市场参数），但 Screener 模块（VCP + 趋势策略）全部硬编码为 A 股逻辑，无法对美股运行筛选。
+
+### 解决方案
+**8 个文件修改/新增**，给 Screener 模块添加市场抽象层：
+
+| 序号 | 任务 | 涉及文件 | 说明 |
+|------|------|----------|------|
+| 3.1 | DataLoader 添加 market 参数 | `data_loader.py` | 4 个 SQL 查询（load_ohlcv/load_today_close/load_price_extremes）加 `WHERE market = :market` |
+| 3.2 | ST 过滤条件化 | `pipeline.py`, `trend_pipeline.py` | `market='CN'` 时才查询 ST 股票，美股跳过 |
+| 3.3 | DB 写入带 market 字段 | `pipeline.py`, `trend_pipeline.py` | ScreenerRun/WatchlistDaily/TrendScreenerRun/TrendWatchlistDaily 写入时带 market；DELETE 旧数据按 market 过滤 |
+| 3.4 | 基本面 bypass for US | `data_loader.py` | `load_fundamentals()` + `load_financial_details()` 美股时返回空 DataFrame |
+| 3.5 | enricher 美股分支 | `enricher.py` | 美股时跳过 akshare/东方财富数据补充，字段填充默认值 |
+| 3.6 | CLI --market 参数 | `runner.py`, `trend_runner.py` | 新增 `--market CN/US`，传入 pipeline |
+| 3.7 | 抽取公共 utils | `utils.py`（新增） | `load_st_codes()` + `load_stock_names()` 从两个 pipeline 抽取到共享模块 |
+
+### 修改文件清单
+
+| 文件 | 改动 |
+|------|------|
+| `services/screener/data_loader.py` | `DataLoader.__init__` 接受 `market` 参数；4 个 SQL 查询加 `market` 过滤；基本面方法美股 bypass |
+| `services/screener/pipeline.py` | `ScreenerPipeline.__init__` 接受 `market`；ST 条件化；enricher 传 market；DB 写入带 market；删除重复方法 |
+| `services/screener/trend_pipeline.py` | `TrendPipeline.__init__` 接受 `market`；同上改造 |
+| `services/screener/enricher.py` | `enrich_watchlist()` 接受 `market`；美股跳过 akshare 补充 |
+| `services/screener/runner.py` | 新增 `--market CN/US` CLI 参数 |
+| `services/screener/trend_runner.py` | 新增 `--market CN/US` CLI 参数 |
+| `services/screener/utils.py` | **新文件**：`load_st_codes(market)` + `load_stock_names(codes, market)` |
+| `services/screener/__init__.py` | 模块文档更新 |
+
+### 向后兼容
+- 所有 `market` 参数默认值为 `"CN"`，不传参时行为与改造前完全一致
+- A 股定时任务无需修改（默认 CN），美股可通过 `--market US` 启动
+
+### 运行方式
+```bash
+# A 股（默认，与改造前一致）
+python3 -m app.services.screener.runner
+python3 -m app.services.screener.trend_runner
+
+# 美股
+python3 -m app.services.screener.runner --market US
+python3 -m app.services.screener.trend_runner --market US
+```
+
+### Lint 检查
+- 全部 8 个文件 0 errors, 0 warnings ✅
+
+---
+
 ## 2026-03-22: 层级2 — 催化剂标的聚合 × 技术面交叉验证
 
 ### 问题/需求

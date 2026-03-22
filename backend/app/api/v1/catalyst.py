@@ -44,8 +44,10 @@ class CatalystStockItem(BaseModel):
     futu_url: str | None = None
 
 
-def _generate_futu_url(ts_code: str) -> str:
-    """根据 A 股代码生成富途链接。"""
+def _generate_futu_url(ts_code: str, market: str = "CN") -> str:
+    """根据股票代码和市场生成富途链接。"""
+    if market == "US":
+        return f"https://www.futunn.com/stock/{ts_code.upper().strip()}-US"
     code = ts_code.replace(".SZ", "").replace(".SH", "").replace(".BJ", "").strip()
     suffix = "SH" if code.startswith("6") else "SZ"
     return f"https://www.futunn.com/stock/{code}-{suffix}"
@@ -56,6 +58,7 @@ def _generate_futu_url(ts_code: str) -> str:
 @router.get("/stocks")
 async def get_catalyst_stocks(
     target_date: date | None = Query(None, description="查询日期，默认最新"),
+    market: str = Query("CN", description="市场：CN=A股, US=美股"),
     confirm_level: str | None = Query(
         None,
         description="交叉验证分类：double_confirmed / strong_rs / catalyst_only，不传则返回全部",
@@ -66,8 +69,12 @@ async def get_catalyst_stocks(
 
     返回当日（或最新有数据日期）从高分新闻中提取的催化剂标的，
     含催化剂热度、交叉验证状态（VCP/趋势/RS）等。
-    按热度降序排列。
+    按热度降序排列。支持按市场过滤。
     """
+    market = market.upper()
+    if market not in ("CN", "US"):
+        market = "CN"
+
     async with async_session() as session:
         # 确定查询日期
         if target_date:
@@ -75,13 +82,17 @@ async def get_catalyst_stocks(
         else:
             max_date_q = await session.execute(
                 select(sa_func.max(NewsCatalystStock.catalyst_date))
+                .where(NewsCatalystStock.market == market)
             )
             query_date = max_date_q.scalar()
             if not query_date:
-                return APIResponse(data={"count": 0, "date": None, "items": []})
+                return APIResponse(data={"count": 0, "date": None, "items": [], "market": market})
 
         # 构建查询
-        conditions = [NewsCatalystStock.catalyst_date == query_date]
+        conditions = [
+            NewsCatalystStock.catalyst_date == query_date,
+            NewsCatalystStock.market == market,
+        ]
         if confirm_level:
             conditions.append(NewsCatalystStock.confirm_level == confirm_level)
         if min_heat is not None:
@@ -114,7 +125,7 @@ async def get_catalyst_stocks(
             rs_rating=r.rs_rating,
             heat_score=r.heat_score,
             confirm_level=r.confirm_level,
-            futu_url=_generate_futu_url(r.ts_code),
+            futu_url=_generate_futu_url(r.ts_code, market=market),
         ).model_dump())
 
     # 统计
@@ -125,6 +136,7 @@ async def get_catalyst_stocks(
     return APIResponse(data={
         "count": len(items),
         "date": str(query_date),
+        "market": market,
         "stats": {
             "double_confirmed": double_count,
             "strong_rs": strong_rs_count,

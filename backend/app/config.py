@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     # ── 应用基础 ──
     APP_ENV: str = "development"       # 运行环境：development / production
     DEBUG: bool = False                 # 调试模式开关（默认关闭，生产安全）
-    TIMEZONE: str = "Asia/Shanghai"     # 调度器和日志使用的时区
+    TIMEZONE: str = "Asia/Shanghai"     # 调度器和日志使用的时区（A 股）
+    US_TIMEZONE: str = "US/Eastern"     # 美股时区（美东）
 
     # ── 日志 ──
     LOG_LEVEL: str = "INFO"          # 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL

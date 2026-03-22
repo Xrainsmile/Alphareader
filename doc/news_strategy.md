@@ -50,7 +50,7 @@
 在 Daily Briefing 生成之前，增加一个自动化步骤：
 
 ```
-每日新闻 → 提取所有 ai_score ≥ 7 的新闻中的 A 股 tickers
+每日新闻 → 提取所有 ai_score ≥ 4 的新闻中的 A 股 tickers
           → 按 ticker 聚合（同一只票当天被多少条高分新闻提及）
           → 标记「催化剂热度」
 ```

@@ -42,12 +42,13 @@ class TrendPipeline:
     """右侧趋势每日白名单筛选管道 — 编排数据加载、过滤、输出全流程。
 
     使用方法：
-        pipeline = TrendPipeline()
+        pipeline = TrendPipeline(market="CN")
         result = await pipeline.run()
     """
 
     def __init__(
         self,
+        market: str = "CN",
         config: TrendFilterConfig | None = None,
         output_dir: str | Path | None = None,
         dry_run: bool = False,
@@ -55,11 +56,13 @@ class TrendPipeline:
         """初始化趋势筛选管道。
 
         Args:
+            market: 市场标识，"CN"（A 股）或 "US"（美股）
             config: 趋势过滤器配置，None 使用默认值
             output_dir: 输出目录，默认 data/trend_watchlists/
             dry_run: 仅打印不保存文件
         """
-        self.loader = DataLoader()
+        self.market = market.upper()
+        self.loader = DataLoader(market=self.market)
         self.trend_screener = TrendScreener(config)
         self.output_dir = Path(output_dir) if output_dir else OUTPUT_DIR
         self.dry_run = dry_run
@@ -73,11 +76,12 @@ class TrendPipeline:
         pipeline_start = time.time()
         today_str = date.today().strftime("%Y-%m-%d")
         logger.info("=" * 60)
-        logger.info("Trend Screener 启动 | %s", today_str)
+        logger.info("Trend Screener 启动 | %s | market=%s", today_str, self.market)
         logger.info("=" * 60)
 
         result = {
             "date": today_str,
+            "market": self.market,
             "watchlist": [],
             "stats": {},
             "errors": [],
@@ -98,9 +102,10 @@ class TrendPipeline:
             return result
         logger.info("Step 1 OHLCV 加载完成 [%.1fs]", time.time() - step_start)
 
-        # ── Step 1.5: 剔除 ST 股票 ──
+        # ── Step 1.5: 剔除 ST 股票（仅 A 股市场）──
         try:
-            st_codes = await self._load_st_codes()
+            from .utils import load_st_codes
+            st_codes = await load_st_codes(self.market)
             if st_codes:
                 before = ohlcv["ts_code"].nunique()
                 ohlcv = ohlcv[~ohlcv["ts_code"].isin(st_codes)]
@@ -138,12 +143,12 @@ class TrendPipeline:
         watchlist = self._build_watchlist(trend_passed)
         result["stats"]["output_count"] = len(watchlist)
 
-        # ── Step 3.5: 补充行业/题材/主营/资金流向 ──
+        # ── Step 3.5: 补充行业/题材/主营/资金流向（仅 A 股）──
         if watchlist and not self.dry_run:
             step_start = time.time()
             try:
                 from .enricher import enrich_watchlist
-                watchlist = await enrich_watchlist(watchlist)
+                watchlist = await enrich_watchlist(watchlist, market=self.market)
                 logger.info("Step 3.5 数据补充完成 [%.1fs]", time.time() - step_start)
             except Exception as e:
                 logger.warning("Step 3.5 数据补充异常（不影响后续流程）: %s", e)
@@ -169,35 +174,6 @@ class TrendPipeline:
         logger.info("=" * 60)
 
         return result
-
-    async def _load_st_codes(self) -> set[str]:
-        """从数据库中查询最近完整交易日名称包含 ST 的股票代码。
-
-        复用 VCP Pipeline 的同一逻辑。
-        """
-        from sqlalchemy import text as sa_text
-
-        sql = sa_text("""
-            WITH full_dates AS (
-                SELECT trade_date, COUNT(DISTINCT ts_code) AS cnt
-                FROM stock_daily_quote
-                GROUP BY trade_date
-                HAVING COUNT(DISTINCT ts_code) >= 1000
-                ORDER BY trade_date DESC
-                LIMIT 1
-            )
-            SELECT DISTINCT q.ts_code
-            FROM stock_daily_quote q
-            JOIN full_dates fd ON q.trade_date = fd.trade_date
-            WHERE q.name LIKE '%ST%'
-        """)
-
-        async with async_session() as session:
-            rows = await session.execute(sql)
-            codes = {row[0] for row in rows}
-
-        logger.info("_load_st_codes: 发现 %d 只 ST 股票", len(codes))
-        return codes
 
     def _build_watchlist(self, trend_df: pd.DataFrame) -> list[dict]:
         """组装最终白名单输出。
@@ -274,6 +250,7 @@ class TrendPipeline:
                 # 写入运行记录
                 run = TrendScreenerRun(
                     run_date=today,
+                    market=self.market,
                     started_at=started,
                     finished_at=finished,
                     duration_sec=round(duration, 1),
@@ -289,7 +266,10 @@ class TrendPipeline:
 
                 # 清除当天旧白名单
                 deleted = await db.execute(
-                    delete(TrendWatchlistDaily).where(TrendWatchlistDaily.run_date == today)
+                    delete(TrendWatchlistDaily).where(
+                        TrendWatchlistDaily.run_date == today,
+                        TrendWatchlistDaily.market == self.market,
+                    )
                 )
                 if deleted.rowcount:
                     logger.info("清除当天旧趋势白名单: %d 条", deleted.rowcount)
@@ -298,6 +278,7 @@ class TrendPipeline:
                 for item in watchlist:
                     entry = TrendWatchlistDaily(
                         run_date=today,
+                        market=self.market,
                         ts_code=item["ticker"],
                         name=item.get("name"),
                         current_price=item.get("current_price"),

@@ -66,19 +66,21 @@ class DataLoader:
     """数据加载器：统一管理量价、EMA、基本面数据的获取与更新。
 
     使用方法：
-        loader = DataLoader()
+        loader = DataLoader(market="CN")
         ohlcv_df = await loader.load_ohlcv(lookback_days=120)
         ema_df = loader.load_latest_ema()
         ema_df = loader.update_ema_incremental(ema_df, today_close_df)
         fundamental_df = await loader.load_fundamentals()
     """
 
-    def __init__(self, ema_dir: str | Path | None = None):
+    def __init__(self, market: str = "CN", ema_dir: str | Path | None = None):
         """初始化数据加载器。
 
         Args:
+            market: 市场标识，"CN"（A 股）或 "US"（美股）
             ema_dir: EMA 快照目录路径，默认使用项目内的 data/ema_snapshots/
         """
+        self.market = market.upper()
         self.ema_dir = Path(ema_dir) if ema_dir else EMA_SNAPSHOT_DIR
 
     # ================================================================
@@ -105,12 +107,12 @@ class DataLoader:
             SELECT ts_code, trade_date, open, close, high, low,
                    volume, amount, pct_change
             FROM stock_daily_quote
-            WHERE trade_date >= :min_date
+            WHERE trade_date >= :min_date AND market = :market
             ORDER BY ts_code, trade_date
         """)
 
         async with async_session() as session:
-            result = await session.execute(sql, {"min_date": min_date})
+            result = await session.execute(sql, {"min_date": min_date, "market": self.market})
             rows = result.fetchall()
 
         if not rows:
@@ -252,11 +254,13 @@ class DataLoader:
         sql = text("""
             SELECT ts_code, close, trade_date
             FROM stock_daily_quote
-            WHERE trade_date = (SELECT MAX(trade_date) FROM stock_daily_quote)
+            WHERE trade_date = (
+                SELECT MAX(trade_date) FROM stock_daily_quote WHERE market = :market
+            ) AND market = :market
         """)
 
         async with async_session() as session:
-            result = await session.execute(sql)
+            result = await session.execute(sql, {"market": self.market})
             rows = result.fetchall()
 
         if not rows:
@@ -286,7 +290,11 @@ class DataLoader:
         注意：
             akshare 为同步库，通过 to_thread 执行避免阻塞。
             使用 stock_yjbb_em（东方财富业绩报表）一次返回全市场数据。
+            美股暂不支持基本面数据（akshare 仅覆盖 A 股），返回空 DataFrame。
         """
+        if self.market != "CN":
+            logger.info("load_fundamentals: 市场 %s 暂不支持 akshare 基本面，跳过", self.market)
+            return pd.DataFrame()
         # 确定最近 3 个季度的报告期
         quarters = self._recent_quarter_dates(n=3)
         logger.info("load_fundamentals: 拉取报告期 %s", quarters)
@@ -400,7 +408,7 @@ class DataLoader:
                 SELECT ts_code, trade_date, close, high, low, volume,
                        ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn
                 FROM stock_daily_quote
-                WHERE trade_date >= :min_date
+                WHERE trade_date >= :min_date AND market = :market
             ),
             stats AS (
                 SELECT ts_code,
@@ -423,7 +431,7 @@ class DataLoader:
         min_date = date.today() - timedelta(days=lookback_days)
 
         async with async_session() as session:
-            result = await session.execute(sql, {"min_date": min_date})
+            result = await session.execute(sql, {"min_date": min_date, "market": self.market})
             rows = result.fetchall()
 
         if not rows:
@@ -454,6 +462,7 @@ class DataLoader:
 
         获取字段：扣非净利润、商誉、股东权益合计(净资产)。
         该接口按股票逐只查询，仅对 Stage2 通过的少量候选股调用。
+        美股暂不支持（akshare 仅覆盖 A 股），返回空 DataFrame。
 
         Args:
             codes: 需要查询的股票代码列表
@@ -462,6 +471,9 @@ class DataLoader:
         Returns:
             DataFrame: 股票代码, deducted_profit, goodwill, net_assets
         """
+        if self.market != "CN":
+            logger.info("load_financial_details: 市场 %s 暂不支持 akshare 财务数据，跳过", self.market)
+            return pd.DataFrame(columns=["股票代码", "deducted_profit", "goodwill", "net_assets"])
         if quarter_date is None:
             quarters = self._recent_quarter_dates(n=1)
             quarter_date = quarters[0] if quarters else "20240930"

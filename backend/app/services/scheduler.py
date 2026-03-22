@@ -289,6 +289,86 @@ async def _briefing_job():
         raise
 
 
+async def _us_quotes_job():
+    """美股行情增量更新 — 每天 05:30（北京时间）触发。
+
+    对应美东 16:30 盘后，确保当天收盘数据可用。
+    使用 yfinance 增量更新最近 10 天的美股行情。
+    """
+    try:
+        from app.services.us_data_fetcher import incremental_update_us_quotes, get_all_us_stock_data, has_us_today_data
+
+        logger.info("US Quotes job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        # 检查 DB 是否已有美股基础数据
+        has_data = await has_us_today_data(min_stocks=50)
+        if has_data:
+            # 增量更新
+            count = await incremental_update_us_quotes(days=10)
+            logger.info("US Quotes incremental update: %d records", count)
+        else:
+            # 首次或数据缺失：全量下载
+            df = await get_all_us_stock_data(force_refresh=True)
+            logger.info("US Quotes full download: %d records", len(df))
+
+        return {"status": "ok"}
+    except Exception as e:
+        logger.exception("US Quotes job failed: %s", e)
+        await send_alert(
+            "🔴 US Quotes Job Failed",
+            f"{type(e).__name__}: {e}",
+        )
+        raise
+
+
+async def _us_screener_job():
+    """美股 VCP Screener — 每天 05:40（北京时间）触发。
+
+    在美股行情更新（05:30）完成后运行。
+    使用 market='US' 的 ScreenerPipeline。
+    """
+    try:
+        logger.info("US Screener job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        pipeline = ScreenerPipeline(market="US")
+        result = await pipeline.run()
+
+        final_count = result.get("stats", {}).get("final_count", 0)
+        logger.info("US Screener job completed: %d stocks in watchlist", final_count)
+        return {"status": "ok", "count": final_count}
+    except Exception as e:
+        logger.exception("US Screener job failed: %s", e)
+        await send_alert(
+            "🔴 US Screener Job Failed",
+            f"{type(e).__name__}: {e}",
+        )
+        raise
+
+
+async def _us_trend_screener_job():
+    """美股趋势 Screener — 每天 05:45（北京时间）触发。
+
+    在美股 VCP Screener（05:40）之后运行。
+    使用 market='US' 的 TrendPipeline。
+    """
+    try:
+        logger.info("US Trend Screener job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        pipeline = TrendPipeline(market="US")
+        result = await pipeline.run()
+
+        final_count = len(result.get("watchlist", []))
+        logger.info("US Trend Screener job completed: %d stocks in watchlist", final_count)
+        return {"status": "ok", "count": final_count}
+    except Exception as e:
+        logger.exception("US Trend Screener job failed: %s", e)
+        await send_alert(
+            "🔴 US Trend Screener Job Failed",
+            f"{type(e).__name__}: {e}",
+        )
+        raise
+
+
 async def _catalyst_job():
     """催化剂标的聚合 — 工作日 08:45 和 15:50 触发。
 
@@ -510,6 +590,51 @@ def start_scheduler():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
+    # ── 美股行情增量更新（每天 05:30 北京时间 ≈ 美东 16:30 盘后）──
+    scheduler.add_job(
+        _us_quotes_job,
+        trigger=CronTrigger(
+            hour="5",
+            minute="30",
+            timezone=settings.TIMEZONE,
+        ),
+        id="us_quotes_daily",
+        name=f"US Quotes Update (Daily 05:30 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # ── 美股 VCP Screener（每天 05:40，行情更新后）──
+    scheduler.add_job(
+        _us_screener_job,
+        trigger=CronTrigger(
+            hour="5",
+            minute="40",
+            timezone=settings.TIMEZONE,
+        ),
+        id="us_screener_daily",
+        name=f"US VCP Screener (Daily 05:40 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # ── 美股趋势 Screener（每天 05:45，VCP 之后）──
+    scheduler.add_job(
+        _us_trend_screener_job,
+        trigger=CronTrigger(
+            hour="5",
+            minute="45",
+            timezone=settings.TIMEZONE,
+        ),
+        id="us_trend_screener_daily",
+        name=f"US Trend Screener (Daily 05:45 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
     # ── 催化剂标的聚合（工作日 08:45 盘前 + 15:50 盘后，在 Briefing 之前）──
     # 08:45 盘前：基于隔夜+早间新闻提取催化剂标的
     scheduler.add_job(
@@ -622,6 +747,18 @@ def start_scheduler():
     cat_pm = scheduler.get_job("catalyst_1550")
     cat_pm_next = cat_pm.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if cat_pm and cat_pm.next_run_time else "N/A"
     logger.info("Catalyst Aggregation scheduled Mon-Fri 08:45 (next: %s) & 15:50 (next: %s)", cat_am_next, cat_pm_next)
+
+    # US Market jobs status
+    us_q = scheduler.get_job("us_quotes_daily")
+    us_q_next = us_q.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if us_q and us_q.next_run_time else "N/A"
+    us_s = scheduler.get_job("us_screener_daily")
+    us_s_next = us_s.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if us_s and us_s.next_run_time else "N/A"
+    us_t = scheduler.get_job("us_trend_screener_daily")
+    us_t_next = us_t.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if us_t and us_t.next_run_time else "N/A"
+    logger.info(
+        "US Market scheduled daily: Quotes 05:30 (next: %s), VCP 05:40 (next: %s), Trend 05:45 (next: %s)",
+        us_q_next, us_s_next, us_t_next,
+    )
 
 
 def stop_scheduler():

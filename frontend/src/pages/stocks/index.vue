@@ -1,20 +1,31 @@
 <template>
   <view class="stocks-container">
-    <!-- Tab Bar -->
+    <!-- ═══ 一级导航：市场切换（A股 / 美股）═══ -->
+    <MarketSwitcher
+      :active-market="activeMarket"
+      @switch="onMarketSwitch"
+    />
+
+    <!-- ═══ 二级导航：策略 Tab Bar ═══ -->
     <StocksTabBar
       :active-tab="activeTab"
+      :market="activeMarket"
       @select-rs="onSelectRs"
       @select-vcp="onSelectVcp"
       @select-trend="onSelectTrend"
       @select-catalyst="onSelectCatalyst"
       @select-value="onSelectValue"
       @select-sandbox="switchToSandbox"
+      @select-us-vcp="onSelectUsVcp"
+      @select-us-trend="onSelectUsTrend"
+      @select-us-catalyst="onSelectUsCatalyst"
     />
 
     <!-- ═══════════════════════════════════════════════════════
-         RS Rating Tab — 前端暂时隐藏，后端定时计算服务继续运行
+         A 股 Tabs
          ═══════════════════════════════════════════════════════ -->
-    <!-- RS Rating 前端模板已注释，恢复时取消注释即可 -->
+
+    <!-- RS Rating Tab — 前端暂时隐藏，后端定时计算服务继续运行 -->
 
     <!-- VCP 策略 Tab -->
     <VcpTab v-if="activeTab === 'vcp'" ref="vcpRef" />
@@ -30,6 +41,21 @@
 
     <!-- 模拟仓 Tab -->
     <SandboxTab v-if="activeTab === 'sandbox'" ref="sandboxRef" />
+
+    <!-- ═══════════════════════════════════════════════════════
+         美股 Tabs（VCP/趋势复用 A 股组件 + market="US"）
+         ═══════════════════════════════════════════════════════ -->
+
+    <VcpTab v-if="activeTab === 'us_vcp'" ref="usVcpRef" market="US" />
+
+    <TrendTab v-if="activeTab === 'us_trend'" ref="usTrendRef" market="US" />
+
+    <UsStockPlaceholder
+      v-if="activeTab === 'us_catalyst'"
+      title="美股催化剂"
+      subtitle="英文新闻 AI 评分 × 技术面交叉验证 — 基于 Finnhub 新闻源"
+      :features="usCatalystFeatures"
+    />
 
     <!-- Footer -->
     <SiteFooter />
@@ -49,6 +75,7 @@
 <script setup>
 import { ref } from 'vue'
 import './stocks-shared.css'
+import MarketSwitcher from '@/components/stocks/MarketSwitcher.vue'
 import StocksTabBar from '@/components/stocks/StocksTabBar.vue'
 import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
 import SiteFooter from '@/components/common/SiteFooter.vue'
@@ -57,22 +84,48 @@ import TrendTab from '@/components/stocks/TrendTab.vue'
 import CatalystTab from '@/components/stocks/CatalystTab.vue'
 import ValueTab from '@/components/stocks/ValueTab.vue'
 import SandboxTab from '@/components/stocks/SandboxTab.vue'
+import UsStockPlaceholder from '@/components/stocks/UsStockPlaceholder.vue'
 import { verifySandboxAccess } from '@/utils/api'
 
-// ── Tab 切换 ──
+// ── 一级导航：市场切换 ──
+const activeMarket = ref('CN')
+
+// ── 二级导航：Tab 切换 ──
 const activeTab = ref('vcp')
 const vcpRef = ref(null)
 const trendRef = ref(null)
 const catalystRef = ref(null)
 const valueRef = ref(null)
 const sandboxRef = ref(null)
+const usVcpRef = ref(null)
+const usTrendRef = ref(null)
 
-// v-if 控制子组件生命周期，每次挂载时子组件在 onMounted 中自动 init
+// 市场切换时重置到该市场的默认 Tab
+const onMarketSwitch = (market) => {
+  if (activeMarket.value === market) return
+  activeMarket.value = market
+  activeTab.value = market === 'CN' ? 'vcp' : 'us_vcp'
+}
+
+// ── A 股 Tab 事件 ──
 const onSelectRs = () => { activeTab.value = 'rs' }
 const onSelectVcp = () => { activeTab.value = 'vcp' }
 const onSelectTrend = () => { activeTab.value = 'trend' }
 const onSelectCatalyst = () => { activeTab.value = 'catalyst' }
 const onSelectValue = () => { activeTab.value = 'value' }
+
+// ── 美股 Tab 事件 ──
+const onSelectUsVcp = () => { activeTab.value = 'us_vcp' }
+const onSelectUsTrend = () => { activeTab.value = 'us_trend' }
+const onSelectUsCatalyst = () => { activeTab.value = 'us_catalyst' }
+
+// ── 美股各策略功能预告（仅催化剂仍为占位）──
+const usCatalystFeatures = [
+  { icon: '🔥', text: '英文新闻 AI 评分 ≥ 7 的标的自动提取' },
+  { icon: '🎯', text: '催化剂 × VCP/趋势白名单双确认' },
+  { icon: '📰', text: '基于 Finnhub Market News + RSS 英文源' },
+  { icon: '💡', text: '产业链映射（供应链受益方分析）' },
+]
 
 // ── 模拟仓密码验证 ──
 const sbUnlocked = ref(false)

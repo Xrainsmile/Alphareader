@@ -58,6 +58,12 @@ def parse_args() -> argparse.Namespace:
         help="仅打印结果，不保存文件",
     )
     parser.add_argument(
+        "--market",
+        default="CN",
+        choices=["CN", "US"],
+        help="目标市场（默认 CN）",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -110,6 +116,7 @@ async def main():
     )
 
     pipeline = TrendPipeline(
+        market=args.market,
         config=config,
         dry_run=args.dry_run,
     )

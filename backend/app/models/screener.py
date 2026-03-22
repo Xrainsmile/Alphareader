@@ -1,6 +1,7 @@
 """Screener 模型 — 每日白名单 + 运行记录。
 
 SQLAlchemy 2.0 Mapped 风格，与项目其他模型保持一致。
+market 字段区分市场：'CN' = A 股, 'US' = 美股。
 """
 
 from __future__ import annotations
@@ -36,6 +37,9 @@ class ScreenerRun(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    market: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="CN", server_default="CN", index=True
+    )  # 'CN' = A 股, 'US' = 美股
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -70,9 +74,12 @@ class WatchlistDaily(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     ts_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    market: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="CN", server_default="CN", index=True
+    )  # 'CN' = A 股, 'US' = 美股
 
     # 股票名称（从 stock_daily_quote 关联）
-    name: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # 技术面指标
     current_price: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -97,6 +104,7 @@ class WatchlistDaily(Base):
     __table_args__ = (
         UniqueConstraint("run_date", "ts_code", name="uq_watchlist_daily"),
         Index("ix_watchlist_date_score", "run_date", vcp_score.desc()),
+        Index("ix_watchlist_market_date", "market", "run_date"),
     )
 
 
@@ -110,6 +118,9 @@ class TrendScreenerRun(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    market: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="CN", server_default="CN", index=True
+    )  # 'CN' = A 股, 'US' = 美股
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -142,9 +153,12 @@ class TrendWatchlistDaily(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     ts_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    market: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="CN", server_default="CN", index=True
+    )  # 'CN' = A 股, 'US' = 美股
 
     # 股票名称
-    name: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # 技术面指标
     current_price: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -167,4 +181,5 @@ class TrendWatchlistDaily(Base):
     __table_args__ = (
         UniqueConstraint("run_date", "ts_code", name="uq_trend_watchlist_daily"),
         Index("ix_trend_watchlist_date_score", "run_date", trend_score.desc()),
+        Index("ix_trend_watchlist_market_date", "market", "run_date"),
     )

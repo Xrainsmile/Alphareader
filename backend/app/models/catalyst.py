@@ -1,7 +1,8 @@
 """催化剂标的模型 — 每日新闻催化剂 × 技术面交叉验证。
 
-存储从高评分新闻中提取的 A 股标的聚合结果，
+存储从高评分新闻中提取的股票标的聚合结果，
 以及与 VCP / 趋势白名单的交叉验证状态。
+market 字段区分市场：'CN' = A 股, 'US' = 美股。
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from app.database import Base
 
 
 class NewsCatalystStock(Base):
-    """每日新闻催化标的 — 从高评分新闻中聚合出的 A 股标的排行榜。
+    """每日新闻催化标的 — 从高评分新闻中聚合出的股票标的排行榜。
 
     核心逻辑：
       - 每条 ai_score >= 7 的新闻，提取其 tags / sentiment_entity 中的股票代码或公司名
@@ -41,9 +42,12 @@ class NewsCatalystStock(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     catalyst_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     ts_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    market: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="CN", server_default="CN", index=True
+    )  # 'CN' = A 股, 'US' = 美股
 
     # 股票名称
-    name: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     # 催化剂聚合指标
     news_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -88,4 +92,5 @@ class NewsCatalystStock(Base):
         UniqueConstraint("catalyst_date", "ts_code", name="uq_catalyst_date_code"),
         Index("ix_catalyst_date_heat", "catalyst_date", heat_score.desc()),
         Index("ix_catalyst_confirm", "catalyst_date", "confirm_level"),
+        Index("ix_catalyst_market_date", "market", "catalyst_date"),
     )

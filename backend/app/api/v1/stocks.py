@@ -247,6 +247,36 @@ async def trigger_update_quotes(
     )
 
 
+@router.post("/us/update_quotes")
+async def trigger_us_update_quotes(
+    days: int = Query(10, ge=1, le=365, description="回溯天数"),
+    force: bool = Query(False, description="强制全量下载"),
+):
+    """手动触发美股行情更新（后台任务）。"""
+    from app.services.us_data_fetcher import incremental_update_us_quotes, get_all_us_stock_data
+
+    async def _update():
+        try:
+            if force:
+                df = await get_all_us_stock_data(force_refresh=True)
+                logger.info("美股全量下载完成: %d 条", len(df))
+            else:
+                count = await incremental_update_us_quotes(days=days)
+                logger.info("美股增量更新完成: %d 条", count)
+        except Exception as e:
+            logger.error("美股行情更新失败: %s", e)
+
+    asyncio.create_task(_update())
+    return JSONResponse(
+        status_code=202,
+        content={
+            "code": 0,
+            "message": f"美股行情{'全量下载' if force else f'增量更新（回溯 {days} 天）'}已在后台启动",
+            "data": {"status": "accepted"},
+        },
+    )
+
+
 @router.get("/search")
 async def search_stocks(
     q: str = Query(..., min_length=1, max_length=20, description="搜索关键词（代码/名称/拼音首字母）"),
@@ -453,6 +483,7 @@ class VCPFilterOptions(BaseModel):
 @router.get("/vcp_watchlist/filters")
 async def get_vcp_filter_options(
     target_date: date | None = Query(None, description="查询日期，默认最新"),
+    market: str = Query("CN", description="市场：CN=A股, US=美股"),
 ):
     """获取 VCP 白名单中可用的行业和概念板块枚举值（用于前端筛选器）。"""
     from sqlalchemy import select, func as sa_func
@@ -460,12 +491,17 @@ async def get_vcp_filter_options(
     from app.database import async_session
     from app.models.screener import WatchlistDaily
 
+    market = market.upper()
+    if market not in ("CN", "US"):
+        market = "CN"
+
     async with async_session() as session:
         if target_date:
             query_date = target_date
         else:
             max_date_q = await session.execute(
                 select(sa_func.max(WatchlistDaily.run_date))
+                .where(WatchlistDaily.market == market)
             )
             query_date = max_date_q.scalar()
             if not query_date:
@@ -475,6 +511,7 @@ async def get_vcp_filter_options(
         ind_stmt = (
             select(sa_func.distinct(WatchlistDaily.industry))
             .where(WatchlistDaily.run_date == query_date)
+            .where(WatchlistDaily.market == market)
             .where(WatchlistDaily.industry.isnot(None))
             .where(WatchlistDaily.industry != "")
             .order_by(WatchlistDaily.industry)
@@ -486,6 +523,7 @@ async def get_vcp_filter_options(
         con_stmt = (
             select(WatchlistDaily.concepts)
             .where(WatchlistDaily.run_date == query_date)
+            .where(WatchlistDaily.market == market)
             .where(WatchlistDaily.concepts.isnot(None))
             .where(WatchlistDaily.concepts != "")
         )
@@ -504,6 +542,7 @@ async def get_vcp_filter_options(
 @router.get("/vcp_watchlist")
 async def get_vcp_watchlist(
     target_date: date | None = Query(None, description="查询日期，默认最新"),
+    market: str = Query("CN", description="市场：CN=A股, US=美股"),
     industry: str | None = Query(None, description="行业筛选，多个用逗号分隔"),
     concepts: str | None = Query(None, description="概念板块筛选，多个用逗号分隔（包含任一即匹配）"),
 ):
@@ -511,34 +550,43 @@ async def get_vcp_watchlist(
 
     返回最新一期（或指定日期）的 Screener 白名单，
     含技术面指标、基本面指标、行业题材、资金流向等维度。
-    支持按行业和概念板块筛选。
+    支持按行业和概念板块筛选，支持按市场过滤。
     """
     from sqlalchemy import select, func as sa_func, or_
 
     from app.database import async_session
     from app.models.screener import WatchlistDaily
 
+    market = market.upper()
+    if market not in ("CN", "US"):
+        market = "CN"
+
     async with async_session() as session:
-        # 确定查询日期：用户指定或取最新
+        # 确定查询日期：用户指定或取该市场最新
         if target_date:
             query_date = target_date
         else:
             max_date_q = await session.execute(
                 select(sa_func.max(WatchlistDaily.run_date))
+                .where(WatchlistDaily.market == market)
             )
             query_date = max_date_q.scalar()
             if not query_date:
-                return APIResponse(data={"count": 0, "date": str(date.today()), "items": []})
+                return APIResponse(data={"count": 0, "date": str(date.today()), "items": [], "market": market})
 
-        # 查询白名单（兜底排除 ST 股票）
+        # 查询白名单（按市场过滤）
         stmt = (
             select(WatchlistDaily)
             .where(WatchlistDaily.run_date == query_date)
-            .where(
+            .where(WatchlistDaily.market == market)
+        )
+
+        # A 股兜底排除 ST 股票
+        if market == "CN":
+            stmt = stmt.where(
                 ~WatchlistDaily.name.like("%ST%")
                 | WatchlistDaily.name.is_(None)
             )
-        )
 
         # 行业筛选
         if industry:
@@ -561,6 +609,8 @@ async def get_vcp_watchlist(
 
     items = []
     for row in rows:
+        # 根据市场类型生成 futu 链接
+        futu_market = "A" if market == "CN" else "US"
         item = VCPWatchlistItem(
             ts_code=row.ts_code,
             name=row.name,
@@ -575,13 +625,14 @@ async def get_vcp_watchlist(
             concepts=row.concepts,
             main_business=row.main_business,
             fund_flow_net=row.fund_flow_net,
-            futu_url=_generate_futu_url(row.ts_code),
+            futu_url=_generate_futu_url(row.ts_code, market=futu_market),
         )
         items.append(item)
 
     return APIResponse(data={
         "count": len(items),
         "date": str(query_date),
+        "market": market,
         "items": [i.model_dump() for i in items],
     })
 
@@ -622,6 +673,7 @@ class TrendFilterOptions(BaseModel):
 @router.get("/trend_watchlist/filters")
 async def get_trend_filter_options(
     target_date: date | None = Query(None, description="查询日期，默认最新"),
+    market: str = Query("CN", description="市场：CN=A股, US=美股"),
 ):
     """获取右侧趋势白名单中可用的行业和概念板块枚举值（用于前端筛选器）。"""
     from sqlalchemy import select, func as sa_func
@@ -629,12 +681,17 @@ async def get_trend_filter_options(
     from app.database import async_session
     from app.models.screener import TrendWatchlistDaily
 
+    market = market.upper()
+    if market not in ("CN", "US"):
+        market = "CN"
+
     async with async_session() as session:
         if target_date:
             query_date = target_date
         else:
             max_date_q = await session.execute(
                 select(sa_func.max(TrendWatchlistDaily.run_date))
+                .where(TrendWatchlistDaily.market == market)
             )
             query_date = max_date_q.scalar()
             if not query_date:
@@ -644,6 +701,7 @@ async def get_trend_filter_options(
         ind_stmt = (
             select(sa_func.distinct(TrendWatchlistDaily.industry))
             .where(TrendWatchlistDaily.run_date == query_date)
+            .where(TrendWatchlistDaily.market == market)
             .where(TrendWatchlistDaily.industry.isnot(None))
             .where(TrendWatchlistDaily.industry != "")
             .order_by(TrendWatchlistDaily.industry)
@@ -655,6 +713,7 @@ async def get_trend_filter_options(
         con_stmt = (
             select(TrendWatchlistDaily.concepts)
             .where(TrendWatchlistDaily.run_date == query_date)
+            .where(TrendWatchlistDaily.market == market)
             .where(TrendWatchlistDaily.concepts.isnot(None))
             .where(TrendWatchlistDaily.concepts != "")
         )
@@ -673,6 +732,7 @@ async def get_trend_filter_options(
 @router.get("/trend_watchlist")
 async def get_trend_watchlist(
     target_date: date | None = Query(None, description="查询日期，默认最新"),
+    market: str = Query("CN", description="市场：CN=A股, US=美股"),
     industry: str | None = Query(None, description="行业筛选，多个用逗号分隔"),
     concepts: str | None = Query(None, description="概念板块筛选，多个用逗号分隔（包含任一即匹配）"),
 ):
@@ -681,34 +741,43 @@ async def get_trend_watchlist(
     返回最新一期（或指定日期）的趋势 Screener 白名单，
     含 trend_score、ADX、RSI、SMA20/50、放量倍数等技术面指标，
     以及行业题材、资金流向等维度。
-    支持按行业和概念板块筛选。
+    支持按行业和概念板块筛选，支持按市场过滤。
     """
     from sqlalchemy import select, func as sa_func, or_
 
     from app.database import async_session
     from app.models.screener import TrendWatchlistDaily
 
+    market = market.upper()
+    if market not in ("CN", "US"):
+        market = "CN"
+
     async with async_session() as session:
-        # 确定查询日期：用户指定或取最新
+        # 确定查询日期：用户指定或取该市场最新
         if target_date:
             query_date = target_date
         else:
             max_date_q = await session.execute(
                 select(sa_func.max(TrendWatchlistDaily.run_date))
+                .where(TrendWatchlistDaily.market == market)
             )
             query_date = max_date_q.scalar()
             if not query_date:
-                return APIResponse(data={"count": 0, "date": str(date.today()), "items": []})
+                return APIResponse(data={"count": 0, "date": str(date.today()), "items": [], "market": market})
 
-        # 查询白名单（兜底排除 ST 股票）
+        # 查询白名单（按市场过滤）
         stmt = (
             select(TrendWatchlistDaily)
             .where(TrendWatchlistDaily.run_date == query_date)
-            .where(
+            .where(TrendWatchlistDaily.market == market)
+        )
+
+        # A 股兜底排除 ST 股票
+        if market == "CN":
+            stmt = stmt.where(
                 ~TrendWatchlistDaily.name.like("%ST%")
                 | TrendWatchlistDaily.name.is_(None)
             )
-        )
 
         # 行业筛选
         if industry:
@@ -731,6 +800,7 @@ async def get_trend_watchlist(
 
     items = []
     for row in rows:
+        futu_market = "A" if market == "CN" else "US"
         item = TrendWatchlistItem(
             ts_code=row.ts_code,
             name=row.name,
@@ -745,13 +815,14 @@ async def get_trend_watchlist(
             concepts=row.concepts,
             main_business=row.main_business,
             fund_flow_net=row.fund_flow_net,
-            futu_url=_generate_futu_url(row.ts_code),
+            futu_url=_generate_futu_url(row.ts_code, market=futu_market),
         )
         items.append(item)
 
     return APIResponse(data={
         "count": len(items),
         "date": str(query_date),
+        "market": market,
         "items": [i.model_dump() for i in items],
     })
 
@@ -972,7 +1043,7 @@ async def ticker_lookup(
                     result_data["industry"] = trend_item.industry
 
         # 兜底：若白名单中没有名称，从行情表查询
-        if not result_data["name"] and is_a_stock:
+        if not result_data["name"]:
             name_row = await session.execute(
                 select(StockDailyQuote.name)
                 .where(StockDailyQuote.ts_code == ts_code)

@@ -266,7 +266,7 @@ def _df_to_records(df: pd.DataFrame) -> list[dict]:
         "涨跌额": "change",
     }
     for _, row in df.iterrows():
-        rec = {}
+        rec = {"market": "CN"}  # 显式标记为 A 股市场
         for cn_col, en_col in col_map.items():
             if cn_col in df.columns:
                 val = row[cn_col]
@@ -304,6 +304,7 @@ async def save_to_db(df: pd.DataFrame) -> int:
                         func.nullif(stmt.excluded.name, ""),
                         StockDailyQuote.name,
                     ),
+                    "market": stmt.excluded.market,
                     "open": stmt.excluded.open,
                     "close": stmt.excluded.close,
                     "high": stmt.excluded.high,
@@ -325,7 +326,7 @@ async def save_to_db(df: pd.DataFrame) -> int:
 
 
 async def load_from_db(min_date: date | None = None) -> pd.DataFrame:
-    """从 PostgreSQL 加载行情数据。
+    """从 PostgreSQL 加载 A 股行情数据。
 
     Args:
         min_date: 最早日期，默认回溯 LOOKBACK_DAYS。
@@ -339,6 +340,7 @@ async def load_from_db(min_date: date | None = None) -> pd.DataFrame:
     async with async_session() as session:
         result = await session.execute(
             select(StockDailyQuote)
+            .where(StockDailyQuote.market == "CN")
             .where(StockDailyQuote.trade_date >= min_date)
             .order_by(StockDailyQuote.ts_code, StockDailyQuote.trade_date)
         )
@@ -372,7 +374,7 @@ async def load_from_db(min_date: date | None = None) -> pd.DataFrame:
 
 
 async def has_today_data(min_stocks: int = 5000) -> bool:
-    """检查是否已有最新交易日的行情数据（足够多的股票）。
+    """检查是否已有最新交易日的 A 股行情数据（足够多的股票）。
 
     逻辑：DB 中最新 trade_date 必须 >= 昨天，且该日期至少有 min_stocks 只股票。
     这样即使数据源只更新到昨天，也不会重复拉取；
@@ -380,30 +382,32 @@ async def has_today_data(min_stocks: int = 5000) -> bool:
     """
     today = date.today()
     async with async_session() as session:
-        # 获取 DB 中最新的交易日期
+        # 获取 DB 中最新的 A 股交易日期
         max_date_result = await session.execute(
             select(func.max(StockDailyQuote.trade_date))
+            .where(StockDailyQuote.market == "CN")
         )
         max_date = max_date_result.scalar()
         if max_date is None:
-            logger.info("has_today_data: 数据库无行情数据")
+            logger.info("has_today_data: 数据库无 A 股行情数据")
             return False
 
         # 最新日期与今天的差距
         gap_days = (today - max_date).days
 
-        # 检查最新日期有多少只股票
+        # 检查最新日期有多少只 A 股
         count_result = await session.execute(
             select(func.count(func.distinct(StockDailyQuote.ts_code)))
             .where(StockDailyQuote.trade_date == max_date)
+            .where(StockDailyQuote.market == "CN")
         )
         stock_count = count_result.scalar() or 0
 
     logger.info(
-        "has_today_data: DB最新日期=%s, 距今%d天, 该日%d只股票（阈值: gap<=1 且 stocks>=%d）",
+        "has_today_data: DB最新日期=%s, 距今%d天, 该日%d只A股（阈值: gap<=1 且 stocks>=%d）",
         max_date, gap_days, stock_count, min_stocks,
     )
-    # DB 最新日期距今不超过 1 天，且有足够多的股票数据
+    # DB 最新日期距今不超过 1 天，且有足够多的 A 股数据
     return gap_days <= 1 and stock_count >= min_stocks
 
 
@@ -828,16 +832,17 @@ def _sync_fetch_stock_list_tencent() -> pd.DataFrame:
 
 
 async def fetch_stock_list_from_db() -> pd.DataFrame:
-    """从数据库中获取已有的股票代码列表（当在线接口不可用时的备选）。
+    """从数据库中获取已有的 A 股代码列表（当在线接口不可用时的备选）。
 
     优先取非空 name，避免返回空名称导致增量更新时覆盖已有名称。
     """
     from sqlalchemy import text as sa_text
 
-    # 使用 DISTINCT ON + ORDER BY 优先取 name 非空的行
+    # 使用 DISTINCT ON + ORDER BY 优先取 name 非空的行（仅 A 股）
     sql = sa_text("""
         SELECT DISTINCT ON (ts_code) ts_code, name
         FROM stock_daily_quote
+        WHERE market = 'CN'
         ORDER BY ts_code,
                  CASE WHEN name IS NOT NULL AND name != '' THEN 0 ELSE 1 END,
                  trade_date DESC

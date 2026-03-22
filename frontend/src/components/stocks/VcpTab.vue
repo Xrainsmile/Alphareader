@@ -126,6 +126,10 @@ import IndustryConceptFilter from './IndustryConceptFilter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { fetchVCPWatchlist, fetchVCPFilters, batchCheckCatalyst } from '@/utils/api'
 
+const props = defineProps({
+  market: { type: String, default: 'CN' },
+})
+
 const vcpList = ref([])
 const vcpDate = ref('')
 const vcpLoading = ref(false)
@@ -164,7 +168,7 @@ const onFilterChange = ({ industries, concepts }) => {
 
 const loadFilters = async () => {
   try {
-    const data = await fetchVCPFilters()
+    const data = await fetchVCPFilters(props.market)
     industryOptions.value = data.industries || []
     conceptOptions.value = data.concepts || []
   } catch (e) {
@@ -175,7 +179,7 @@ const loadFilters = async () => {
 const loadData = async () => {
   vcpLoading.value = true
   try {
-    const data = await fetchVCPWatchlist({})
+    const data = await fetchVCPWatchlist({ market: props.market })
     vcpList.value = data.items || []
     vcpDate.value = data.date || ''
 
