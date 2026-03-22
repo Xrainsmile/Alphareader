@@ -5,6 +5,14 @@
 ### 问题/需求
 新闻情报和技术面选股之间缺少桥梁。VCP 白名单和新闻催化剂是两个独立运行的孤岛，交叉验证完全靠人肉在两个 Tab 之间切换。
 
+### 部署状态
+- ✅ 测试通过：153/153（53 个催化剂新测试 + 100 个原有测试零回归）
+- ✅ Git commit: `d152490` (feat) + `c03fe98` (fix: 迁移脚本兼容 asyncpg)
+- ✅ 数据库迁移：`news_catalyst_stocks` 表 + 4 个索引 + 唯一约束
+- ✅ 后端部署：docker compose build + up（web 容器重建，API 端点已验证）
+- ✅ 前端部署：docker compose build + up（frontend 容器重建，CatalystTab 已集成）
+- ✅ API 验证：3 个端点（/stocks, /check, /batch_check）全部正常返回
+
 ### 解决方案
 实现「催化剂标的聚合服务」— 自动化「新闻催化剂 × 技术面」交叉验证：
 
