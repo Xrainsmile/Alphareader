@@ -7,6 +7,7 @@
       :children-count="group.children ? group.children.length : 0"
       @open="(url, id) => $emit('open', url, id)"
       @tag-search="(tag) => $emit('tag-search', tag)"
+      @ticker-click="(code) => $emit('ticker-click', code)"
     />
 
     <!-- 关联报道折叠区 -->
@@ -50,5 +51,5 @@ defineProps({
   showGravity: { type: Boolean, default: false },
 })
 
-defineEmits(['open', 'tag-search', 'toggle-related'])
+defineEmits(['open', 'tag-search', 'toggle-related', 'ticker-click'])
 </script>

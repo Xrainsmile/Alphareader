@@ -856,3 +856,106 @@ async def get_value_watchlist():
         ))
 
     return APIResponse(data={"count": len(items), "items": [i.model_dump() for i in items]})
+
+
+# ── Ticker 速览（新闻卡片 Ticker 点击使用）──
+
+class TickerLookupResponse(BaseModel):
+    """Ticker 速览信息。"""
+    ts_code: str | None = None
+    name: str | None = None
+    industry: str | None = None
+    in_vcp: bool = False
+    vcp_score: float | None = None
+    in_trend: bool = False
+    trend_score: float | None = None
+    futu_url: str | None = None
+
+
+@router.get("/ticker_lookup")
+async def ticker_lookup(
+    code: str = Query(..., min_length=1, max_length=20, description="股票代码（如 300750、NVDA、300750.SZ）"),
+):
+    """Ticker 速览 — 查询指定标的是否在当日 VCP / 趋势白名单中。
+
+    支持多种输入格式：纯数字代码（300750）、带后缀（300750.SZ）、美股代码（NVDA）。
+    先从 VCP 和趋势白名单最新数据中匹配，返回是否在白名单中及相关评分。
+    """
+    from sqlalchemy import select, func as sa_func
+
+    from app.database import async_session
+    from app.models.screener import WatchlistDaily, TrendWatchlistDaily
+
+    raw = code.strip().upper()
+
+    # 标准化为可匹配的格式
+    # 纯数字 → 加后缀（6开头 → .SH，其他 → .SZ）
+    # 已有后缀 → 直接用
+    # 非数字（如 NVDA）→ 保留原样用于美股匹配
+    if raw.replace(".", "").replace("SZ", "").replace("SH", "").isdigit():
+        # A 股代码
+        digits = raw.split(".")[0]
+        suffix = ".SH" if digits.startswith("6") else ".SZ"
+        ts_code = f"{digits}{suffix}"
+    else:
+        ts_code = raw
+
+    result_data = {
+        "ts_code": ts_code,
+        "name": None,
+        "industry": None,
+        "in_vcp": False,
+        "vcp_score": None,
+        "in_trend": False,
+        "trend_score": None,
+        "futu_url": None,
+    }
+
+    async with async_session() as session:
+        # 查 VCP 白名单最新日期
+        vcp_max_q = await session.execute(
+            select(sa_func.max(WatchlistDaily.run_date))
+        )
+        vcp_date = vcp_max_q.scalar()
+
+        if vcp_date:
+            vcp_row = await session.execute(
+                select(WatchlistDaily)
+                .where(WatchlistDaily.run_date == vcp_date)
+                .where(WatchlistDaily.ts_code == ts_code)
+                .limit(1)
+            )
+            vcp_item = vcp_row.scalars().first()
+            if vcp_item:
+                result_data["in_vcp"] = True
+                result_data["vcp_score"] = vcp_item.vcp_score
+                result_data["name"] = vcp_item.name
+                result_data["industry"] = vcp_item.industry
+
+        # 查趋势白名单最新日期
+        trend_max_q = await session.execute(
+            select(sa_func.max(TrendWatchlistDaily.run_date))
+        )
+        trend_date = trend_max_q.scalar()
+
+        if trend_date:
+            trend_row = await session.execute(
+                select(TrendWatchlistDaily)
+                .where(TrendWatchlistDaily.run_date == trend_date)
+                .where(TrendWatchlistDaily.ts_code == ts_code)
+                .limit(1)
+            )
+            trend_item = trend_row.scalars().first()
+            if trend_item:
+                result_data["in_trend"] = True
+                result_data["trend_score"] = trend_item.trend_score
+                if not result_data["name"]:
+                    result_data["name"] = trend_item.name
+                if not result_data["industry"]:
+                    result_data["industry"] = trend_item.industry
+
+    # 生成富途链接（仅 A 股）
+    if ts_code.endswith((".SZ", ".SH")):
+        result_data["futu_url"] = _generate_futu_url(ts_code)
+
+    return APIResponse(data=result_data)

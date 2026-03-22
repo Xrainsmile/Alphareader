@@ -47,6 +47,7 @@
       @quick-search="onQuickSearch"
       @open="onOpenUrl"
       @tag-search="onTagSearch"
+      @ticker-click="onTickerClick"
     />
 
     <!-- 以下为 News Feed 内容 (非搜索模式时显示) -->
@@ -98,6 +99,7 @@
           :show-gravity="currentSort === 'hot'"
           @open="onOpenUrl"
           @tag-search="onTagSearch"
+          @ticker-click="onTickerClick"
           @toggle-related="toggleRelated"
         />
       </view>
@@ -110,17 +112,31 @@
     </view>
 
     </template>
+
+    <!-- Ticker 速览浮层 -->
+    <TickerOverlay
+      :visible="tickerOverlay.visible"
+      :loading="tickerOverlay.loading"
+      :code="tickerOverlay.code"
+      :data="tickerOverlay.data"
+      @close="closeTickerOverlay"
+      @open-futu="onOpenFutu"
+      @search-news="onTickerSearchNews"
+    />
+
     <SiteFooter mobile-padding="40rpx 0 60rpx" desktop-padding="32px 0 48px" />
   </view>
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onUnmounted, getCurrentInstance } from 'vue'
+import { ref, reactive, nextTick, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { initTracker, trackImpression, trackClick, destroyTracker } from '../../utils/tracker.js'
+import { tickerLookup } from '../../utils/api.js'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import NewsSearchBar from '@/components/news/NewsSearchBar.vue'
 import NewsFilterPopover from '@/components/news/NewsFilterPopover.vue'
 import NewsCardGroup from '@/components/news/NewsCardGroup.vue'
+import TickerOverlay from '@/components/news/TickerOverlay.vue'
 import { useNewsFeed } from '@/composables/useNewsFeed.js'
 import { useNewsSearch } from '@/composables/useNewsSearch.js'
 import { useNewsFilter } from '@/composables/useNewsFilter.js'
@@ -214,6 +230,58 @@ function onSwitchCategory(cat) {
 function onConfirmFilter() {
   confirmFilter()
   doResetAndLoad()
+}
+
+// ── Ticker 速览浮层 ──
+const tickerOverlay = reactive({
+  visible: false,
+  loading: false,
+  code: '',
+  data: null,
+})
+
+/** 点击 ticker 标签 → 调 API → 弹浮层 */
+async function onTickerClick(code) {
+  tickerOverlay.code = code
+  tickerOverlay.visible = true
+  tickerOverlay.loading = true
+  tickerOverlay.data = null
+
+  try {
+    const data = await tickerLookup(code)
+    tickerOverlay.data = data
+  } catch (e) {
+    console.error('Ticker lookup failed:', e)
+    tickerOverlay.data = { ts_code: code, name: null, in_vcp: false, in_trend: false }
+  } finally {
+    tickerOverlay.loading = false
+  }
+}
+
+/** 关闭浮层 */
+function closeTickerOverlay() {
+  tickerOverlay.visible = false
+}
+
+/** 打开富途链接 */
+function onOpenFutu() {
+  const url = tickerOverlay.data?.futu_url
+  if (!url) return
+  // #ifdef H5
+  window.open(url, '_blank')
+  // #endif
+  // #ifndef H5
+  uni.setClipboardData({ data: url })
+  // #endif
+  closeTickerOverlay()
+}
+
+/** 从浮层触发搜索相关新闻 */
+function onTickerSearchNews() {
+  const code = tickerOverlay.code
+  closeTickerOverlay()
+  // 触发 tag 搜索：用 $CODE 格式
+  onTagSearch(`$${code}`)
 }
 
 /** 打开链接 */
@@ -1641,4 +1709,5 @@ if (instance) {
     line-height: 1.65;
   }
 }
+
 </style>

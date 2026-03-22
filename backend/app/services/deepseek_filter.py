@@ -92,11 +92,12 @@ JSON 字段及规则：
 - score: 整数，范围 0-10（严格参考上述评分标尺）
 - reason: 限 30 字以内，简述评分理由（例："Q4指引大幅上调，强力催化"或"常规合作意向，无数据支撑"）。
 - tags: 提取 3-5 个核心标签，包含：① 所属板块（如"半导体"） ② 明确个股（如"宁德时代"，若无则省略） ③ 事件定性（如"业绩指引上调"、"宏观数据"、"行业政策"、"市场行情"）。
+- relevant_tickers: 提取新闻中明确涉及的 A 股代码（6位纯数字，如 ["300750", "600519"]），仅限新闻正文中有明确提及的个股，没有则返回空数组 []。
 
 # JSON Format Example
 [
-  {"id": 1, "score": 7, "reason": "CPI数据发布，具体数据对通胀判断有参考价值", "tags": ["宏观经济", "通胀", "宏观数据"]},
-  {"id": 2, "score": 8, "reason": "Q4指引大幅上调，构成实质性盈余惊喜", "tags": ["AI算力", "XX公司", "业绩指引上调", "核心催化"]}
+  {"id": 1, "score": 7, "reason": "CPI数据发布，具体数据对通胀判断有参考价值", "tags": ["宏观经济", "通胀", "宏观数据"], "relevant_tickers": []},
+  {"id": 2, "score": 8, "reason": "Q4指引大幅上调，构成实质性盈余惊喜", "tags": ["AI算力", "宁德时代", "业绩指引上调", "核心催化"], "relevant_tickers": ["300750"]}
 ]"""
 
 # ── 英文新闻评分+翻译的 System Prompt ──
@@ -322,12 +323,14 @@ def _parse_response(raw_text: str, batch: list[RawNewsItem], is_english: bool) -
                     relevant_tickers=tickers,
                 ))
             else:
+                tickers = [str(t) for t in item.get("relevant_tickers", []) if t][:5]
                 scored.append(ScoredNewsItem(
                     raw=batch[idx],
                     score=min(score, 10),
                     reason=str(item.get("reason", "")),
                     summary=str(item.get("summary", ""))[:100],
                     tags=[str(t) for t in item.get("tags", []) if t][:5],
+                    relevant_tickers=tickers,
                 ))
         except (ValueError, TypeError) as e:
             logger.warning("Skipping malformed item in LLM response: %s (%s)", item, e)

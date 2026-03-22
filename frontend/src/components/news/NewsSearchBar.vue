@@ -73,6 +73,7 @@
           :class="{ 'news-card-last': idx === searchList.length - 1 }"
           @open="(url, id) => $emit('open', url, id)"
           @tag-search="(tag) => $emit('tag-search', tag)"
+          @ticker-click="(code) => $emit('ticker-click', code)"
         />
       </view>
     </view>
@@ -111,5 +112,6 @@ defineEmits([
   'quick-search',
   'open',
   'tag-search',
+  'ticker-click',
 ])
 </script>

@@ -15,7 +15,13 @@
 
       <!-- Tags -->
       <view v-if="item.tags && item.tags.length" class="news-tags">
-        <text v-for="tag in item.tags" :key="tag" class="news-tag news-tag-clickable" @click.stop="$emit('tag-search', tag)">{{ tag }}</text>
+        <text
+          v-for="tag in item.tags"
+          :key="tag"
+          class="news-tag"
+          :class="isTickerTag(tag) ? 'news-tag-ticker' : 'news-tag-clickable'"
+          @click.stop="onTagClick(tag)"
+        >{{ tag }}</text>
       </view>
 
       <view class="news-meta">
@@ -74,7 +80,22 @@ const props = defineProps({
   childrenCount: { type: Number, default: 0 },
 })
 
-defineEmits(['open', 'tag-search'])
+const emit = defineEmits(['open', 'tag-search', 'ticker-click'])
+
+/** 判断 tag 是否为 ticker 标签（以 $ 开头） */
+function isTickerTag(tag) {
+  return tag.startsWith('$')
+}
+
+/** 点击 tag：ticker 标签触发 ticker-click，普通标签触发 tag-search */
+function onTagClick(tag) {
+  if (isTickerTag(tag)) {
+    // 去掉 $ 前缀传给上层
+    emit('ticker-click', tag.slice(1))
+  } else {
+    emit('tag-search', tag)
+  }
+}
 
 /** 聚合热度计算：base + children * 0.2 */
 const computedGravity = computed(() => {

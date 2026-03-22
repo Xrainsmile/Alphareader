@@ -208,6 +208,14 @@ export function fetchTrendFilters() {
   return request('/api/v1/stocks/trend_watchlist/filters')
 }
 
+/**
+ * Ticker 速览 — 查询指定标的是否在当日 VCP / 趋势白名单中
+ * @param {string} code 股票代码（如 300750、NVDA、300750.SZ）
+ */
+export function tickerLookup(code) {
+  return request(`/api/v1/stocks/ticker_lookup?code=${encodeURIComponent(code)}`)
+}
+
 // ── Sandbox API（模拟仓）──
 
 /**

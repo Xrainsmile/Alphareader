@@ -17,18 +17,32 @@ provider:
 4.  **状态追踪**：完成核心功能或修复重要问题后，同步更新 `PROGRESS.md`，写明"问题现象、解决方案、防范措施"，并附上 Commit ID。
 5.  **禁止危险操作**：不得执行 `git push --force`、`git reset --hard`（远程）等不可逆操作。
 
-
 ## 二、 后端开发规范 (FastAPI & Python)
 1.  **纯异步编程**：AlphaReader 是全异步架构。所有的 I/O 操作（数据库读写、HTTP 请求、Redis 读取）必须使用 `await`。禁止使用阻塞式的同步代码（如 `requests`，必须用 `httpx.AsyncClient`）。
 2.  **防御性容错**：在 `services/` 层与外部 API（如 DeepSeek、智谱、金融数据源）交互时，必须包含 `try/except` 块和重试机制（指数退避）。单条数据的解析失败绝不允许导致整个 Batch 或 Pipeline 崩溃。
 3.  **不破坏数据源降级链**：在修改 `data_fetcher.py` 时，必须维持原有的"多级降级兜底"逻辑（例如 RS 计算的三级降级，NAV 计算的四级降级）。
+4.  **统一响应格式**：所有 API 端点统一返回 `APIResponse(data=...)` 包装，`@router.get()` 上禁止使用 `response_model` 参数，二者只能选一种模式，不可混用。
+5.  **安全编码底线**：密钥/密码比较一律用 `hmac.compare_digest()`，禁止 `==` / `!=`；CORS 的 `allow_methods` 和 `allow_headers` 必须显式列出，禁止 `["*"]`；Redis 必须配置 `requirepass`。
 
 ## 三、 数据库与测试规范 (PostgreSQL)
 1.  **禁止破坏性 DDL**：在任何情况下，禁止执行 `DROP TABLE`、`TRUNCATE` 或无 `WHERE` 条件的 `DELETE` 语句。
 2.  **批量写入优化**：使用 `asyncpg` 时，优先使用批量写入（如 `executemany`）和单条 Savepoint（`session.begin_nested()`）以防局部失败导致整体回滚。
 3.  **安全测试边界**：你只能连接 `api-key.json` 中配置的脱敏测试数据库和只读测试 Key。不要尝试去寻找或连接线上的生产数据库。
+4.  **列类型正确性**：日期字段用 `DATE` / `TIMESTAMP`，禁止用 `VARCHAR` 存日期；成交量等大数值字段用 `BIGINT`；金额用 `NUMERIC` 避免浮点精度丢失。
+5.  **索引先行**：高频查询字段（`stock_code`、`date`、`status`）必须建索引，新表设计时同步规划。
+6.  **连接池管理**：必须配置 `pool_size`、`max_overflow` 和 `pool_recycle`，防止连接泄漏和数据库侧空闲超时。
 
 ## 四、 前端开发规范 (Vue 3 uni-app)
 1.  **组合式 API**：必须严格使用 `<script setup>` 语法编写所有 Vue 组件。
 2.  **状态与通信**：禁止滥用全局事件总线，合理使用 Props/Emits 和前端缓存进行状态流转。保持 UI 的轻量化。
 3. **更新版本号**： `index.html` 内所有版本号显示 +0.1（如 v3.7 → v3.8）；搜索页面内所有 `v3.x` 字样，确保全部同步更新；自动根据迭代内容判断应该是小版本还是大版本（入大版本v3.x`、小版本v3.x.x）
+4.  **安全测试边界**：你只能连接 `api-key.json` 中配置的脱敏测试数据库和只读测试 Key。不要尝试去寻找或连接线上的生产数据库。
+4.  **组件行数限制**：单个 `.vue` 文件超过 300 行必须拆分子组件，按 UI 区域和职责拆分。拆一步验一步，不攒到最后。
+5.  **CSS 变量统一**：禁止硬编码颜色值（如 `#3B82F6`），全部引用 `uni.scss` 中定义的 CSS 变量。JS 动态样式（如 mp-html `tag-style`）必须用 px，rpx 仅在 `<style>` 块中生效。
+6.  **工具函数复用**：通用逻辑（格式化、API 请求、数据转换）统一放 `utils/`，禁止各组件重复实现。
+
+## 五、 部署与基础设施规范 (Docker & Nginx)
+1.  **多阶段构建**：Dockerfile 必须使用 builder + runtime 两阶段，runtime 镜像不含编译工具（gcc/g++/dev headers），仅安装运行时库。
+2.  **内存限制必配**：`docker-compose.yml` 中每个服务必须配置 `mem_limit`，4GB 服务器总分配不超过 3GB，为系统预留 1GB。
+3.  **禁止并发构建**：一次只 build 一个服务。远程构建使用 `nohup ... &` + 日志文件跟踪，构建前 `ps aux | grep docker` 检查残留进程，定期 `docker builder prune -f` 清理缓存。
+4.  **非 root 运行**：容器内应用进程必须以非 root 用户运行（`adduser` + `USER`）。
