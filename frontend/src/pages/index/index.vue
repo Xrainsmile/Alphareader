@@ -369,23 +369,77 @@ function _destroyImpressionObserver() {
   }
 }
 
+// ── 滚动位置记忆 ──
+let _savedScrollTop = 0
+let _lastHideTime = 0
+/** 数据过期阈值：离开超过 5 分钟才重新加载 */
+const STALE_THRESHOLD = 5 * 60 * 1000
+/** 是否已完成首次加载 */
+let _initialLoaded = false
+
+function _saveScrollPosition() {
+  // #ifdef H5
+  _savedScrollTop = window.pageYOffset || document.documentElement.scrollTop || 0
+  // #endif
+  // #ifndef H5
+  // 小程序中通过 createSelectorQuery 获取
+  try {
+    const query = uni.createSelectorQuery()
+    query.selectViewport().scrollOffset((res) => {
+      if (res) _savedScrollTop = res.scrollTop || 0
+    })
+    query.exec()
+  } catch (e) { /* ignore */ }
+  // #endif
+}
+
+function _restoreScrollPosition() {
+  if (_savedScrollTop <= 0) return
+  const top = _savedScrollTop
+  nextTick(() => {
+    setTimeout(() => {
+      // #ifdef H5
+      window.scrollTo({ top, behavior: 'instant' })
+      // #endif
+      // #ifndef H5
+      uni.pageScrollTo({ scrollTop: top, duration: 0 })
+      // #endif
+    }, 50)
+  })
+}
+
 // ── uni-app 页面生命周期（通过 defineOptions 在 script setup 中暂不支持，使用底层实例挂载） ──
 const instance = getCurrentInstance()
 if (instance) {
   // onShow
   instance.proxy.$options.onShow = [function () {
     initTracker()
-    doResetAndLoad().then(() => {
+    const now = Date.now()
+    const elapsed = _lastHideTime ? (now - _lastHideTime) : Infinity
+
+    if (!_initialLoaded || elapsed > STALE_THRESHOLD) {
+      // 首次进入 或 离开超过阈值 → 重新加载
+      _initialLoaded = true
+      doResetAndLoad().then(() => {
+        // #ifdef H5
+        nextTick(() => _observeCards())
+        // #endif
+      })
+    } else {
+      // 短时间内返回（如从新闻详情页返回） → 恢复滚动位置，不重新加载
+      _restoreScrollPosition()
       // #ifdef H5
       nextTick(() => _observeCards())
       // #endif
-    })
+    }
     // #ifdef H5
     _setupImpressionObserver()
     // #endif
   }]
   // onHide
   instance.proxy.$options.onHide = [function () {
+    _saveScrollPosition()
+    _lastHideTime = Date.now()
     destroyTracker()
     // #ifdef H5
     _destroyImpressionObserver()
@@ -393,6 +447,7 @@ if (instance) {
   }]
   // onPullDownRefresh
   instance.proxy.$options.onPullDownRefresh = [function () {
+    _savedScrollTop = 0
     doResetAndLoad().finally(() => {
       uni.stopPullDownRefresh()
     })
