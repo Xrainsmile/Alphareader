@@ -216,6 +216,29 @@ export function tickerLookup(code) {
   return request(`/api/v1/stocks/ticker_lookup?code=${encodeURIComponent(code)}`)
 }
 
+// ── Catalyst API（催化剂标的）──
+
+/**
+ * 获取催化剂标的排行榜
+ * @param {Object} params - {target_date, confirm_level, min_heat}
+ */
+export function fetchCatalystStocks(params = {}) {
+  const query = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return request(`/api/v1/catalyst/stocks${query ? '?' + query : ''}`)
+}
+
+/**
+ * 批量查询多只标的的催化剂命中状态
+ * @param {string[]} tsCodes 股票代码数组
+ */
+export function batchCheckCatalyst(tsCodes) {
+  if (!tsCodes || tsCodes.length === 0) return Promise.resolve({ date: null, items: {} })
+  return request(`/api/v1/catalyst/batch_check?ts_codes=${encodeURIComponent(tsCodes.join(','))}`)
+}
+
 // ── Sandbox API（模拟仓）──
 
 /**

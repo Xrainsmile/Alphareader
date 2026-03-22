@@ -24,6 +24,13 @@
     </view>
     <view
       class="tab-item"
+      :class="{ 'tab-active': activeTab === 'catalyst' }"
+      @click="$emit('select-catalyst')"
+    >
+      <text class="tab-text">🔥催化剂</text>
+    </view>
+    <view
+      class="tab-item"
       :class="{ 'tab-active': activeTab === 'value' }"
       @click="$emit('select-value')"
     >
@@ -47,7 +54,7 @@ defineProps({
   },
 })
 
-defineEmits(['select-rs', 'select-vcp', 'select-trend', 'select-value', 'select-sandbox'])
+defineEmits(['select-rs', 'select-vcp', 'select-trend', 'select-catalyst', 'select-value', 'select-sandbox'])
 </script>
 
 <style scoped>

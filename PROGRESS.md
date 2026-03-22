@@ -1,5 +1,63 @@
 # AlphaReader 开发进度记录
 
+## 2026-03-22: 层级2 — 催化剂标的聚合 × 技术面交叉验证
+
+### 问题/需求
+新闻情报和技术面选股之间缺少桥梁。VCP 白名单和新闻催化剂是两个独立运行的孤岛，交叉验证完全靠人肉在两个 Tab 之间切换。
+
+### 解决方案
+实现「催化剂标的聚合服务」— 自动化「新闻催化剂 × 技术面」交叉验证：
+
+**后端（4 个新文件 + 3 个文件修改）：**
+
+| 文件 | 说明 |
+|------|------|
+| `models/catalyst.py` | 新增 `NewsCatalystStock` ORM 模型，存储催化剂标的聚合数据 |
+| `services/catalyst_aggregator.py` | 核心聚合服务：高分新闻 → 实体提取 → LLM 公司名映射 → 按 ticker 聚合 → 交叉验证 → 入库 |
+| `api/v1/catalyst.py` | 3 个 API 端点：催化剂排行榜 / 单票检查 / 批量检查 |
+| `scripts/migrate_catalyst.py` | 数据库迁移脚本 |
+| `models/__init__.py` | 注册新模型 |
+| `api/v1/router.py` | 注册催化剂路由 |
+| `services/scheduler.py` | 注册定时任务（工作日 08:45 盘前 + 15:50 盘后） |
+
+**前端（1 个新文件 + 4 个文件修改）：**
+
+| 文件 | 说明 |
+|------|------|
+| `components/stocks/CatalystTab.vue` | 新增催化剂 Tab，展示排行榜 + 分类筛选（双确认/强RS/观察池） |
+| `components/stocks/StocksTabBar.vue` | 新增「🔥催化剂」Tab 按钮 |
+| `pages/stocks/index.vue` | 集成 CatalystTab 组件 |
+| `components/stocks/VcpTab.vue` | VCP 白名单标的旁加 🔥 标记 + 展开行催化剂信息 |
+| `components/stocks/TrendTab.vue` | 趋势白名单标的旁加 🔥 标记 + 展开行催化剂信息 |
+| `utils/api.js` | 新增 `fetchCatalystStocks` / `batchCheckCatalyst` API 函数 |
+
+**核心逻辑流程：**
+```
+每日新闻(ai_score ≥ 7) → 提取 tags/sentiment_entity 中的公司名
+  → LLM 批量映射公司名 → A 股 ts_code（SiliconFlow Qwen3-8B，免费）
+  → 按 ticker 聚合（出现次数 × 最高分 = 催化剂热度）
+  → 与 VCP/趋势白名单 + RS Rating 交叉验证
+  → 分类：🎯 双确认 / 💪 强RS / 👀 观察池
+  → 写入 news_catalyst_stocks 表
+```
+
+**交叉验证分类说明：**
+- `double_confirmed`：催化剂 + 技术面双确认（在 VCP 或趋势白名单中）
+- `strong_rs`：催化剂 + RS ≥ 80
+- `catalyst_only`：有催化剂但技术面未就绪（观察池）
+
+**定时调度：**
+- 08:45 盘前催化剂聚合 → 09:00 盘前研报
+- 15:50 盘后催化剂聚合 → 16:00 盘后研报
+
+### 防范措施
+- 催化剂聚合失败不影响现有 pipeline（独立服务，try/except 包裹）
+- LLM 映射失败时 graceful degradation（只返回空映射，不崩溃）
+- 前端 batchCheckCatalyst 失败不影响 VCP/趋势白名单的主功能展示
+- 数据库迁移使用 IF NOT EXISTS，幂等安全
+
+---
+
 ## 2026-03-21: Phase 3 — 代码整洁（B-7 / B-2 / B-3 / F-4）
 
 ### 问题/需求

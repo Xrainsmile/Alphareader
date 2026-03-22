@@ -37,6 +37,7 @@ from app.services.sandbox_nav import compute_nav_core
 from app.services.screener.pipeline import ScreenerPipeline
 from app.services.screener.trend_pipeline import TrendPipeline
 from app.services.briefing_service import generate_briefing
+from app.services.catalyst_aggregator import run_catalyst_aggregation
 from app.services.digest_service import generate_digest
 
 logger = logging.getLogger("alphareader.scheduler")
@@ -288,6 +289,28 @@ async def _briefing_job():
         raise
 
 
+async def _catalyst_job():
+    """催化剂标的聚合 — 工作日 08:45 和 15:50 触发。
+
+    08:45: 盘前，基于隔夜+早间新闻提取催化剂标的
+    15:50: 盘后，基于全天新闻更新催化剂标的（在 Briefing 16:00 之前跑完）
+
+    聚合高分新闻中的 A 股标的，与 VCP/趋势白名单交叉验证。
+    """
+    try:
+        logger.info("Catalyst aggregation job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        result = await run_catalyst_aggregation()
+        logger.info("Catalyst aggregation job completed: %s", result)
+        return result
+    except Exception as e:
+        logger.exception("Catalyst aggregation job failed: %s", e)
+        await send_alert(
+            "🔴 Catalyst Aggregation Job Failed",
+            f"{type(e).__name__}: {e}",
+        )
+        raise
+
+
 def start_scheduler():
     """注册 Cron 定时任务并启动调度器。
 
@@ -487,6 +510,39 @@ def start_scheduler():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
+    # ── 催化剂标的聚合（工作日 08:45 盘前 + 15:50 盘后，在 Briefing 之前）──
+    # 08:45 盘前：基于隔夜+早间新闻提取催化剂标的
+    scheduler.add_job(
+        _catalyst_job,
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="8",
+            minute="45",
+            timezone=settings.TIMEZONE,
+        ),
+        id="catalyst_0845",
+        name=f"Catalyst Aggregation AM (Mon-Fri 08:45 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # 15:50 盘后：基于全天新闻更新催化剂标的（在 Briefing 16:00 之前跑完）
+    scheduler.add_job(
+        _catalyst_job,
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="15",
+            minute="50",
+            timezone=settings.TIMEZONE,
+        ),
+        id="catalyst_1550",
+        name=f"Catalyst Aggregation PM (Mon-Fri 15:50 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
     # ── 每日综合分析报告（工作日 09:00 盘前 + 16:00 盘后）──
     # 09:00 盘前研报：基于隔夜新闻 + 前一日选股结果
     scheduler.add_job(
@@ -559,6 +615,13 @@ def start_scheduler():
     bj_pm = scheduler.get_job("daily_briefing")
     bn_pm = bj_pm.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if bj_pm and bj_pm.next_run_time else "N/A"
     logger.info("Daily Briefing scheduled Mon-Fri 09:00 (next: %s) & 16:00 (next: %s)", bn_am, bn_pm)
+
+    # Catalyst Aggregation status
+    cat_am = scheduler.get_job("catalyst_0845")
+    cat_am_next = cat_am.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if cat_am and cat_am.next_run_time else "N/A"
+    cat_pm = scheduler.get_job("catalyst_1550")
+    cat_pm_next = cat_pm.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if cat_pm and cat_pm.next_run_time else "N/A"
+    logger.info("Catalyst Aggregation scheduled Mon-Fri 08:45 (next: %s) & 15:50 (next: %s)", cat_am_next, cat_pm_next)
 
 
 def stop_scheduler():

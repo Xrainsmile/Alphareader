@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.briefings import router as briefings_router
 from app.api.v1.bridge import router as bridge_router
+from app.api.v1.catalyst import router as catalyst_router
 from app.api.v1.digests import router as digests_router
 from app.api.v1.health import router as health_router
 from app.api.v1.news import router as news_router
@@ -28,5 +29,6 @@ _protected.include_router(briefings_router)
 _protected.include_router(stocks_router)
 _protected.include_router(sandbox_router)
 _protected.include_router(analytics_router)
+_protected.include_router(catalyst_router)
 
 v1_router.include_router(_protected)

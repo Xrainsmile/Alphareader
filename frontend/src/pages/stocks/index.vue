@@ -6,6 +6,7 @@
       @select-rs="onSelectRs"
       @select-vcp="onSelectVcp"
       @select-trend="onSelectTrend"
+      @select-catalyst="onSelectCatalyst"
       @select-value="onSelectValue"
       @select-sandbox="switchToSandbox"
     />
@@ -20,6 +21,9 @@
 
     <!-- 右侧趋势策略 Tab -->
     <TrendTab v-if="activeTab === 'trend'" ref="trendRef" />
+
+    <!-- 催化剂 Tab -->
+    <CatalystTab v-if="activeTab === 'catalyst'" ref="catalystRef" />
 
     <!-- 价投策略 Tab -->
     <ValueTab v-if="activeTab === 'value'" ref="valueRef" />
@@ -50,6 +54,7 @@ import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import VcpTab from '@/components/stocks/VcpTab.vue'
 import TrendTab from '@/components/stocks/TrendTab.vue'
+import CatalystTab from '@/components/stocks/CatalystTab.vue'
 import ValueTab from '@/components/stocks/ValueTab.vue'
 import SandboxTab from '@/components/stocks/SandboxTab.vue'
 import { verifySandboxAccess } from '@/utils/api'
@@ -58,6 +63,7 @@ import { verifySandboxAccess } from '@/utils/api'
 const activeTab = ref('vcp')
 const vcpRef = ref(null)
 const trendRef = ref(null)
+const catalystRef = ref(null)
 const valueRef = ref(null)
 const sandboxRef = ref(null)
 
@@ -65,6 +71,7 @@ const sandboxRef = ref(null)
 const onSelectRs = () => { activeTab.value = 'rs' }
 const onSelectVcp = () => { activeTab.value = 'vcp' }
 const onSelectTrend = () => { activeTab.value = 'trend' }
+const onSelectCatalyst = () => { activeTab.value = 'catalyst' }
 const onSelectValue = () => { activeTab.value = 'value' }
 
 // ── 模拟仓密码验证 ──

@@ -41,7 +41,10 @@
         <view class="vcp-row-main">
           <view class="col vcp-col-rank"><text class="rank-num" :class="rankClass(idx)">{{ idx + 1 }}</text></view>
           <view class="col vcp-col-name">
-            <text class="stock-name">{{ item.name || item.ts_code }}</text>
+            <view style="display: flex; align-items: center; gap: 4rpx;">
+              <text class="stock-name">{{ item.name || item.ts_code }}</text>
+              <text v-if="catalystMap[item.ts_code]" class="catalyst-fire" title="有新闻催化剂">🔥</text>
+            </view>
             <text class="stock-code">{{ item.ts_code }}{{ item.industry ? ' · ' + item.industry : '' }}</text>
           </view>
           <view class="col vcp-col-price"><text class="close-price">{{ formatPrice(item.current_price) }}</text></view>
@@ -75,6 +78,12 @@
 
         <!-- 展开行：完整详情 -->
         <view v-if="expandedIdx === idx" class="vcp-expand">
+          <view v-if="catalystMap[item.ts_code]" class="vcp-expand-row">
+            <text class="vcp-expand-label">🔥 催化剂</text>
+            <text class="vcp-expand-val" style="color: var(--color-up);">
+              {{ catalystMap[item.ts_code].catalyst_summary || `${catalystMap[item.ts_code].news_count}条高分新闻命中` }}
+            </text>
+          </view>
           <view class="vcp-expand-row">
             <text class="vcp-expand-label">行业</text>
             <text class="vcp-expand-val">{{ item.industry || '--' }}</text>
@@ -115,13 +124,16 @@
 import { ref, computed, onMounted } from 'vue'
 import IndustryConceptFilter from './IndustryConceptFilter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { fetchVCPWatchlist, fetchVCPFilters } from '@/utils/api'
+import { fetchVCPWatchlist, fetchVCPFilters, batchCheckCatalyst } from '@/utils/api'
 
 const vcpList = ref([])
 const vcpDate = ref('')
 const vcpLoading = ref(false)
 const expandedIdx = ref(-1)
 const filterRef = ref(null)
+
+// 催化剂映射 {ts_code: {has_catalyst, heat_score, ...}}
+const catalystMap = ref({})
 
 // 筛选器选项
 const industryOptions = ref([])
@@ -166,6 +178,17 @@ const loadData = async () => {
     const data = await fetchVCPWatchlist({})
     vcpList.value = data.items || []
     vcpDate.value = data.date || ''
+
+    // 批量获取催化剂状态
+    const codes = vcpList.value.map(i => i.ts_code).filter(Boolean)
+    if (codes.length > 0) {
+      try {
+        const catData = await batchCheckCatalyst(codes)
+        catalystMap.value = catData.items || {}
+      } catch (e) {
+        console.warn('加载催化剂状态失败（不影响主功能）:', e)
+      }
+    }
   } catch (e) {
     console.error('加载 VCP 白名单失败:', e)
     uni.showToast({ title: '加载失败', icon: 'none' })
