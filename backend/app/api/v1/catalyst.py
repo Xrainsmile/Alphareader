@@ -45,12 +45,23 @@ class CatalystStockItem(BaseModel):
 
 
 def _generate_futu_url(ts_code: str, market: str = "CN") -> str:
-    """根据股票代码和市场生成富途链接。"""
+    """根据股票代码和市场生成行情链接。
+
+    A 股使用雪球（富途 A 股网页版已下线）:
+        https://xueqiu.com/S/SH600786
+    美股使用富途:
+        https://www.futunn.com/stock/AAPL-US
+    """
     if market == "US":
         return f"https://www.futunn.com/stock/{ts_code.upper().strip()}-US"
     code = ts_code.replace(".SZ", "").replace(".SH", "").replace(".BJ", "").strip()
-    suffix = "SH" if code.startswith("6") else "SZ"
-    return f"https://www.futunn.com/stock/{code}-{suffix}"
+    if ts_code.endswith(".SH") or code.startswith("6"):
+        prefix = "SH"
+    elif ts_code.endswith(".BJ") or code.startswith("4") or code.startswith("8") or code.startswith("92"):
+        prefix = "BJ"
+    else:
+        prefix = "SZ"
+    return f"https://xueqiu.com/S/{prefix}{code}"
 
 
 # ── Endpoints ──

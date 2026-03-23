@@ -455,16 +455,22 @@ class VCPWatchlistResponse(BaseModel):
 
 
 def _generate_futu_url(ts_code: str, market: str = "A") -> str:
-    """根据股票代码生成富途牛牛网页版报价链接。
+    """根据股票代码生成行情页面链接。
 
-    A 股格式: https://www.futunn.com/stock/{code}-{SH/SZ}
-    港股格式: https://www.futunn.com/stock/{code}-HK
-    美股格式: https://www.futunn.com/stock/{SYMBOL}-US
+    A 股使用雪球（富途 A 股网页版已下线）:
+        https://xueqiu.com/S/SH600786
+    港股使用富途: https://www.futunn.com/stock/{code}-HK
+    美股使用富途: https://www.futunn.com/stock/{SYMBOL}-US
     """
     if market == "A":
-        code = ts_code.replace(".SZ", "").replace(".SH", "").strip()
-        suffix = "SH" if code.startswith("6") else "SZ"
-        return f"https://www.futunn.com/stock/{code}-{suffix}"
+        code = ts_code.replace(".SZ", "").replace(".SH", "").replace(".BJ", "").strip()
+        if ts_code.endswith(".SH") or code.startswith("6"):
+            prefix = "SH"
+        elif ts_code.endswith(".BJ") or code.startswith("4") or code.startswith("8") or code.startswith("92"):
+            prefix = "BJ"
+        else:
+            prefix = "SZ"
+        return f"https://xueqiu.com/S/{prefix}{code}"
     elif market == "HK":
         code = ts_code.strip()
         return f"https://www.futunn.com/stock/{code}-HK"

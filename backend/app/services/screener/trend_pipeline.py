@@ -139,8 +139,18 @@ class TrendPipeline:
             return result
         logger.info("Step 2 趋势过滤完成 [%.1fs]", time.time() - step_start)
 
+        # ── Step 2.5: 从 DB 批量加载股票名称 ──
+        name_map: dict[str, str] = {}
+        try:
+            from .utils import load_stock_names
+            passed_codes = set(trend_passed["ts_code"].tolist())
+            name_map = await load_stock_names(passed_codes, self.market)
+            logger.info("从 DB 加载 %d 只股票名称", len(name_map))
+        except Exception as e:
+            logger.warning("从 DB 加载股票名称失败（不影响后续流程）: %s", e)
+
         # ── Step 3: 组装白名单 ──
-        watchlist = self._build_watchlist(trend_passed)
+        watchlist = self._build_watchlist(trend_passed, name_map)
         result["stats"]["output_count"] = len(watchlist)
 
         # ── Step 3.5: 补充行业/题材/主营/资金流向（仅 A 股）──
@@ -175,18 +185,26 @@ class TrendPipeline:
 
         return result
 
-    def _build_watchlist(self, trend_df: pd.DataFrame) -> list[dict]:
+    def _build_watchlist(
+        self,
+        trend_df: pd.DataFrame,
+        name_map: dict[str, str] | None = None,
+    ) -> list[dict]:
         """组装最终白名单输出。
 
         输出字段：
-            ticker, current_price, ma20, ma50, adx, rsi,
+            ticker, name, current_price, ma20, ma50, adx, rsi,
             volume_ratio, trend_score
         """
+        if name_map is None:
+            name_map = {}
         watchlist = []
 
         for _, row in trend_df.iterrows():
+            ts_code = row["ts_code"]
             entry = {
-                "ticker": row["ts_code"],
+                "ticker": ts_code,
+                "name": name_map.get(ts_code, ""),
                 "current_price": round(float(row["latest_close"]), 2) if pd.notna(row.get("latest_close")) else None,
                 "ma20": row.get("ma20"),
                 "ma50": row.get("ma50"),
@@ -316,11 +334,12 @@ class TrendPipeline:
             ("全市场输入", stats.get("total_input", "-")),
             ("剔除ST", f'-{stats["st_removed"]}' if stats.get("st_removed") else "0"),
             ("日均成交额>2000万", stats.get("amount_filter", "-")),
-            ("T1 MA多头排列", stats.get("T1_ma_alignment", "-")),
-            ("T2 ADX趋势强度>20", stats.get("T2_adx_strength", "-")),
-            ("T3 近期高点突破", stats.get("T3_breakout", "-")),
-            ("T4 近期放量≥1.2x", stats.get("T4_volume_surge", "-")),
-            ("T5 RSI动量(45-85)", stats.get("T5_rsi_momentum", "-")),
+            ("数据新鲜度", stats.get("freshness_filter", "-")),
+            ("T1 MA双线多头排列", stats.get("T1_ma_alignment", "-")),
+            ("T2 ADX趋势强度>25", stats.get("T2_adx_strength", "-")),
+            ("T3 当日创20日新高", stats.get("T3_breakout", "-")),
+            ("T4 近3天放量≥1.5x", stats.get("T4_volume_surge", "-")),
+            ("T5 RSI动量(50-80)", stats.get("T5_rsi_momentum", "-")),
         ]
         print("\n  ┌─ 趋势量化漏斗 ──────────────────┐")
         for name, count in funnel:

@@ -49,6 +49,34 @@ def _clean_llm_output(raw_text: str) -> str:
     return text
 
 
+def _fix_common_json_errors(text: str) -> str:
+    """尝试修复 LLM 输出中常见的 JSON 格式错误。
+
+    修复项：
+      1. 去除 JavaScript/Python 风格的行注释 (// ...)
+      2. 去除尾逗号 (trailing comma)：{..., } 或 [..., ]
+      3. 将 Python 常量 True/False/None 替换为 JSON 的 true/false/null
+      4. 将单引号 key/value 替换为双引号（简化版，不处理嵌套引号）
+    """
+    # 1. 去除行注释（// 后面的内容，但不处理 URL 中的 //）
+    text = re.sub(r'(?<!["\':])//[^\n]*', '', text)
+
+    # 2. 去除尾逗号
+    text = re.sub(r',\s*([}\]])', r'\1', text)
+
+    # 3. Python 常量 → JSON 常量
+    text = re.sub(r'\bTrue\b', 'true', text)
+    text = re.sub(r'\bFalse\b', 'false', text)
+    text = re.sub(r'\bNone\b', 'null', text)
+
+    # 4. 单引号 → 双引号（简单替换，只处理 key/value 边界）
+    # 匹配模式：'key' 或 'value'（前后有 : , [ { } ] 或行首行尾）
+    if "'" in text and '"' not in text:
+        text = text.replace("'", '"')
+
+    return text
+
+
 def extract_json_from_deepseek(raw_text: str) -> list[dict] | dict | None:
     """Extract JSON (array or object) from a DeepSeek LLM response.
 
@@ -68,7 +96,17 @@ def extract_json_from_deepseek(raw_text: str) -> list[dict] | dict | None:
     except json.JSONDecodeError as e:
         logger.debug("Direct parse failed after cleaning: %s", e)
 
-    # Strategy 2: Greedy regex for [ ... ] on ORIGINAL text
+    # Strategy 2: Fix common LLM JSON errors and retry
+    try:
+        fixed = _fix_common_json_errors(cleaned)
+        if fixed != cleaned:
+            result = json.loads(fixed)
+            logger.debug("Parsed after fixing common JSON errors")
+            return result
+    except json.JSONDecodeError as e:
+        logger.debug("Parse after fix attempt also failed: %s", e)
+
+    # Strategy 3: Greedy regex for [ ... ] on ORIGINAL text
     bracket_match = re.search(r"\[.*\]", raw_text, re.DOTALL)
     if bracket_match:
         try:

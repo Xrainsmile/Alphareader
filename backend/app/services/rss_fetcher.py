@@ -63,6 +63,10 @@ HTTP_HEADERS = {
 # 触发切换到备用 URL 的 HTTP 状态码（429=限流，503=服务不可用）
 _FALLBACK_STATUS_CODES = {429, 503}
 
+# 解析器层面的时效性预过滤：丢弃 published_at 超过此天数的文章
+# 某些 RSS 源（如 OpenAI Blog）返回全量历史，在解析器阶段就截断可减少下游处理量
+_PARSER_MAX_AGE_DAYS = 8  # 比 pipeline 的 MAX_NEWS_AGE_DAYS(7) 多留 1 天余量
+
 
 @dataclass
 class RawNewsItem:
@@ -429,18 +433,19 @@ def _parse_finnhub(data: list | dict) -> list[RawNewsItem]:
 # ════════════════════════════════════════════════════════════════
 
 def _parse_hackernews(data: list | dict) -> list[RawNewsItem]:
-    """解析 Hacker News Firebase API（https://hacker-news.firebaseio.com）
+    """解析 Hacker News Algolia API（https://hn.algolia.com/api/v1/search）
 
-    通过 /v0/topstories.json 获取 Top Story ID 列表，
-    再批量获取每条的 title/url/time/score。
-    注意：此函数接收的 data 是预处理后的 story 列表（由 fetch 逻辑处理）。
+    使用 Algolia 搜索 API 替代 Firebase API，一次请求即可获取所有热门文章，
+    避免从中国服务器逐条请求 Firebase 的高延迟和高失败率。
     """
     items: list[RawNewsItem] = []
-    entries = data if isinstance(data, list) else []
+    # Algolia API 返回 {"hits": [...]}
+    entries = data.get("hits", []) if isinstance(data, dict) else data
     for entry in entries:
         title = (entry.get("title") or "").strip()
-        url = entry.get("url") or f"https://news.ycombinator.com/item?id={entry.get('id', '')}"
-        ts = entry.get("time")
+        url = entry.get("url") or f"https://news.ycombinator.com/item?id={entry.get('objectID', '')}"
+        # Algolia 使用 created_at_i (unix timestamp)
+        ts = entry.get("created_at_i") or entry.get("time")
         published = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
         if title:
             items.append(RawNewsItem(
@@ -452,20 +457,35 @@ def _parse_hackernews(data: list | dict) -> list[RawNewsItem]:
 
 
 def _parse_openai_blog(raw_text: str) -> list[RawNewsItem]:
-    """解析 OpenAI Blog RSS (https://openai.com/news/rss/)"""
+    """解析 OpenAI Blog RSS (https://openai.com/news/rss/)
+    
+    注意：OpenAI Blog RSS 会返回全量历史文章（~900条，从2016年至今），
+    必须在解析器内部预过滤，只保留最近 _PARSER_MAX_AGE_DAYS 天的文章，
+    避免下游浪费大量 Redis 查询和内存。
+    """
+    from datetime import timedelta
     feed = feedparser.parse(raw_text)
     items: list[RawNewsItem] = []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=_PARSER_MAX_AGE_DAYS)
+    skipped = 0
     for entry in feed.entries:
+        published = _parse_rss_time(entry)
+        # 有明确发布时间且超过截止日期的直接跳过
+        if published and published < cutoff:
+            skipped += 1
+            continue
         title = entry.get("title", "").strip()
         url = entry.get("link", "")
         content = _strip_html(entry.get("summary", "") or entry.get("description", ""))
-        published = _parse_rss_time(entry)
         if title and url:
             items.append(RawNewsItem(
                 title=title, content=content or title,
                 url=url, source="OpenAI Blog", published_at=published,
                 category="科技",
             ))
+    if skipped:
+        logger.info("OpenAI Blog: pre-filtered %d stale entries (>%dd), kept %d",
+                     skipped, _PARSER_MAX_AGE_DAYS, len(items))
     return items
 
 
@@ -518,8 +538,10 @@ def _parse_anthropic(raw_text: str) -> list[RawNewsItem]:
         if not slug or slug in ("engineering", "research", "news"):
             continue
 
-        # 从 slug 生成标题（将连字符替换为空格并首字母大写）
-        title = slug.replace("-", " ").title()
+        # 从 slug 生成标题（将连字符替换为空格）
+        # 使用 capitalize 而非 title()，避免将缩写词 RL/AI 错误地变成 Rl/Ai
+        raw_title = slug.replace("-", " ")
+        title = raw_title[0].upper() + raw_title[1:] if raw_title else raw_title
 
         published = None
         if lastmod:
@@ -588,8 +610,22 @@ class FeedSource:
     url: str                                    # 主 URL
     parser: Callable
     is_rss: bool = False                        # True = RSS/Atom 格式，用 feedparser 解析
-    is_api_hn: bool = False                     # True = Hacker News Firebase API（需二次请求获取详情）
     fallback_urls: list[str] = field(default_factory=list)  # 主 URL 失败时按顺序尝试的备用 URL
+
+
+# RSSHub 备用实例列表（可通过环境变量 RSSHUB_INSTANCES 覆盖，逗号分隔）
+# RSSHub 是开源的 RSS 生成器，提供多个公共实例作为备用
+# 注意：必须在 FEED_SOURCES 之前定义，因为部分信源的 fallback_urls 引用此列表
+import os as _os
+_RSSHUB_INSTANCES = [
+    u.strip() for u in
+    _os.environ.get("RSSHUB_INSTANCES", "").split(",")
+    if u.strip()
+] or [
+    "https://rsshub.app",
+    "https://rsshub.rssforever.com",
+    "https://rsshub.pseudoyu.com",
+]
 
 
 # 活跃信源列表：pipeline 每次运行时并发抓取以下所有信源
@@ -625,12 +661,16 @@ FEED_SOURCES: list[FeedSource] = [
         url="https://techcrunch.com/feed/",
         parser=_parse_techcrunch,
         is_rss=True,
+        fallback_urls=[
+            f"{inst}/techcrunch" for inst in _RSSHUB_INSTANCES
+        ],
     ),
     FeedSource(
         name="Hacker News",
-        url="https://hacker-news.firebaseio.com/v0/topstories.json",
+        url="https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30",
         parser=_parse_hackernews,
-        is_api_hn=True,   # 特殊标记：需要二次请求获取详情
+        # 使用 Algolia API 替代 Firebase，一次请求获取所有热门文章
+        # 避免从中国服务器多次请求 Firebase 的高延迟和高失败率
     ),
     FeedSource(
         name="OpenAI Blog",
@@ -643,6 +683,9 @@ FEED_SOURCES: list[FeedSource] = [
         url="https://blog.google/technology/ai/rss/",
         parser=_parse_google_ai_blog,
         is_rss=True,
+        fallback_urls=[
+            f"{inst}/google/blog/ai" for inst in _RSSHUB_INSTANCES
+        ],
     ),
     FeedSource(
         name="Anthropic",
@@ -655,6 +698,9 @@ FEED_SOURCES: list[FeedSource] = [
         url="https://huggingface.co/blog/feed.xml",
         parser=_parse_huggingface_blog,
         is_rss=True,
+        fallback_urls=[
+            f"{inst}/huggingface/blog" for inst in _RSSHUB_INSTANCES
+        ],
     ),
     FeedSource(
         name="MIT Tech Review",
@@ -662,19 +708,6 @@ FEED_SOURCES: list[FeedSource] = [
         parser=_parse_mit_tech_review,
         is_rss=True,
     ),
-]
-
-# RSSHub 备用实例列表（可通过环境变量 RSSHUB_INSTANCES 覆盖，逗号分隔）
-# RSSHub 是开源的 RSS 生成器，提供多个公共实例作为备用
-import os as _os
-_RSSHUB_INSTANCES = [
-    u.strip() for u in
-    _os.environ.get("RSSHUB_INSTANCES", "").split(",")
-    if u.strip()
-] or [
-    "https://rsshub.app",
-    "https://rsshub.rssforever.com",
-    "https://rsshub.pseudoyu.com",
 ]
 
 # 指数退避重试配置：每个 URL 最多重试 2 次，等待时间 = 2 × 2^attempt 秒
@@ -743,14 +776,9 @@ async def _fetch_raw_items(
     """抓取单个信源的原始数据并解析。失败返回 None。
 
     如果信源配置了 fallback_urls，会使用 Primary → Fallback 策略逐个尝试。
-    Hacker News (is_api_hn=True) 使用特殊的二次请求逻辑。
     """
     if source.fallback_urls:
         return await _fetch_with_fallback(client, source)
-
-    # Hacker News 特殊处理：先获取 Top Story IDs，再并发获取前 30 条详情
-    if source.is_api_hn:
-        return await _fetch_hackernews_stories(client, source)
 
     try:
         resp = await client.get(source.url, timeout=20.0)
@@ -767,48 +795,6 @@ async def _fetch_raw_items(
     except Exception as e:
         logger.error("Parser error for %s: %s", source.name, e)
         return None
-
-
-async def _fetch_hackernews_stories(
-    client: httpx.AsyncClient,
-    source: FeedSource,
-    max_stories: int = 30,
-) -> list[RawNewsItem] | None:
-    """Hacker News Firebase API 二次请求：
-    1. GET /v0/topstories.json → 获取 Top Story ID 列表
-    2. 并发 GET /v0/item/{id}.json → 获取每条详情
-    只取前 max_stories 条，避免请求过多。
-    """
-    try:
-        resp = await client.get(source.url, timeout=15.0)
-        resp.raise_for_status()
-        story_ids = resp.json()
-    except Exception as e:
-        logger.warning("Failed to fetch HN top stories: %s", e)
-        return None
-
-    if not isinstance(story_ids, list) or not story_ids:
-        return None
-
-    # 只取前 max_stories 条
-    story_ids = story_ids[:max_stories]
-
-    async def _get_story(sid: int) -> dict | None:
-        try:
-            r = await client.get(
-                f"https://hacker-news.firebaseio.com/v0/item/{sid}.json",
-                timeout=10.0,
-            )
-            r.raise_for_status()
-            return r.json()
-        except Exception:
-            return None
-
-    results = await asyncio.gather(*[_get_story(sid) for sid in story_ids])
-    stories = [s for s in results if s and isinstance(s, dict) and s.get("title")]
-
-    logger.info("HN: fetched %d/%d story details", len(stories), len(story_ids))
-    return source.parser(stories)
 
 
 async def _fetch_with_fallback(

@@ -380,6 +380,122 @@ def _aggregate_by_ticker(
 
 
 # ═══════════════════════════════════════════════════════════
+#  个股近期走势检查（情绪修正因子）
+# ═══════════════════════════════════════════════════════════
+
+async def _fetch_price_trend_map(
+    ts_codes: set[str], lookback_days: int = 5
+) -> dict[str, dict]:
+    """查询催化剂标的近 N 日涨跌幅，用于修正情绪评分。
+
+    返回: {ts_code: {"pct_5d": float, "trend_warning": str | None}}
+
+    走势警告规则：
+      - 累计跌幅 <= -10%: "strong_down" — 严重背离，情绪大幅衰减
+      - 累计跌幅 <= -5%:  "down"        — 走势偏弱，情绪适度衰减
+      - 其他:              None          — 无警告
+    """
+    from sqlalchemy import text as sa_text
+
+    # 催化剂 ts_code 带后缀(600489.SH)，行情表用纯数字(600489)
+    code_map = {}  # bare_code -> ts_code_with_suffix
+    for tc in ts_codes:
+        bare = tc.split(".")[0]
+        code_map[bare] = tc
+
+    if not code_map:
+        return {}
+
+    sql = sa_text("""
+        WITH ranked AS (
+            SELECT ts_code, close, pct_change, trade_date,
+                   ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) as rn
+            FROM stock_daily_quote
+            WHERE ts_code = ANY(:codes)
+            ORDER BY ts_code, trade_date DESC
+        )
+        SELECT ts_code,
+               -- 最新收盘价
+               MAX(CASE WHEN rn = 1 THEN close END) as latest_close,
+               -- N 天前收盘价
+               MAX(CASE WHEN rn = :lookback THEN close END) as prev_close,
+               -- 近 N 天累计涨跌幅（简单求和）
+               SUM(pct_change) as pct_sum,
+               COUNT(*) as data_days
+        FROM ranked
+        WHERE rn <= :lookback
+        GROUP BY ts_code
+    """)
+
+    result_map: dict[str, dict] = {}
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                sql, {"codes": list(code_map.keys()), "lookback": lookback_days}
+            )
+            rows = result.fetchall()
+
+        for row in rows:
+            bare = row.ts_code
+            full_code = code_map.get(bare)
+            if not full_code:
+                continue
+
+            pct_5d = float(row.pct_sum) if row.pct_sum is not None else 0.0
+
+            # 走势警告分级
+            if pct_5d <= -10.0:
+                warning = "strong_down"
+            elif pct_5d <= -5.0:
+                warning = "down"
+            else:
+                warning = None
+
+            result_map[full_code] = {
+                "pct_5d": round(pct_5d, 2),
+                "trend_warning": warning,
+            }
+
+        logger.info("Price trend check: %d/%d stocks, warnings=%d",
+                     len(result_map), len(ts_codes),
+                     sum(1 for v in result_map.values() if v["trend_warning"]))
+    except Exception as e:
+        logger.warning("Failed to fetch price trend (non-fatal): %s", e)
+
+    return result_map
+
+
+def _apply_trend_discount(avg_sentiment: float | None, trend_info: dict | None) -> tuple[float | None, str | None]:
+    """根据个股近期走势对情绪评分进行修正。
+
+    Returns: (adjusted_sentiment, trend_warning)
+    """
+    if avg_sentiment is None or trend_info is None:
+        return avg_sentiment, None
+
+    warning = trend_info.get("trend_warning")
+    if warning is None:
+        return avg_sentiment, None
+
+    # 只对正面情绪做衰减（负面情绪 + 下跌走势 = 不需要衰减）
+    if avg_sentiment <= 0:
+        return avg_sentiment, warning
+
+    if warning == "strong_down":
+        # 严重背离：情绪衰减 70%（如 5.0 → 1.5）
+        adjusted = round(avg_sentiment * 0.3, 1)
+        logger.info("Trend strong_down discount: %.1f → %.1f (pct_5d=%.1f%%)",
+                     avg_sentiment, adjusted, trend_info["pct_5d"])
+    else:
+        # 走势偏弱：情绪衰减 40%（如 5.0 → 3.0）
+        adjusted = round(avg_sentiment * 0.6, 1)
+        logger.info("Trend down discount: %.1f → %.1f (pct_5d=%.1f%%)",
+                     avg_sentiment, adjusted, trend_info["pct_5d"])
+
+    return adjusted, warning
+
+
+# ═══════════════════════════════════════════════════════════
 #  交叉验证 + 写入
 # ═══════════════════════════════════════════════════════════
 
@@ -502,17 +618,21 @@ async def run_catalyst_aggregation(target_date: date | None = None) -> dict:
 
     logger.info("Aggregated %d unique A-share stocks from news", len(aggregated))
 
-    # ── 5. 并行获取交叉验证数据 ──
+    # ── 5. 并行获取交叉验证数据 + 个股走势 ──
     vcp_task = asyncio.create_task(_fetch_vcp_map(target_date))
     trend_task = asyncio.create_task(_fetch_trend_map(target_date))
     rs_task = asyncio.create_task(_fetch_rs_map(target_date))
+    price_trend_task = asyncio.create_task(
+        _fetch_price_trend_map(set(aggregated.keys()), lookback_days=5)
+    )
 
     vcp_map = await vcp_task
     trend_map = await trend_task
     rs_map = await rs_task
+    price_trend_map = await price_trend_task
 
-    logger.info("Cross-validation data: VCP=%d, Trend=%d, RS=%d",
-                len(vcp_map), len(trend_map), len(rs_map))
+    logger.info("Cross-validation data: VCP=%d, Trend=%d, RS=%d, PriceTrend=%d",
+                len(vcp_map), len(trend_map), len(rs_map), len(price_trend_map))
 
     # ── 6. 构建催化剂标的列表 ──
     catalyst_stocks: list[dict] = []
@@ -525,7 +645,11 @@ async def run_catalyst_aggregation(target_date: date | None = None) -> dict:
         catalyst_types = sorted(agg_data["catalyst_types"]) if agg_data["catalyst_types"] else None
         titles = agg_data["titles"][:5]  # 最多保留 5 条标题
         sentiments = agg_data["sentiments"]
-        avg_sentiment = round(sum(sentiments) / len(sentiments), 1) if sentiments else None
+        raw_sentiment = round(sum(sentiments) / len(sentiments), 1) if sentiments else None
+
+        # ── 6.1 走势修正：根据个股近期走势衰减过度乐观的情绪 ──
+        trend_info = price_trend_map.get(ts_code)
+        avg_sentiment, trend_warning = _apply_trend_discount(raw_sentiment, trend_info)
 
         # 交叉验证
         in_vcp = ts_code in vcp_map
@@ -541,12 +665,17 @@ async def run_catalyst_aggregation(target_date: date | None = None) -> dict:
         elif in_trend:
             name = trend_map[ts_code].get("name")
 
-        # 催化剂热度
+        # 催化剂热度（使用修正后的情绪）
         heat = _compute_heat_score(news_count, top_score, avg_sentiment or 0)
         confirm = _determine_confirm_level(in_vcp, in_trend, rs_val)
 
-        # 催化剂摘要（取第一条新闻标题作为简要概述）
+        # 催化剂摘要（取第一条新闻标题 + 走势警告）
         summary = titles[0] if titles else None
+        pct_5d = trend_info["pct_5d"] if trend_info else None
+        if trend_warning == "strong_down":
+            summary = f"{summary}\n⚠️ 近5日累跌{pct_5d}%，走势严重背离，情绪已下修" if summary else f"⚠️ 近5日累跌{pct_5d}%"
+        elif trend_warning == "down":
+            summary = f"{summary}\n⚠️ 近5日累跌{pct_5d}%，走势偏弱，情绪已下修" if summary else f"⚠️ 近5日累跌{pct_5d}%"
 
         catalyst_stocks.append({
             "ts_code": ts_code,
@@ -566,6 +695,37 @@ async def run_catalyst_aggregation(target_date: date | None = None) -> dict:
             "heat_score": heat,
             "confirm_level": confirm,
         })
+
+    # ── 6.5 补充缺失的股票名称 ──
+    missing_name_codes = {s["ts_code"] for s in catalyst_stocks if not s.get("name")}
+    if missing_name_codes:
+        try:
+            from sqlalchemy import text as sa_text
+            # 催化剂的 ts_code 带后缀（600489.SH），行情表用纯数字（600489）
+            # 用 SPLIT_PART 去掉后缀来匹配
+            bare_codes = [c.split(".")[0] for c in missing_name_codes]
+            sql = sa_text("""
+                SELECT DISTINCT ON (ts_code) ts_code, name
+                FROM stock_daily_quote
+                WHERE ts_code = ANY(:codes)
+                  AND name IS NOT NULL AND name != ''
+                ORDER BY ts_code, trade_date DESC
+            """)
+            async with async_session() as session:
+                result = await session.execute(sql, {"codes": bare_codes})
+                rows = result.fetchall()
+            # 建立 纯数字→名称 的映射
+            bare_name_map = {r.ts_code: r.name for r in rows}
+            filled = 0
+            for s in catalyst_stocks:
+                if not s.get("name"):
+                    bare = s["ts_code"].split(".")[0]
+                    if bare in bare_name_map:
+                        s["name"] = bare_name_map[bare]
+                        filled += 1
+            logger.info("补充 %d/%d 只催化剂标的名称", filled, len(missing_name_codes))
+        except Exception as e:
+            logger.warning("补充催化剂标的名称失败（不影响流程）: %s", e)
 
     # 按热度降序排序
     catalyst_stocks.sort(key=lambda x: x["heat_score"], reverse=True)

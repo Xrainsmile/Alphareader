@@ -191,12 +191,12 @@ def _compute_rsi(closes: np.ndarray, period: int = 14) -> float:
 class TrendFilterConfig:
     """右侧趋势过滤器的可调参数。
 
-    v2 调整说明（2026-03）：
-      - T1: 仅要求 SMA20 向上，SMA50 向上为可选（require_ma50_up=False）
-      - T2: ADX 阈值 25→20，捕捉趋势初期
-      - T3: 突破从"当日新高"改为"近 3 天内曾创 10 日新高"
-      - T4: 放量从"当日放量"改为"近 3 天内曾放量 1.2x"
-      - T5: RSI 区间 50-80→45-85，放宽两端
+    v3 调整说明（2026-03）：
+      - T1: 要求 SMA20 和 SMA50 均向上（require_ma50_up=True）
+      - T2: ADX 阈值 25，过滤弱趋势
+      - T3: 突破必须当日发生（lookback=1），20 日新高
+      - T4: 放量 1.5x，近 3 天内曾放量即可
+      - T5: RSI 区间 50-80，标准动量区间
     """
 
     # 基础筛选
@@ -207,25 +207,28 @@ class TrendFilterConfig:
     ma_short: int = 20                  # 短期均线周期 (SMA20)
     ma_long: int = 50                   # 长期均线周期 (SMA50)
     ma_slope_window: int = 5            # 均线方向判断窗口（SMA 比 N 天前高则"向上"）
-    require_ma50_up: bool = False       # 是否要求 SMA50 也向上（False=仅 SMA20 向上）
+    require_ma50_up: bool = True        # 要求 SMA50 也向上，确保长期趋势上行
 
     # 条件 T2: ADX 趋势强度
     adx_period: int = 14                # ADX 周期
-    adx_threshold: float = 20.0         # ADX 下限（v2: 25→20，捕捉趋势初期）
+    adx_threshold: float = 25.0         # ADX 下限，过滤弱趋势
 
     # 条件 T3: 突破确认
-    breakout_window: int = 10           # 突破回溯窗口（10 日新高）
-    breakout_lookback: int = 3          # 近 N 天内曾出现突破即可（v2: 1→3）
+    breakout_window: int = 20           # 突破回溯窗口（20 日新高，提高质量）
+    breakout_lookback: int = 1          # 必须当日创新高
 
     # 条件 T4: 放量确认
-    volume_ratio: float = 1.2           # 放量倍数（v2: 1.5→1.2）
+    volume_ratio: float = 1.5           # 放量倍数，要求更强量能确认
     volume_ma_window: int = 20          # 均量计算窗口
-    volume_lookback: int = 3            # 近 N 天内曾放量即可（v2: 1→3）
+    volume_lookback: int = 3            # 近 3 天内曾放量即可
 
     # 条件 T5: RSI 动量
     rsi_period: int = 14                # RSI 周期
-    rsi_lower: float = 45.0             # RSI 下限（v2: 50→45）
-    rsi_upper: float = 85.0             # RSI 上限（v2: 80→85）
+    rsi_lower: float = 50.0             # RSI 下限，标准动量区间
+    rsi_upper: float = 80.0             # RSI 上限，标准动量区间
+
+    # 数据新鲜度
+    max_stale_days: int = 3             # 最新数据距离全市场最新日期超过 N 天则剔除
 
 
 # ════════════════════════════════════════════════════════════════
@@ -275,9 +278,15 @@ class TrendScreener:
 
         # ════════════════════════════════════════════
         # 基础筛选：日均成交额 > 2000 万
+        # 当 amount 为 0 时用 volume × close 估算
         # ════════════════════════════════════════════
+        ohlcv = ohlcv.copy()
+        ohlcv["_est_amount"] = ohlcv["amount"].where(
+            ohlcv["amount"] > 0,
+            ohlcv["volume"] * ohlcv["close"] * 100,  # volume 单位=手(100股)
+        )
         avg_amount = (
-            ohlcv.groupby("ts_code")["amount"]
+            ohlcv.groupby("ts_code")["_est_amount"]
             .apply(lambda x: x.tail(cfg.amount_window).mean())
         )
         valid_codes = set(avg_amount[avg_amount >= cfg.min_avg_amount].index)
@@ -289,6 +298,21 @@ class TrendScreener:
             return pd.DataFrame()
 
         ohlcv = ohlcv[ohlcv["ts_code"].isin(valid_codes)]
+
+        # ════════════════════════════════════════════
+        # 数据新鲜度检查：剔除数据过期的股票
+        # ════════════════════════════════════════════
+        market_latest = ohlcv["trade_date"].max()
+        latest_per_stock = ohlcv.groupby("ts_code")["trade_date"].max()
+        # 计算每只股票最新数据距全市场最新日期的天数差
+        stale_days = (pd.Timestamp(market_latest) - latest_per_stock.apply(pd.Timestamp)).dt.days
+        stale_codes = set(stale_days[stale_days > cfg.max_stale_days].index)
+        if stale_codes:
+            valid_codes -= stale_codes
+            ohlcv = ohlcv[ohlcv["ts_code"].isin(valid_codes)]
+            logger.info("数据新鲜度检查: 剔除 %d 只数据过期股票（距最新日期>%d天）",
+                         len(stale_codes), cfg.max_stale_days)
+        self._stats["freshness_filter"] = len(valid_codes)
 
         # ════════════════════════════════════════════
         # 逐股计算技术指标（向量化 + groupby apply）
