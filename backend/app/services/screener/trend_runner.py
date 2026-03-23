@@ -87,8 +87,12 @@ def parse_args() -> argparse.Namespace:
                        help="ADX 趋势强度下限（默认 20）")
     trend.add_argument("--breakout-window", type=int, default=10,
                        help="突破回溯窗口（默认 10 日）")
+    trend.add_argument("--breakout-lookback", type=int, default=3,
+                       help="近 N 天内曾突破即可（默认 3）")
     trend.add_argument("--volume-ratio", type=float, default=1.2,
                        help="放量倍数（默认 1.2）")
+    trend.add_argument("--volume-lookback", type=int, default=3,
+                       help="近 N 天内曾放量即可（默认 3）")
     trend.add_argument("--rsi-lower", type=float, default=45.0,
                        help="RSI 下限（默认 45）")
     trend.add_argument("--rsi-upper", type=float, default=85.0,
@@ -113,7 +117,9 @@ async def main():
         require_ma50_up=args.require_ma50_up,
         adx_threshold=args.adx_threshold,
         breakout_window=args.breakout_window,
+        breakout_lookback=args.breakout_lookback,
         volume_ratio=args.volume_ratio,
+        volume_lookback=args.volume_lookback,
         rsi_lower=args.rsi_lower,
         rsi_upper=args.rsi_upper,
     )

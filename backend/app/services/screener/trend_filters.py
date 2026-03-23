@@ -20,11 +20,11 @@
   │ 条件 T2 — ADX 趋势强度                                        │
   │   ADX(14) > 20，确认有趋势（非震荡）                           │
   │                                                               │
-  │ 条件 T3 — 10 日高点突破                                        │
-  │   Close > max(High, 10日)，价格创新高                          │
+  │ 条件 T3 — 近期高点突破                                       │
+  │   近 3 天内 Close 曾 >= max(High, 10日)，价格创新高            │
   │                                                               │
-  │ 条件 T4 — 放量确认                                             │
-  │   Volume > MA(Volume, 20日) × 1.2                              │
+  │ 条件 T4 — 近期放量确认                                         │
+  │   近 3 天内 Volume 曾 > MA(Volume, 20日) × 1.2                 │
   │                                                               │
   │ 条件 T5 — RSI 动量区间                                         │
   │   45 < RSI(14) < 85，有动量但不过热                            │
@@ -194,8 +194,8 @@ class TrendFilterConfig:
     v2 调整说明（2026-03）：
       - T1: 仅要求 SMA20 向上，SMA50 向上为可选（require_ma50_up=False）
       - T2: ADX 阈值 25→20，捕捉趋势初期
-      - T3: 突破窗口 20→10 日，降低新高门槛
-      - T4: 放量倍数 1.5→1.2，轻度放量即确认
+      - T3: 突破从"当日新高"改为"近 3 天内曾创 10 日新高"
+      - T4: 放量从"当日放量"改为"近 3 天内曾放量 1.2x"
       - T5: RSI 区间 50-80→45-85，放宽两端
     """
 
@@ -214,11 +214,13 @@ class TrendFilterConfig:
     adx_threshold: float = 20.0         # ADX 下限（v2: 25→20，捕捉趋势初期）
 
     # 条件 T3: 突破确认
-    breakout_window: int = 10           # 突破回溯窗口（v2: 20→10 日新高）
+    breakout_window: int = 10           # 突破回溯窗口（10 日新高）
+    breakout_lookback: int = 3          # 近 N 天内曾出现突破即可（v2: 1→3）
 
     # 条件 T4: 放量确认
     volume_ratio: float = 1.2           # 放量倍数（v2: 1.5→1.2）
     volume_ma_window: int = 20          # 均量计算窗口
+    volume_lookback: int = 3            # 近 N 天内曾放量即可（v2: 1→3）
 
     # 条件 T5: RSI 动量
     rsi_period: int = 14                # RSI 周期
@@ -324,10 +326,34 @@ class TrendScreener:
             # ── RSI(14) ──
             rsi = _compute_rsi(closes, cfg.rsi_period)
 
-            # ── 20 日最高价 ──
-            high_20 = highs[-cfg.breakout_window:].max() if len(highs) >= cfg.breakout_window else highs.max()
+            # ── T3: 近 breakout_lookback 天内是否曾创 breakout_window 日新高 ──
+            breakout_hit = False
+            for day_offset in range(cfg.breakout_lookback):
+                idx = len(closes) - 1 - day_offset
+                if idx < cfg.breakout_window:
+                    break
+                # 该日收盘价 vs 之前 breakout_window 日的最高 High
+                prev_high = highs[idx - cfg.breakout_window : idx].max()
+                if closes[idx] >= prev_high:
+                    breakout_hit = True
+                    break
 
-            # ── 20 日均量 ──
+            # ── T4: 近 volume_lookback 天内是否曾放量 ──
+            vol_surge_hit = False
+            max_vol_ratio = 0.0
+            for day_offset in range(cfg.volume_lookback):
+                idx = len(volumes) - 1 - day_offset
+                if idx < cfg.volume_ma_window:
+                    break
+                vol_ma_at = volumes[idx - cfg.volume_ma_window : idx].mean()
+                if vol_ma_at > 0:
+                    ratio = volumes[idx] / vol_ma_at
+                    max_vol_ratio = max(max_vol_ratio, ratio)
+                    if ratio >= cfg.volume_ratio:
+                        vol_surge_hit = True
+                        break
+
+            # 最新一天的量比（用于展示）
             vol_ma = volumes[-cfg.volume_ma_window:].mean() if len(volumes) >= cfg.volume_ma_window else volumes.mean()
             vol_ratio = latest_volume / vol_ma if vol_ma > 0 else 0.0
 
@@ -340,7 +366,9 @@ class TrendScreener:
                 "ma50_up": bool(pd.notna(ma50_prev) and ma50 > ma50_prev),
                 "adx": round(float(adx), 2) if pd.notna(adx) else None,
                 "rsi": round(float(rsi), 2) if pd.notna(rsi) else None,
-                "high_20": float(high_20),
+                "breakout_hit": breakout_hit,
+                "vol_surge_hit": vol_surge_hit,
+                "max_vol_ratio": round(float(max_vol_ratio), 2),
                 "latest_volume": float(latest_volume),
                 "vol_ma_20": float(vol_ma),
                 "volume_ratio_val": round(float(vol_ratio), 2),
@@ -387,27 +415,27 @@ class TrendScreener:
             return pd.DataFrame()
 
         # ════════════════════════════════════════════
-        # 条件 T3: 20 日高点突破
-        #   Close > 过去 20 日最高价
+        # 条件 T3: 近期高点突破
+        #   近 breakout_lookback 天内曾创 breakout_window 日新高
         # ════════════════════════════════════════════
-        # 注意：high_20 包含当天的 high，所以用 close >= high_20 判断
-        # 当天如果收盘价 == 当天最高价，说明强势突破
-        mask_t3 = df["latest_close"] >= df["high_20"]
+        mask_t3 = df["breakout_hit"]
         df = df[mask_t3]
         self._stats["T3_breakout"] = len(df)
-        logger.info("T3 20日高点突破: %d 通过", len(df))
+        logger.info("T3 %d日高点突破(近%d天): %d 通过",
+                     cfg.breakout_window, cfg.breakout_lookback, len(df))
 
         if df.empty:
             return pd.DataFrame()
 
         # ════════════════════════════════════════════
-        # 条件 T4: 放量确认
-        #   Volume > 20 日均量 × 1.5
+        # 条件 T4: 近期放量确认
+        #   近 volume_lookback 天内曾放量 volume_ratio 倍
         # ════════════════════════════════════════════
-        mask_t4 = df["volume_ratio_val"] >= cfg.volume_ratio
+        mask_t4 = df["vol_surge_hit"]
         df = df[mask_t4]
         self._stats["T4_volume_surge"] = len(df)
-        logger.info("T4 放量确认 (≥%.1fx): %d 通过", cfg.volume_ratio, len(df))
+        logger.info("T4 放量确认 (近%d天≥%.1fx): %d 通过",
+                     cfg.volume_lookback, cfg.volume_ratio, len(df))
 
         if df.empty:
             return pd.DataFrame()
