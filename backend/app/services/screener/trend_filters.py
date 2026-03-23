@@ -15,19 +15,19 @@
   │   - 日均成交额 > 2000 万（近 20 日均值）                       │
   │                                                               │
   │ 条件 T1 — MA 多头排列                                         │
-  │   Close > SMA20 > SMA50，且 SMA20/SMA50 方向向上              │
+  │   Close > SMA20 > SMA50，SMA20 向上（SMA50 向上可选）          │
   │                                                               │
   │ 条件 T2 — ADX 趋势强度                                        │
-  │   ADX(14) > 25，确认有趋势（非震荡）                           │
+  │   ADX(14) > 20，确认有趋势（非震荡）                           │
   │                                                               │
-  │ 条件 T3 — 20 日高点突破                                        │
-  │   Close > max(High, 20日)，价格创新高                          │
+  │ 条件 T3 — 10 日高点突破                                        │
+  │   Close > max(High, 10日)，价格创新高                          │
   │                                                               │
   │ 条件 T4 — 放量确认                                             │
-  │   Volume > MA(Volume, 20日) × 1.5                              │
+  │   Volume > MA(Volume, 20日) × 1.2                              │
   │                                                               │
   │ 条件 T5 — RSI 动量区间                                         │
-  │   50 < RSI(14) < 80，有动量但不过热                            │
+  │   45 < RSI(14) < 85，有动量但不过热                            │
   └──────────────────────────────────────────────────────────────┘
 
 趋势得分 (trend_score)：
@@ -189,7 +189,15 @@ def _compute_rsi(closes: np.ndarray, period: int = 14) -> float:
 
 @dataclass
 class TrendFilterConfig:
-    """右侧趋势过滤器的可调参数。"""
+    """右侧趋势过滤器的可调参数。
+
+    v2 调整说明（2026-03）：
+      - T1: 仅要求 SMA20 向上，SMA50 向上为可选（require_ma50_up=False）
+      - T2: ADX 阈值 25→20，捕捉趋势初期
+      - T3: 突破窗口 20→10 日，降低新高门槛
+      - T4: 放量倍数 1.5→1.2，轻度放量即确认
+      - T5: RSI 区间 50-80→45-85，放宽两端
+    """
 
     # 基础筛选
     min_avg_amount: float = 2e7         # 日均成交额下限（2000 万元）
@@ -199,22 +207,23 @@ class TrendFilterConfig:
     ma_short: int = 20                  # 短期均线周期 (SMA20)
     ma_long: int = 50                   # 长期均线周期 (SMA50)
     ma_slope_window: int = 5            # 均线方向判断窗口（SMA 比 N 天前高则"向上"）
+    require_ma50_up: bool = False       # 是否要求 SMA50 也向上（False=仅 SMA20 向上）
 
     # 条件 T2: ADX 趋势强度
     adx_period: int = 14                # ADX 周期
-    adx_threshold: float = 25.0         # ADX 下限
+    adx_threshold: float = 20.0         # ADX 下限（v2: 25→20，捕捉趋势初期）
 
     # 条件 T3: 突破确认
-    breakout_window: int = 20           # 突破回溯窗口（20 日新高）
+    breakout_window: int = 10           # 突破回溯窗口（v2: 20→10 日新高）
 
     # 条件 T4: 放量确认
-    volume_ratio: float = 1.5           # 放量倍数
+    volume_ratio: float = 1.2           # 放量倍数（v2: 1.5→1.2）
     volume_ma_window: int = 20          # 均量计算窗口
 
     # 条件 T5: RSI 动量
     rsi_period: int = 14                # RSI 周期
-    rsi_lower: float = 50.0             # RSI 下限
-    rsi_upper: float = 80.0             # RSI 上限
+    rsi_lower: float = 45.0             # RSI 下限（v2: 50→45）
+    rsi_upper: float = 85.0             # RSI 上限（v2: 80→85）
 
 
 # ════════════════════════════════════════════════════════════════
@@ -347,17 +356,20 @@ class TrendScreener:
 
         # ════════════════════════════════════════════
         # 条件 T1: MA 多头排列
-        #   Close > SMA20 > SMA50，且 SMA20/SMA50 向上
+        #   Close > SMA20 > SMA50，SMA20 向上（SMA50 向上可选）
         # ════════════════════════════════════════════
         mask_t1 = (
             (df["latest_close"] > df["ma20"])
             & (df["ma20"] > df["ma50"])
             & df["ma20_up"]
-            & df["ma50_up"]
         )
+        if cfg.require_ma50_up:
+            mask_t1 = mask_t1 & df["ma50_up"]
         df = df[mask_t1]
         self._stats["T1_ma_alignment"] = len(df)
-        logger.info("T1 MA多头排列 (Close>SMA20>SMA50 向上): %d 通过", len(df))
+        ma50_label = "SMA50↑必须" if cfg.require_ma50_up else "SMA50↑可选"
+        logger.info("T1 MA多头排列 (Close>SMA20>SMA50, SMA20↑, %s): %d 通过",
+                     ma50_label, len(df))
 
         if df.empty:
             return pd.DataFrame()

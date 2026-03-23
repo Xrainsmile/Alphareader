@@ -81,16 +81,18 @@ def parse_args() -> argparse.Namespace:
                        help="短期均线周期（默认 20）")
     trend.add_argument("--ma-long", type=int, default=50,
                        help="长期均线周期（默认 50）")
-    trend.add_argument("--adx-threshold", type=float, default=25.0,
-                       help="ADX 趋势强度下限（默认 25）")
-    trend.add_argument("--breakout-window", type=int, default=20,
-                       help="突破回溯窗口（默认 20 日）")
-    trend.add_argument("--volume-ratio", type=float, default=1.5,
-                       help="放量倍数（默认 1.5）")
-    trend.add_argument("--rsi-lower", type=float, default=50.0,
-                       help="RSI 下限（默认 50）")
-    trend.add_argument("--rsi-upper", type=float, default=80.0,
-                       help="RSI 上限（默认 80）")
+    trend.add_argument("--require-ma50-up", action="store_true", default=False,
+                       help="是否要求 SMA50 也向上（默认 False）")
+    trend.add_argument("--adx-threshold", type=float, default=20.0,
+                       help="ADX 趋势强度下限（默认 20）")
+    trend.add_argument("--breakout-window", type=int, default=10,
+                       help="突破回溯窗口（默认 10 日）")
+    trend.add_argument("--volume-ratio", type=float, default=1.2,
+                       help="放量倍数（默认 1.2）")
+    trend.add_argument("--rsi-lower", type=float, default=45.0,
+                       help="RSI 下限（默认 45）")
+    trend.add_argument("--rsi-upper", type=float, default=85.0,
+                       help="RSI 上限（默认 85）")
 
     return parser.parse_args()
 
@@ -108,6 +110,7 @@ async def main():
         min_avg_amount=args.min_avg_amount,
         ma_short=args.ma_short,
         ma_long=args.ma_long,
+        require_ma50_up=args.require_ma50_up,
         adx_threshold=args.adx_threshold,
         breakout_window=args.breakout_window,
         volume_ratio=args.volume_ratio,

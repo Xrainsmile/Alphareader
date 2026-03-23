@@ -317,10 +317,10 @@ class TrendPipeline:
             ("剔除ST", f'-{stats["st_removed"]}' if stats.get("st_removed") else "0"),
             ("日均成交额>2000万", stats.get("amount_filter", "-")),
             ("T1 MA多头排列", stats.get("T1_ma_alignment", "-")),
-            ("T2 ADX趋势强度>25", stats.get("T2_adx_strength", "-")),
-            ("T3 20日高点突破", stats.get("T3_breakout", "-")),
-            ("T4 放量≥1.5x", stats.get("T4_volume_surge", "-")),
-            ("T5 RSI动量(50-80)", stats.get("T5_rsi_momentum", "-")),
+            ("T2 ADX趋势强度>20", stats.get("T2_adx_strength", "-")),
+            ("T3 10日高点突破", stats.get("T3_breakout", "-")),
+            ("T4 放量≥1.2x", stats.get("T4_volume_surge", "-")),
+            ("T5 RSI动量(45-85)", stats.get("T5_rsi_momentum", "-")),
         ]
         print("\n  ┌─ 趋势量化漏斗 ──────────────────┐")
         for name, count in funnel:
