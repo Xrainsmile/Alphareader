@@ -128,27 +128,35 @@ class ScreenerPipeline:
         # ── Step 2: 加载/更新 EMA ──
         step_start = time.time()
         try:
-            ema_df = self.loader.load_latest_ema()
-            if ema_df.empty:
-                result["errors"].append("EMA 快照加载失败")
-                return result
-
-            # 检查 EMA 快照日期是否是今天
-            ema_date = pd.Timestamp(ema_df["Date"].iloc[0]).date()
-            today = date.today()
-            latest_trade_date = ohlcv["trade_date"].max().date()
-
-            if ema_date < latest_trade_date:
-                logger.info("EMA 快照日期 %s 早于最新交易日 %s，执行增量更新", ema_date, latest_trade_date)
-                # 获取最新交易日的收盘价
-                today_close = await self.loader.load_today_close()
-                if not today_close.empty:
-                    ema_df = DataLoader.update_ema_incremental(ema_df, today_close)
-                    # 保存更新后的快照
-                    if not self.dry_run:
-                        self.loader.save_ema_snapshot(ema_df, latest_trade_date)
+            if self.market == "US":
+                # 美股：没有预置 EMA 快照，直接从 OHLCV 数据计算 EMA
+                logger.info("美股市场：从 OHLCV 直接计算 EMA")
+                ema_df = DataLoader.compute_ema_from_ohlcv(ohlcv)
+                if ema_df.empty:
+                    result["errors"].append("从 OHLCV 计算 EMA 失败")
+                    return result
             else:
-                logger.info("EMA 快照已是最新 (%s)", ema_date)
+                ema_df = self.loader.load_latest_ema()
+                if ema_df.empty:
+                    result["errors"].append("EMA 快照加载失败")
+                    return result
+
+                # 检查 EMA 快照日期是否是今天
+                ema_date = pd.Timestamp(ema_df["Date"].iloc[0]).date()
+                today = date.today()
+                latest_trade_date = ohlcv["trade_date"].max().date()
+
+                if ema_date < latest_trade_date:
+                    logger.info("EMA 快照日期 %s 早于最新交易日 %s，执行增量更新", ema_date, latest_trade_date)
+                    # 获取最新交易日的收盘价
+                    today_close = await self.loader.load_today_close()
+                    if not today_close.empty:
+                        ema_df = DataLoader.update_ema_incremental(ema_df, today_close)
+                        # 保存更新后的快照
+                        if not self.dry_run:
+                            self.loader.save_ema_snapshot(ema_df, latest_trade_date)
+                else:
+                    logger.info("EMA 快照已是最新 (%s)", ema_date)
 
             # 从 EMA 中也剔除 ST 股票
             if st_codes:

@@ -218,6 +218,50 @@ class DataLoader:
         )
         return merged
 
+    @staticmethod
+    def compute_ema_from_ohlcv(ohlcv: pd.DataFrame) -> pd.DataFrame:
+        """从 OHLCV 历史数据直接计算 EMA（不依赖快照文件）。
+
+        适用于美股等没有预置 EMA 快照的市场。
+        需要 OHLCV 至少有 200+ 天数据才能计算 EMA200，
+        120+ 天才能计算 EMA120。
+
+        Args:
+            ohlcv: 全市场 OHLCV 数据，必须含 ts_code, trade_date, close
+
+        Returns:
+            DataFrame: Code, Date, Close, EMA5, EMA10, EMA20, EMA50, EMA120, EMA200
+        """
+        if ohlcv.empty:
+            logger.warning("compute_ema_from_ohlcv: OHLCV 为空")
+            return pd.DataFrame()
+
+        # 确保按 ts_code + trade_date 排序
+        df = ohlcv[["ts_code", "trade_date", "close"]].copy()
+        df = df.sort_values(["ts_code", "trade_date"])
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+
+        results = []
+        for ts_code, group in df.groupby("ts_code"):
+            if len(group) < 20:
+                continue  # 至少 20 天才有意义
+            row = {"Code": ts_code, "Close": group["close"].iloc[-1]}
+            row["Date"] = pd.Timestamp(group["trade_date"].iloc[-1])
+            for ema_col, period in EMA_PERIODS.items():
+                if len(group) >= period:
+                    ema_val = group["close"].ewm(span=period, adjust=False).mean().iloc[-1]
+                else:
+                    ema_val = group["close"].ewm(span=period, adjust=False).mean().iloc[-1]
+                row[ema_col] = ema_val
+            results.append(row)
+
+        result_df = pd.DataFrame(results)
+        logger.info(
+            "compute_ema_from_ohlcv: 从 OHLCV 计算了 %d 只标的的 EMA",
+            len(result_df),
+        )
+        return result_df
+
     def save_ema_snapshot(self, df: pd.DataFrame, snapshot_date: date | None = None):
         """将更新后的 EMA 快照保存为 Parquet + CSV。
 
