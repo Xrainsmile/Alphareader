@@ -63,6 +63,7 @@ services:
     volumes:
       - /data/alphareader/ema_snapshots:/data/ema_snapshots:rw
       - /data/alphareader/watchlists:/data/watchlists:rw
+      - /data/alphareader/trend_watchlists:/data/trend_watchlists:rw
     labels:
       service: web
     # No ports exposed — accessed only via Nginx reverse proxy
