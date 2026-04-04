@@ -1591,13 +1591,15 @@ async def has_us_today_data(min_stocks: int = 100) -> bool:
 
     逻辑：
       - 定时任务在北京时间 05:30 触发（≈美东 16:30 盘后）
-      - 此时需要拉取的是 **美东前一个交易日** 的收盘数据
-      - 计算 DB 最新日期到「前一天」之间缺失的工作日数
+      - 使用 **北京时间** 判断"今天"，因为容器可能运行在 UTC 时区
+      - 此时需要拉取的是 **北京时间前一天** 对应的美股交易日数据
+      - 计算 DB 最新日期到目标日期之间缺失的工作日数
       - 如果缺失 ≤ 1 个工作日且数据充足则认为 OK
         （容忍 1 天是因为美股假期如 Good Friday 等，weekday 计算会误算）
-      - 如果缺失 > 1 个工作日，则需要更新
     """
-    today = date.today()
+    from zoneinfo import ZoneInfo
+
+    today_cst = datetime.now(ZoneInfo("Asia/Shanghai")).date()
     async with async_session() as session:
         max_date_result = await session.execute(
             select(func.max(StockDailyQuote.trade_date))
@@ -1608,7 +1610,7 @@ async def has_us_today_data(min_stocks: int = 100) -> bool:
             logger.info("has_us_today_data: 数据库无美股数据")
             return False
 
-        gap_days = (today - max_date).days
+        gap_days = (today_cst - max_date).days
 
         count_result = await session.execute(
             select(func.count(func.distinct(StockDailyQuote.ts_code)))
@@ -1617,9 +1619,9 @@ async def has_us_today_data(min_stocks: int = 100) -> bool:
         )
         stock_count = count_result.scalar() or 0
 
-    # 计算从 DB 最新日期的下一天到昨天之间有多少个工作日（周一~周五）
-    # 定时任务 05:30 北京时间 ≈ 前一天美东收盘，所以目标日期是 today - 1
-    target_date = today - timedelta(days=1)
+    # 计算从 DB 最新日期的下一天到昨天（北京时间）之间有多少个工作日
+    # 定时任务 05:30 北京时间 ≈ 前一天美东收盘，所以目标日期是 today_cst - 1
+    target_date = today_cst - timedelta(days=1)
     missing_weekdays = 0
     d = max_date + timedelta(days=1)
     while d <= target_date:
@@ -1628,12 +1630,11 @@ async def has_us_today_data(min_stocks: int = 100) -> bool:
         d += timedelta(days=1)
 
     logger.info(
-        "has_us_today_data: DB最新日期=%s, 距今%d天, 该日%d只美股, "
+        "has_us_today_data: DB最新日期=%s, 今天(CST)=%s, 距今%d天, 该日%d只美股, "
         "目标日期=%s, 缺失工作日=%d（阈值: missing<=1 且 stocks>=%d）",
-        max_date, gap_days, stock_count, target_date, missing_weekdays, min_stocks,
+        max_date, today_cst, gap_days, stock_count, target_date, missing_weekdays, min_stocks,
     )
     # 允许缺失 ≤ 1 个工作日（容忍美股假期，如 Good Friday、MLK Day 等）
-    # 如果缺失 > 1 个工作日，说明确实需要更新（如之前周四数据未拉取）
     return missing_weekdays <= 1 and stock_count >= min_stocks
 
 

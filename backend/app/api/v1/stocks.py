@@ -557,11 +557,13 @@ async def get_vcp_watchlist(
     返回最新一期（或指定日期）的 Screener 白名单，
     含技术面指标、基本面指标、行业题材、资金流向等维度。
     支持按行业和概念板块筛选，支持按市场过滤。
+    收盘价优先从 stock_daily_quote 最新记录获取（避免 Screener 快照价过时）。
     """
-    from sqlalchemy import select, func as sa_func, or_
+    from sqlalchemy import select, func as sa_func, or_, desc as sa_desc
 
     from app.database import async_session
     from app.models.screener import WatchlistDaily
+    from app.models.stock import StockDailyQuote
 
     market = market.upper()
     if market not in ("CN", "US"):
@@ -613,14 +615,34 @@ async def get_vcp_watchlist(
         result = await session.execute(stmt)
         rows = result.scalars().all()
 
+        # 批量从 stock_daily_quote 获取最新收盘价，覆盖 Screener 快照价
+        ts_codes = [row.ts_code for row in rows]
+        latest_prices: dict[str, float] = {}
+        if ts_codes:
+            from sqlalchemy import text as sa_text
+            price_sql = sa_text("""
+                SELECT DISTINCT ON (ts_code) ts_code, close
+                FROM stock_daily_quote
+                WHERE ts_code = ANY(:codes) AND market = :market
+                ORDER BY ts_code, trade_date DESC
+            """)
+            price_result = await session.execute(
+                price_sql, {"codes": ts_codes, "market": market}
+            )
+            for code, close in price_result.all():
+                if close is not None:
+                    latest_prices[code] = float(close)
+
     items = []
     for row in rows:
         # 根据市场类型生成 futu 链接
         futu_market = "A" if market == "CN" else "US"
+        # 优先使用行情表最新收盘价，fallback 到 Screener 快照
+        price = latest_prices.get(row.ts_code, row.current_price)
         item = VCPWatchlistItem(
             ts_code=row.ts_code,
             name=row.name,
-            current_price=row.current_price,
+            current_price=price,
             vcp_score=row.vcp_score,
             eps_growth=row.eps_growth,
             revenue_yoy=row.revenue_yoy,
@@ -748,11 +770,13 @@ async def get_trend_watchlist(
     含 trend_score、ADX、RSI、SMA20/50、放量倍数等技术面指标，
     以及行业题材、资金流向等维度。
     支持按行业和概念板块筛选，支持按市场过滤。
+    收盘价优先从 stock_daily_quote 最新记录获取（避免 Screener 快照价过时）。
     """
-    from sqlalchemy import select, func as sa_func, or_
+    from sqlalchemy import select, func as sa_func, or_, desc as sa_desc
 
     from app.database import async_session
     from app.models.screener import TrendWatchlistDaily
+    from app.models.stock import StockDailyQuote
 
     market = market.upper()
     if market not in ("CN", "US"):
@@ -804,13 +828,33 @@ async def get_trend_watchlist(
         result = await session.execute(stmt)
         rows = result.scalars().all()
 
+        # 批量从 stock_daily_quote 获取最新收盘价，覆盖 Screener 快照价
+        ts_codes = [row.ts_code for row in rows]
+        latest_prices: dict[str, float] = {}
+        if ts_codes:
+            from sqlalchemy import text as sa_text
+            price_sql = sa_text("""
+                SELECT DISTINCT ON (ts_code) ts_code, close
+                FROM stock_daily_quote
+                WHERE ts_code = ANY(:codes) AND market = :market
+                ORDER BY ts_code, trade_date DESC
+            """)
+            price_result = await session.execute(
+                price_sql, {"codes": ts_codes, "market": market}
+            )
+            for code, close in price_result.all():
+                if close is not None:
+                    latest_prices[code] = float(close)
+
     items = []
     for row in rows:
         futu_market = "A" if market == "CN" else "US"
+        # 优先使用行情表最新收盘价，fallback 到 Screener 快照
+        price = latest_prices.get(row.ts_code, row.current_price)
         item = TrendWatchlistItem(
             ts_code=row.ts_code,
             name=row.name,
-            current_price=row.current_price,
+            current_price=price,
             trend_score=row.trend_score,
             adx=row.adx,
             rsi=row.rsi,

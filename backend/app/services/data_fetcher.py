@@ -376,11 +376,19 @@ async def load_from_db(min_date: date | None = None) -> pd.DataFrame:
 async def has_today_data(min_stocks: int = 5000) -> bool:
     """检查是否已有最新交易日的 A 股行情数据（足够多的股票）。
 
-    逻辑：DB 中最新 trade_date 必须 >= 昨天，且该日期至少有 min_stocks 只股票。
-    这样即使数据源只更新到昨天，也不会重复拉取；
-    同时避免少量 ETF 数据误判为全量已就绪。
+    逻辑：
+      - 使用**北京时间**判断"今天"，因为容器可能运行在 UTC 时区，
+        而 A 股定时任务按 Asia/Shanghai 配置。
+      - 在北京时间收盘后（15:00+），必须有**当天**的数据才算就绪；
+      - 在收盘前或非交易日，DB 最新是前一个交易日即可。
     """
-    today = date.today()
+    from zoneinfo import ZoneInfo
+
+    cst_now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    today_cst = cst_now.date()
+    is_weekday = today_cst.weekday() < 5  # 周一~周五
+    after_close = cst_now.hour >= 15  # 15:00 后 A 股已收盘
+
     async with async_session() as session:
         # 获取 DB 中最新的 A 股交易日期
         max_date_result = await session.execute(
@@ -392,8 +400,7 @@ async def has_today_data(min_stocks: int = 5000) -> bool:
             logger.info("has_today_data: 数据库无 A 股行情数据")
             return False
 
-        # 最新日期与今天的差距
-        gap_days = (today - max_date).days
+        gap_days = (today_cst - max_date).days
 
         # 检查最新日期有多少只 A 股
         count_result = await session.execute(
@@ -403,12 +410,22 @@ async def has_today_data(min_stocks: int = 5000) -> bool:
         )
         stock_count = count_result.scalar() or 0
 
+    # 如果是工作日且已收盘，必须有今天的数据才算就绪
+    if is_weekday and after_close:
+        is_ready = max_date >= today_cst and stock_count >= min_stocks
+        logger.info(
+            "has_today_data: 收盘后检查 | DB最新=%s, 今天(CST)=%s, 该日%d只A股 → %s（需 max_date>=今天 且 stocks>=%d）",
+            max_date, today_cst, stock_count, "跳过" if is_ready else "需更新", min_stocks,
+        )
+        return is_ready
+
+    # 非交易时段（周末/假期/盘前）：DB 最新距今 ≤ 1 天即可
+    is_ready = gap_days <= 1 and stock_count >= min_stocks
     logger.info(
-        "has_today_data: DB最新日期=%s, 距今%d天, 该日%d只A股（阈值: gap<=1 且 stocks>=%d）",
-        max_date, gap_days, stock_count, min_stocks,
+        "has_today_data: 非收盘时段 | DB最新=%s, 今天(CST)=%s, gap=%d天, 该日%d只A股 → %s（阈值: gap<=1 且 stocks>=%d）",
+        max_date, today_cst, gap_days, stock_count, "跳过" if is_ready else "需更新", min_stocks,
     )
-    # DB 最新日期距今不超过 1 天，且有足够多的 A 股数据
-    return gap_days <= 1 and stock_count >= min_stocks
+    return is_ready
 
 
 # ============================================================
