@@ -1588,6 +1588,12 @@ async def has_us_today_data(min_stocks: int = 100) -> bool:
     """检查是否已有最新交易日的美股数据。
 
     美股约 500+（S&P500）只活跃标的，阈值设为 100。
+
+    逻辑：
+      - 定时任务在北京时间 05:30 触发（≈美东 16:30 盘后）
+      - 此时需要拉取的是 **美东前一个交易日** 的收盘数据
+      - 通过计算「DB 最新日期」与「最近一个美股交易日」之间是否有
+        缺失的交易日来判断，避免 gap<=2 在周末/长假期间误判
     """
     today = date.today()
     async with async_session() as session:
@@ -1609,12 +1615,23 @@ async def has_us_today_data(min_stocks: int = 100) -> bool:
         )
         stock_count = count_result.scalar() or 0
 
+    # 计算从 DB 最新日期的下一天到昨天之间有多少个美股交易日（周一~周五）
+    # 定时任务 05:30 北京时间 ≈ 前一天美东收盘，所以目标日期是 today - 1
+    target_date = today - timedelta(days=1)
+    missing_trade_days = 0
+    d = max_date + timedelta(days=1)
+    while d <= target_date:
+        if d.weekday() < 5:  # 周一~周五
+            missing_trade_days += 1
+        d += timedelta(days=1)
+
     logger.info(
-        "has_us_today_data: DB最新日期=%s, 距今%d天, 该日%d只美股（阈值: gap<=2 且 stocks>=%d）",
-        max_date, gap_days, stock_count, min_stocks,
+        "has_us_today_data: DB最新日期=%s, 距今%d天, 该日%d只美股, "
+        "目标日期=%s, 缺失交易日=%d（阈值: missing=0 且 stocks>=%d）",
+        max_date, gap_days, stock_count, target_date, missing_trade_days, min_stocks,
     )
-    # 美股可能因时差晚一天，允许 gap<=2
-    return gap_days <= 2 and stock_count >= min_stocks
+    # 没有缺失交易日，且最新日期有足够数据
+    return missing_trade_days == 0 and stock_count >= min_stocks
 
 
 async def load_us_from_db(min_date: date | None = None) -> pd.DataFrame:
