@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.config import settings
 from app.database import async_session
 from app.models.analytics import PipelineRun
 from app.models.news import News
@@ -331,6 +332,26 @@ async def run_pipeline() -> dict:
         scored_items = []
 
     summary["scored"] = len(scored_items)
+
+    # Step 3.1: 过滤 AI 标记为"无效噪音"的边界分文章
+    # 当 LLM 标记了"无效噪音"标签但分数刚好过阈值（如5分），说明 LLM 认为内容
+    # 质量极低但数值上给了"同情分"。这类文章应该被丢弃。
+    noise_tag = "无效噪音"
+    noise_filtered = []
+    noise_count = 0
+    for si in scored_items:
+        if noise_tag in si.tags and si.score <= settings.DEEPSEEK_SCORE_THRESHOLD:
+            noise_count += 1
+            logger.debug(
+                "Noise filter: drop '%s' (score=%d, tags=%s)",
+                si.raw.title[:50], si.score, si.tags,
+            )
+            continue
+        noise_filtered.append(si)
+    if noise_count:
+        logger.info("Noise filter: dropped %d items tagged '%s' with score <= %d",
+                     noise_count, noise_tag, settings.DEEPSEEK_SCORE_THRESHOLD)
+    scored_items = noise_filtered
 
     # 收集评分分布 & 各信源通过数
     score_counter: Counter[int] = Counter()

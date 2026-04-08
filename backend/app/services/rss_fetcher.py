@@ -432,19 +432,59 @@ def _parse_finnhub(data: list | dict) -> list[RawNewsItem]:
 # 科技信源解析器 — AI/Tech Blog RSS + Hacker News Firebase API
 # ════════════════════════════════════════════════════════════════
 
+def _extract_year_from_url(url: str) -> int | None:
+    """从 URL 路径中提取文章发布年份。
+
+    许多博客/新闻站点的 URL 包含年份，例如：
+      https://openai.com/blog/better-language-models/  → 无法提取
+      https://example.com/2019/02/14/some-article       → 2019
+      https://example.com/blog/2021-03-new-feature      → 2021
+    返回 None 表示无法从 URL 判断年份。
+    """
+    # 匹配 URL 路径中的 4 位年份（/2019/、/2019-、2019_ 等边界）
+    m = re.search(r'(?:^|[/\-_.])(\d{4})(?:[/\-_.]|$)', url)
+    if m:
+        year = int(m.group(1))
+        # 只认 2000-2099 范围内的合理年份
+        if 2000 <= year <= 2099:
+            return year
+    return None
+
+
 def _parse_hackernews(data: list | dict) -> list[RawNewsItem]:
     """解析 Hacker News Algolia API（https://hn.algolia.com/api/v1/search）
 
     使用 Algolia 搜索 API 替代 Firebase API，一次请求即可获取所有热门文章，
     避免从中国服务器逐条请求 Firebase 的高延迟和高失败率。
+
+    注意：Algolia API 的 created_at_i 是文章在 HN 上被提交的时间，不是原始文章
+    的发布日期。老文章被重新提交到 HN 时 created_at_i 是当天，会绕过 stale filter。
+    因此额外通过 URL 中的年份做二次校验，丢弃明确过旧的文章。
     """
     items: list[RawNewsItem] = []
+    now_year = datetime.now(timezone.utc).year
+    # 允许的最大年龄：URL 中的年份距今超过此值则丢弃
+    max_url_age_years = 1
+    skipped_old = 0
+
     # Algolia API 返回 {"hits": [...]}
     entries = data.get("hits", []) if isinstance(data, dict) else data
     for entry in entries:
         title = (entry.get("title") or "").strip()
         url = entry.get("url") or f"https://news.ycombinator.com/item?id={entry.get('objectID', '')}"
+
+        # ── 二次校验：从文章 URL 提取年份，丢弃明确过旧的文章 ──
+        url_year = _extract_year_from_url(url)
+        if url_year and (now_year - url_year) > max_url_age_years:
+            skipped_old += 1
+            logger.debug(
+                "HN: skip old article (url_year=%d, age=%d yr): %s",
+                url_year, now_year - url_year, title,
+            )
+            continue
+
         # Algolia 使用 created_at_i (unix timestamp)
+        # 注意：这是 HN 提交时间，不是原始文章发布时间
         ts = entry.get("created_at_i") or entry.get("time")
         published = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
         if title:
@@ -453,6 +493,9 @@ def _parse_hackernews(data: list | dict) -> list[RawNewsItem]:
                 url=url, source="Hacker News", published_at=published,
                 category="科技",
             ))
+
+    if skipped_old:
+        logger.info("HN parser: skipped %d old articles based on URL year", skipped_old)
     return items
 
 
