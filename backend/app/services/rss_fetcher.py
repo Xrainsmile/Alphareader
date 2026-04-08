@@ -118,8 +118,9 @@ def _should_keep(title: str, source: str = "") -> bool:
         return False
     if DROP_PATTERNS.search(title):
         return False
-    # 硬规则：财联社【研选】新闻一律丢弃
-    if source == "财联社" and "研选" in title:
+    # 硬规则：财联社付费栏目标题一律丢弃
+    # 常见付费栏目前缀：【研选】、【风口研报·公司】、【风口研报·行业】等
+    if source == "财联社" and re.search(r"(研选|风口研报)", title):
         return False
     return True
 
