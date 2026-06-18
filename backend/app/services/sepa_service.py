@@ -12,12 +12,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
+import urllib.request
 from datetime import date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sepa import (
@@ -120,6 +123,168 @@ def evaluate_trend_template(
 
     all_pass = all(d["pass"] for d in details)
     return all_pass, details
+
+
+# ════════════════════════════════════════════════════════════
+# 1b. 自动获取指标（填代码 → 拉现价/MA/RS/52周高低）
+# ════════════════════════════════════════════════════════════
+
+async def fetch_sepa_indicators(
+    market: str, symbol: str, db: AsyncSession
+) -> dict:
+    """根据市场和代码自动获取 SEPA 趋势模板所需指标。
+
+    CN: stock_daily_quote 算 MA/52周高低, stock_rs_rating 取 RS, 新浪取实时价
+    US: stock_daily_quote 算 MA/52周高低, stock_rs_rating 取 RS, 最新收盘价
+    HK: 新浪港股接口取实时价和名称，其余留空
+    """
+    result: dict = {
+        "name": None, "price": None, "ma50": None, "ma150": None, "ma200": None,
+        "ma200_rising": None, "high52w": None, "low52w": None, "rs": None,
+    }
+
+    ts_code = symbol.strip()
+    if not ts_code:
+        return result
+
+    # ── 港股：仅尝试新浪港股接口 ──
+    if market == "HK":
+        try:
+            hk_data = await _fetch_hk_sina_price(ts_code)
+            if hk_data:
+                result["name"] = hk_data.get("name")
+                result["price"] = hk_data.get("price")
+                if hk_data.get("high52w"):
+                    result["high52w"] = hk_data["high52w"]
+                if hk_data.get("low52w"):
+                    result["low52w"] = hk_data["low52w"]
+        except Exception as e:
+            logger.warning("港股 %s 行情获取失败: %s", ts_code, e)
+        return result
+
+    # ── CN / US：从 stock_daily_quote 计算 MA + 52 周高低 ──
+    qmarket = "CN" if market == "CN" else "US"
+
+    sql = sa_text("""
+        WITH ranked AS (
+            SELECT close, high, low, name, trade_date,
+                   ROW_NUMBER() OVER (ORDER BY trade_date DESC) as rn
+            FROM stock_daily_quote
+            WHERE ts_code = :ts_code AND market = :market
+        )
+        SELECT
+            AVG(CASE WHEN rn <= 50  THEN close END)  AS ma50,
+            AVG(CASE WHEN rn <= 150 THEN close END)  AS ma150,
+            AVG(CASE WHEN rn <= 200 THEN close END)  AS ma200,
+            AVG(CASE WHEN rn BETWEEN 22 AND 222 THEN close END) AS ma200_prev,
+            MAX(CASE WHEN  rn <= 250 THEN high END)  AS high52w,
+            MIN(CASE WHEN  rn <= 250 THEN low END)   AS low52w,
+            MAX(CASE WHEN  rn = 1    THEN close END)  AS latest_close,
+            MAX(CASE WHEN  rn = 1    THEN name END)   AS name,
+            COUNT(*)                                    AS data_count
+        FROM ranked
+        WHERE rn <= 260
+    """)
+
+    res = await db.execute(sql, {"ts_code": ts_code, "market": qmarket})
+    row = res.first()
+
+    if row and row.data_count and row.data_count >= 50:
+        result["name"] = row.name or None
+        result["ma50"] = round(float(row.ma50), 2) if row.ma50 else None
+        result["high52w"] = round(float(row.high52w), 2) if row.high52w else None
+        result["low52w"] = round(float(row.low52w), 2) if row.low52w else None
+        result["price"] = round(float(row.latest_close), 2) if row.latest_close else None
+
+        if row.data_count >= 150:
+            result["ma150"] = round(float(row.ma150), 2) if row.ma150 else None
+        if row.data_count >= 200:
+            result["ma200"] = round(float(row.ma200), 2) if row.ma200 else None
+            # MA200 连升 ≥1月：当前 MA200 > 22 交易日前 MA200
+            if row.ma200 and row.ma200_prev:
+                result["ma200_rising"] = float(row.ma200) > float(row.ma200_prev)
+
+    # ── RS 评级 ──
+    try:
+        rs_sql = sa_text("""
+            SELECT rs_rating, name FROM stock_rs_rating
+            WHERE (ts_code = :ts_code OR ts_code LIKE :ts_code_suffix)
+              AND market = :market
+            ORDER BY trade_date DESC LIMIT 1
+        """)
+        rs_res = await db.execute(rs_sql, {
+            "ts_code": ts_code,
+            "ts_code_suffix": f"{ts_code}.%",
+            "market": qmarket,
+        })
+        rs_row = rs_res.first()
+        if rs_row:
+            result["rs"] = int(rs_row.rs_rating)
+            if not result["name"] and rs_row.name:
+                result["name"] = rs_row.name
+    except Exception as e:
+        logger.warning("RS 评级查询失败 %s: %s", ts_code, e)
+
+    # ── CN：新浪实时价覆盖（盘中更准） ──
+    if market == "CN":
+        try:
+            from app.services.data_fetcher import get_sina_prices
+            sina_prices = await get_sina_prices([ts_code])
+            if ts_code in sina_prices and sina_prices[ts_code] > 0:
+                result["price"] = round(sina_prices[ts_code], 2)
+        except Exception as e:
+            logger.warning("新浪实时价获取失败 %s: %s", ts_code, e)
+
+    return result
+
+
+async def _fetch_hk_sina_price(code: str) -> dict | None:
+    """通过新浪港股接口获取实时价格和名称。"""
+    hk_code = code.zfill(5)
+    sina_code = f"rt_hk{hk_code}"
+    url = f"https://hq.sinajs.cn/list={sina_code}"
+
+    req = urllib.request.Request(url, headers={
+        "Referer": "https://finance.sina.com.cn",
+        "User-Agent": "Mozilla/5.0",
+    })
+
+    def _fetch() -> str:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.read().decode("gbk", errors="replace")
+
+    try:
+        text = await asyncio.to_thread(_fetch)
+    except Exception as e:
+        logger.warning("新浪港股行情请求失败: %s", e)
+        return None
+
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if '="' not in line:
+            continue
+        m = re.match(r'var hq_str_rt_hk\d+="(.+)"', line)
+        if not m:
+            continue
+        fields = m.group(1).split(",")
+        # 新浪港股 rt_ 格式: [0]中文名 [1]开盘 [2]昨收 [3]最高 [4]最低 [5]现价 [6]成交量 ...
+        result: dict = {}
+        try:
+            if len(fields) >= 1 and fields[0]:
+                result["name"] = fields[0]
+            if len(fields) >= 6 and fields[5]:
+                price = float(fields[5])
+                if price > 0:
+                    result["price"] = price
+            if len(fields) >= 4 and fields[3]:
+                result["high52w"] = float(fields[3])
+            if len(fields) >= 5 and fields[4]:
+                result["low52w"] = float(fields[4])
+        except (ValueError, IndexError):
+            pass
+        return result or None
+
+    return None
 
 
 # ════════════════════════════════════════════════════════════

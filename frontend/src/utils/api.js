@@ -377,6 +377,10 @@ export function updateSepaWatchlist(id, data) {
 export function deleteSepaWatchlist(id) {
   return request(`/api/v1/sepa/admin/watchlist/${id}`, { method: 'DELETE', headers: _sepaAuthHeader() })
 }
+// 填代码自动带出指标（现价/MA/RS/52周高低）
+export function autofillSepaMetrics(market, symbol) {
+  return request(`/api/v1/sepa/autofill${_qs({ market, symbol })}`)
+}
 
 // 账户总览 + 持仓
 export function fetchSepaAccount(market) {

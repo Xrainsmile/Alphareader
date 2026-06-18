@@ -59,6 +59,11 @@
             <view class="sepa-field"><text class="sepa-field-label">名称</text>
               <input class="sepa-input" :value="form.name" placeholder="名称" @input="form.name = $event.detail.value" /></view>
           </view>
+          <view style="margin:8rpx 0 12rpx;">
+            <view class="sepa-btn sepa-btn-brand sepa-btn-sm" :style="{ opacity: (!form.symbol.trim() || autofilling) ? 0.5 : 1 }" @click="doAutofill">
+              {{ autofilling ? '获取中...' : '自动获取指标' }}
+            </view>
+          </view>
           <view class="sepa-row2">
             <view class="sepa-field"><text class="sepa-field-label">现价</text>
               <input class="sepa-input" type="digit" :value="form.price" @input="form.price = $event.detail.value" /></view>
@@ -107,7 +112,7 @@
 
 <script setup>
 import { ref, reactive, watch } from 'vue'
-import { fetchSepaWatchlist, addSepaWatchlist, updateSepaWatchlist, deleteSepaWatchlist } from '@/utils/api'
+import { fetchSepaWatchlist, addSepaWatchlist, updateSepaWatchlist, deleteSepaWatchlist, autofillSepaMetrics } from '@/utils/api'
 
 const props = defineProps({
   market: { type: String, required: true },
@@ -122,6 +127,7 @@ const items = ref([])
 const statusFilter = ref('')
 const showForm = ref(false)
 const editing = ref(null)
+const autofilling = ref(false)
 
 const emptyForm = () => ({
   symbol: '', name: '', price: '', rs: '', ma50: '', ma150: '', ma200: '',
@@ -144,6 +150,28 @@ const load = async () => {
 }
 
 const setFilter = (s) => { statusFilter.value = s; load() }
+
+const doAutofill = async () => {
+  if (!form.symbol.trim() || autofilling.value) return
+  autofilling.value = true
+  try {
+    const data = await autofillSepaMetrics(props.market, form.symbol.trim())
+    if (data.name != null) form.name = data.name
+    if (data.price != null) form.price = String(data.price)
+    if (data.rs != null) form.rs = String(data.rs)
+    if (data.ma50 != null) form.ma50 = String(data.ma50)
+    if (data.ma150 != null) form.ma150 = String(data.ma150)
+    if (data.ma200 != null) form.ma200 = String(data.ma200)
+    if (data.ma200_rising != null) form.ma200_rising = data.ma200_rising
+    if (data.high52w != null) form.high52w = String(data.high52w)
+    if (data.low52w != null) form.low52w = String(data.low52w)
+    uni.showToast({ title: '指标已获取', icon: 'success' })
+  } catch (e) {
+    uni.showToast({ title: e.message || '获取失败', icon: 'none' })
+  } finally {
+    autofilling.value = false
+  }
+}
 
 const openForm = (w) => {
   if (!props.unlocked) { emit('need-unlock'); return }

@@ -293,6 +293,17 @@ async def get_watchlist(
     return {"items": [_serialize_watch(w) for w in res.scalars().all()]}
 
 
+@router.get("/autofill")
+async def autofill_indicators(
+    market: str = Query(...),
+    symbol: str = Query(..., min_length=1, max_length=16),
+    db: AsyncSession = Depends(get_db),
+):
+    """填代码自动带出指标：现价/MA/RS/52周高低（按市场，能取多少算多少）。"""
+    _check_market(market)
+    return await svc.fetch_sepa_indicators(market, symbol.strip(), db)
+
+
 @router.get("/watchlist/{item_id}")
 async def get_watchlist_item(item_id: int, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(SepaWatchlistItem).where(SepaWatchlistItem.id == item_id))
