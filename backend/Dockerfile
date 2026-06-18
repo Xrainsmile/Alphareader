@@ -17,7 +17,11 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Use a domestic PyPI mirror (server is in Guangzhou) with generous timeout/retries
+# to avoid ReadTimeout against files.pythonhosted.org on slow links.
+RUN pip install --no-cache-dir -r requirements.txt \
+        -i https://pypi.tuna.tsinghua.edu.cn/simple \
+        --timeout 120 --retries 10
 
 # ── Stage 2: Runtime — lean production image ──
 FROM python:3.12-slim
