@@ -167,7 +167,18 @@
   background: var(--color-bg-input);
   border: 1rpx solid var(--color-border);
   border-radius: 12rpx;
-  padding: 18rpx 20rpx;
+  padding: 16rpx 20rpx;
+  font-size: 28rpx;
+  line-height: 1.5;
+  min-height: 44rpx;
+  color: var(--color-text-primary);
+}
+/* H5 端 uni-input 内层真实 input 文字被裁切修复 */
+.sepa-input .uni-input-input,
+.sepa-input .uni-input-wrapper {
+  height: auto;
+  min-height: 44rpx;
+  line-height: 1.5;
   font-size: 28rpx;
   color: var(--color-text-primary);
 }
