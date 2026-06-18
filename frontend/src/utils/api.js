@@ -329,3 +329,90 @@ export function reportAnalyticsEvents(events) {
     data: { events },
   })
 }
+
+// ── SEPA 模拟盘训练系统 API（A股/港股/美股 三市场独立账户）──
+
+/** 拼接 query string */
+function _qs(params = {}) {
+  const q = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return q ? `?${q}` : ''
+}
+
+/** 写操作鉴权头 — 携带解锁时缓存的 SEPA 访问密码 */
+function _sepaAuthHeader() {
+  let pwd = ''
+  try { pwd = uni.getStorageSync('sepa_pwd') || '' } catch (_) {}
+  return pwd ? { 'X-Sandbox-Password': pwd } : {}
+}
+
+// 三市场账户概要（市场切换器）
+export function fetchSepaMarkets() {
+  return request('/api/v1/sepa/markets')
+}
+
+// 市场闸门
+export function fetchSepaGate(market) {
+  return request(`/api/v1/sepa/gate${_qs({ market })}`)
+}
+export function updateSepaGate(data) {
+  return request('/api/v1/sepa/admin/gate', { method: 'PUT', data, headers: _sepaAuthHeader() })
+}
+
+// 股池 Watchlist
+export function fetchSepaWatchlist(market, status = '') {
+  return request(`/api/v1/sepa/watchlist${_qs({ market, status })}`)
+}
+export function fetchSepaWatchlistItem(id) {
+  return request(`/api/v1/sepa/watchlist/${id}`)
+}
+export function addSepaWatchlist(data) {
+  return request('/api/v1/sepa/admin/watchlist', { method: 'POST', data, headers: _sepaAuthHeader() })
+}
+export function updateSepaWatchlist(id, data) {
+  return request(`/api/v1/sepa/admin/watchlist/${id}`, { method: 'PUT', data, headers: _sepaAuthHeader() })
+}
+export function deleteSepaWatchlist(id) {
+  return request(`/api/v1/sepa/admin/watchlist/${id}`, { method: 'DELETE', headers: _sepaAuthHeader() })
+}
+
+// 账户总览 + 持仓
+export function fetchSepaAccount(market) {
+  return request(`/api/v1/sepa/account${_qs({ market })}`)
+}
+export function updateSepaAccount(data) {
+  return request('/api/v1/sepa/admin/account', { method: 'PUT', data, headers: _sepaAuthHeader() })
+}
+
+// KPI 仪表盘
+export function fetchSepaKpi(market, period = 'all') {
+  return request(`/api/v1/sepa/kpi${_qs({ market, period })}`)
+}
+
+// 交易日志
+export function fetchSepaTrades(market, filter = 'all') {
+  return request(`/api/v1/sepa/trades${_qs({ market, filter })}`)
+}
+export function sepaTradesExportUrl(market) {
+  return `${BASE_URL}/api/v1/sepa/trades/export${_qs({ market })}`
+}
+
+// 买点检查（不下单）
+export function checkSepaBuy(data) {
+  return request('/api/v1/sepa/check', { method: 'POST', data })
+}
+
+// 开仓（M7 纪律强制拦截）
+export function openSepaTrade(data) {
+  return request('/api/v1/sepa/admin/trades', { method: 'POST', data, headers: _sepaAuthHeader() })
+}
+// 平仓（强制标注是否守纪律）
+export function closeSepaTrade(id, data) {
+  return request(`/api/v1/sepa/admin/trades/${id}/close`, { method: 'POST', data, headers: _sepaAuthHeader() })
+}
+// 撤销交易
+export function deleteSepaTrade(id) {
+  return request(`/api/v1/sepa/admin/trades/${id}`, { method: 'DELETE', headers: _sepaAuthHeader() })
+}

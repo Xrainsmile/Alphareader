@@ -1,0 +1,469 @@
+/* ════════════════════════════════════════════════════════════
+   SEPA 模拟盘训练系统 — 共享样式（全局，prefix: sepa-）
+   通过 page/index.vue 的 script import 引入，避免 uni-app 自动 scoped。
+   颜色规范：涨红跌绿（A股习惯）→ 盈用 --color-up(红)，亏用 --color-down(绿)。
+   ════════════════════════════════════════════════════════════ */
+
+.sepa-container {
+  min-height: 100vh;
+  background: var(--color-bg);
+  padding-bottom: 40rpx;
+}
+
+/* ── 顶部：市场切换 ── */
+.sepa-market-switch {
+  display: flex;
+  gap: 0;
+  background: var(--color-bg-card);
+  padding: 16rpx 24rpx;
+  border-bottom: 1rpx solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.sepa-market-tab {
+  flex: 1;
+  text-align: center;
+  padding: 18rpx 0;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border-radius: 14rpx;
+  transition: all 0.18s;
+}
+.sepa-market-tab.active {
+  background: var(--color-text-primary);
+  color: var(--color-text-white);
+}
+.sepa-market-cur {
+  font-size: 22rpx;
+  margin-left: 6rpx;
+  opacity: 0.8;
+}
+
+/* ── 账户总览卡 ── */
+.sepa-account-card {
+  margin: 20rpx 24rpx;
+  background: var(--color-bg-card);
+  border-radius: 20rpx;
+  padding: 28rpx;
+  box-shadow: var(--shadow-md);
+}
+.sepa-equity {
+  font-size: 52rpx;
+  font-weight: 800;
+  font-family: var(--font-numeric);
+  color: var(--color-text-primary);
+  letter-spacing: 1rpx;
+}
+.sepa-equity-label {
+  font-size: 22rpx;
+  color: var(--color-text-muted);
+  margin-bottom: 6rpx;
+}
+.sepa-account-grid {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 20rpx;
+  gap: 16rpx 0;
+}
+.sepa-account-grid .cell {
+  width: 33.33%;
+}
+.sepa-account-grid .cell .k {
+  font-size: 22rpx;
+  color: var(--color-text-muted);
+}
+.sepa-account-grid .cell .v {
+  font-size: 30rpx;
+  font-weight: 700;
+  font-family: var(--font-numeric);
+  color: var(--color-text-primary);
+  margin-top: 4rpx;
+}
+
+/* 熔断警告条 */
+.sepa-breaker-banner {
+  margin: 0 24rpx 12rpx;
+  background: var(--color-bg-danger-light);
+  border: 1rpx solid var(--color-up);
+  border-radius: 14rpx;
+  padding: 18rpx 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+.sepa-breaker-banner .icon { font-size: 32rpx; }
+.sepa-breaker-banner .txt {
+  font-size: 24rpx;
+  color: var(--color-danger-dark);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* ── 模块 Tab 栏 ── */
+.sepa-module-tabs {
+  display: flex;
+  overflow-x: auto;
+  background: var(--color-bg-card);
+  margin: 0 24rpx 16rpx;
+  border-radius: 16rpx;
+  padding: 8rpx;
+  box-shadow: var(--shadow-sm);
+}
+.sepa-module-tab {
+  flex: 1 0 auto;
+  min-width: 96rpx;
+  text-align: center;
+  padding: 16rpx 12rpx;
+  font-size: 26rpx;
+  color: var(--color-text-muted);
+  border-radius: 12rpx;
+  white-space: nowrap;
+  transition: all 0.18s;
+}
+.sepa-module-tab.active {
+  background: var(--color-brand-light);
+  color: var(--color-brand);
+  font-weight: 700;
+}
+
+/* ── 通用卡片 ── */
+.sepa-card {
+  margin: 0 24rpx 16rpx;
+  background: var(--color-bg-card);
+  border-radius: 16rpx;
+  padding: 24rpx;
+  box-shadow: var(--shadow-sm);
+}
+.sepa-section-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 16rpx;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+.sepa-section-sub {
+  font-size: 22rpx;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+/* ── 表单 ── */
+.sepa-field {
+  margin-bottom: 18rpx;
+}
+.sepa-field-label {
+  display: block;
+  font-size: 24rpx;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8rpx;
+}
+.sepa-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--color-bg-input);
+  border: 1rpx solid var(--color-border);
+  border-radius: 12rpx;
+  padding: 18rpx 20rpx;
+  font-size: 28rpx;
+  color: var(--color-text-primary);
+}
+.sepa-input.is-error {
+  border-color: var(--color-up);
+}
+.sepa-row2 {
+  display: flex;
+  gap: 16rpx;
+}
+.sepa-row2 > .sepa-field { flex: 1; }
+
+/* 复选开关行 */
+.sepa-check-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid var(--color-border-light);
+}
+.sepa-check-row:last-child { border-bottom: none; }
+.sepa-check-label {
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+}
+
+/* ── 按钮 ── */
+.sepa-btn {
+  display: block;
+  text-align: center;
+  padding: 22rpx 0;
+  border-radius: 14rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+.sepa-btn:active { opacity: 0.75; }
+.sepa-btn-primary {
+  background: var(--color-text-primary);
+  color: var(--color-text-white);
+}
+.sepa-btn-primary.disabled {
+  background: var(--color-bg-neutral-light);
+  color: var(--color-text-placeholder);
+}
+.sepa-btn-brand {
+  background: var(--color-brand);
+  color: var(--color-text-white);
+}
+.sepa-btn-danger {
+  background: var(--color-up);
+  color: var(--color-text-white);
+}
+.sepa-btn-ghost {
+  background: var(--color-bg-active);
+  color: var(--color-text-secondary);
+}
+.sepa-btn-sm {
+  display: inline-block;
+  padding: 10rpx 22rpx;
+  font-size: 24rpx;
+  border-radius: 10rpx;
+}
+.sepa-btn-row {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 8rpx;
+}
+.sepa-btn-row > .sepa-btn { flex: 1; }
+
+/* ── 检查清单项 ── */
+.sepa-cl-item {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid var(--color-border-light);
+}
+.sepa-cl-item:last-child { border-bottom: none; }
+.sepa-cl-icon {
+  width: 40rpx; height: 40rpx;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26rpx;
+  flex-shrink: 0;
+}
+.sepa-cl-icon.ok { background: var(--color-bg-success-light); color: var(--color-success-dark); }
+.sepa-cl-icon.no { background: var(--color-bg-danger-light); color: var(--color-up); }
+.sepa-cl-icon.warn { background: var(--color-bg-warning-light); color: var(--color-warning-deep); }
+.sepa-cl-text { font-size: 26rpx; color: var(--color-text-secondary); }
+
+/* ── 风险预演盒 ── */
+.sepa-risk-box {
+  background: var(--color-bg-section);
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-top: 16rpx;
+}
+.sepa-risk-line {
+  display: flex; justify-content: space-between;
+  padding: 8rpx 0;
+  font-size: 26rpx;
+}
+.sepa-risk-line .k { color: var(--color-text-muted); }
+.sepa-risk-line .v { font-weight: 700; font-family: var(--font-numeric); color: var(--color-text-primary); }
+.sepa-risk-line.danger .v { color: var(--color-up); }
+.sepa-risk-warn {
+  margin-top: 12rpx;
+  background: var(--color-bg-danger-light);
+  border-radius: 10rpx;
+  padding: 14rpx 18rpx;
+  font-size: 24rpx;
+  color: var(--color-danger-dark);
+  font-weight: 600;
+}
+
+/* ── 涨跌色（涨红跌绿）── */
+.pnl-up { color: var(--color-up) !important; }
+.pnl-down { color: var(--color-down) !important; }
+.pnl-flat { color: var(--color-text-muted) !important; }
+
+/* ── 持仓 / 列表项 ── */
+.sepa-holding {
+  border: 1rpx solid var(--color-border);
+  border-radius: 14rpx;
+  padding: 20rpx;
+  margin-bottom: 14rpx;
+}
+.sepa-holding.stop-hit {
+  border-color: var(--color-up);
+  background: var(--color-bg-danger-light);
+}
+.sepa-holding-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.sepa-holding-name { font-size: 30rpx; font-weight: 700; color: var(--color-text-primary); }
+.sepa-holding-code { font-size: 22rpx; color: var(--color-text-muted); margin-left: 10rpx; }
+.sepa-holding-pnl { font-size: 32rpx; font-weight: 800; font-family: var(--font-numeric); }
+.sepa-holding-meta {
+  display: flex; flex-wrap: wrap; margin-top: 14rpx; gap: 12rpx 0;
+}
+.sepa-holding-meta .cell { width: 25%; }
+.sepa-holding-meta .cell .k { font-size: 20rpx; color: var(--color-text-muted); }
+.sepa-holding-meta .cell .v { font-size: 26rpx; font-weight: 600; font-family: var(--font-numeric); color: var(--color-text-secondary); margin-top: 2rpx; }
+.sepa-stop-alert {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: var(--color-up);
+  font-weight: 700;
+}
+
+/* ── 股池条目 ── */
+.sepa-wl-item {
+  border: 1rpx solid var(--color-border);
+  border-radius: 14rpx;
+  padding: 20rpx;
+  margin-bottom: 14rpx;
+}
+.sepa-wl-head { display: flex; justify-content: space-between; align-items: center; }
+.sepa-wl-status {
+  font-size: 22rpx; font-weight: 700; padding: 4rpx 14rpx; border-radius: 8rpx;
+}
+.sepa-wl-status.passed { background: var(--color-bg-success-light); color: var(--color-success-dark); }
+.sepa-wl-status.rejected { background: var(--color-bg-danger-light); color: var(--color-up); }
+.sepa-wl-status.candidate { background: var(--color-bg-neutral-light); color: var(--color-text-muted); }
+.sepa-tmpl-grid {
+  display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 14rpx;
+}
+.sepa-tmpl-chip {
+  font-size: 20rpx; padding: 4rpx 10rpx; border-radius: 8rpx;
+  background: var(--color-bg-active); color: var(--color-text-tertiary);
+}
+.sepa-tmpl-chip.pass { background: var(--color-bg-success-light); color: var(--color-success-dark); }
+.sepa-tmpl-chip.fail { background: var(--color-bg-danger-light); color: var(--color-up); }
+
+/* ── KPI ── */
+.sepa-kpi-hero {
+  text-align: center;
+  padding: 20rpx 0 12rpx;
+}
+.sepa-kpi-ring {
+  font-size: 80rpx;
+  font-weight: 800;
+  font-family: var(--font-numeric);
+  color: var(--color-text-primary);
+  line-height: 1.1;
+}
+.sepa-kpi-ring.ok { color: var(--color-success-dark); }
+.sepa-kpi-ring.bad { color: var(--color-up); }
+.sepa-kpi-ring-label { font-size: 24rpx; color: var(--color-text-muted); }
+.sepa-kpi-grid {
+  display: flex; flex-wrap: wrap; gap: 14rpx; margin-top: 16rpx;
+}
+.sepa-kpi-cell {
+  width: calc(50% - 7rpx);
+  box-sizing: border-box;
+  background: var(--color-bg-section);
+  border-radius: 12rpx;
+  padding: 18rpx;
+}
+.sepa-kpi-cell .num { font-size: 38rpx; font-weight: 800; font-family: var(--font-numeric); color: var(--color-text-primary); }
+.sepa-kpi-cell .num.ok { color: var(--color-success-dark); }
+.sepa-kpi-cell .num.bad { color: var(--color-warning-deep); }
+.sepa-kpi-cell .lbl { font-size: 22rpx; color: var(--color-text-muted); margin-top: 4rpx; }
+.sepa-kpi-cell .tgt { font-size: 20rpx; color: var(--color-text-placeholder); margin-top: 2rpx; }
+.sepa-verdict {
+  margin-top: 16rpx;
+  border-radius: 14rpx;
+  padding: 22rpx;
+  text-align: center;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+.sepa-verdict.pass { background: var(--color-bg-success-light); color: var(--color-success-dark); }
+.sepa-verdict.fail { background: var(--color-bg-warning-light); color: var(--color-warning-deep); }
+
+/* 进度条 */
+.sepa-progress {
+  height: 14rpx; background: var(--color-bg-neutral-light);
+  border-radius: 8rpx; overflow: hidden; margin-top: 10rpx;
+}
+.sepa-progress-fill { height: 100%; background: var(--color-brand); border-radius: 8rpx; }
+.sepa-progress-fill.ok { background: var(--color-success-dark); }
+
+/* ── 日志筛选 ── */
+.sepa-filter-bar {
+  display: flex; gap: 10rpx; overflow-x: auto; margin-bottom: 16rpx;
+}
+.sepa-filter-chip {
+  flex: 0 0 auto;
+  font-size: 24rpx; padding: 10rpx 22rpx; border-radius: 20rpx;
+  background: var(--color-bg-active); color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.sepa-filter-chip.active { background: var(--color-brand); color: var(--color-text-white); }
+
+/* 日志条目 */
+.sepa-trade {
+  border: 1rpx solid var(--color-border);
+  border-radius: 14rpx; padding: 18rpx; margin-bottom: 12rpx;
+}
+.sepa-trade.violation { border-color: var(--color-up); background: var(--color-bg-danger-light); }
+.sepa-trade-head { display: flex; justify-content: space-between; align-items: baseline; }
+.sepa-trade-title { font-size: 28rpx; font-weight: 700; color: var(--color-text-primary); }
+.sepa-trade-badge {
+  font-size: 20rpx; padding: 3rpx 12rpx; border-radius: 8rpx; margin-left: 10rpx;
+}
+.sepa-trade-badge.open { background: var(--color-bg-info-light); color: var(--color-info-hover); }
+.sepa-trade-badge.closed { background: var(--color-bg-neutral-light); color: var(--color-text-muted); }
+.sepa-trade-badge.viol { background: var(--color-up); color: var(--color-text-white); }
+.sepa-trade-meta { font-size: 22rpx; color: var(--color-text-muted); margin-top: 8rpx; line-height: 1.6; }
+.sepa-trade-note { font-size: 23rpx; color: var(--color-text-tertiary); margin-top: 8rpx; line-height: 1.5; }
+
+/* ── 闸门 ── */
+.sepa-gate-status {
+  text-align: center; padding: 28rpx 0;
+  border-radius: 16rpx; margin-bottom: 16rpx;
+}
+.sepa-gate-status.open { background: var(--color-bg-success-light); }
+.sepa-gate-status.closed { background: var(--color-bg-danger-light); }
+.sepa-gate-status .big { font-size: 44rpx; font-weight: 800; }
+.sepa-gate-status.open .big { color: var(--color-success-dark); }
+.sepa-gate-status.closed .big { color: var(--color-up); }
+.sepa-gate-status .sub { font-size: 24rpx; color: var(--color-text-muted); margin-top: 6rpx; }
+
+/* ── 空态 / 加载 ── */
+.sepa-empty {
+  text-align: center; padding: 60rpx 0; color: var(--color-text-placeholder); font-size: 26rpx;
+}
+.sepa-loading { text-align: center; padding: 40rpx 0; color: var(--color-text-muted); font-size: 26rpx; }
+
+/* ── 锁状态条 ── */
+.sepa-lock-bar {
+  display: flex; align-items: center; justify-content: center; gap: 10rpx;
+  margin: 0 24rpx 16rpx;
+  background: var(--color-bg-warning-light);
+  border-radius: 12rpx; padding: 14rpx;
+  font-size: 24rpx; color: var(--color-warning-deep);
+}
+.sepa-lock-bar.unlocked { background: var(--color-bg-success-soft); color: var(--color-success-dark); }
+
+/* 心理提醒卡 */
+.sepa-mindcard {
+  background: var(--color-bg-info-accent);
+  border-left: 6rpx solid var(--color-brand);
+  border-radius: 10rpx;
+  padding: 16rpx 20rpx;
+  margin-top: 14rpx;
+  font-size: 24rpx;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+}
+
+/* ── PC 适配 ── */
+@media (min-width: 750px) {
+  .sepa-container { max-width: 720px; margin: 0 auto; }
+  .sepa-equity { font-size: 34px; }
+  .sepa-kpi-ring { font-size: 48px; }
+}

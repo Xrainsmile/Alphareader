@@ -6,6 +6,7 @@ from app.models.news_digest import NewsDigest
 from app.models.report import Report
 from app.models.sandbox import SandboxAnalysis, SandboxNav, SandboxStock, SandboxTrade
 from app.models.screener import ScreenerRun, TrendScreenerRun, TrendWatchlistDaily, WatchlistDaily
+from app.models.sepa import SepaAccount, SepaMarketGate, SepaTrade, SepaWatchlistItem
 from app.models.stock import StockDailyQuote, StockRSRating
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "News", "NewsDigest", "Report",
     "SandboxStock", "SandboxAnalysis", "SandboxTrade", "SandboxNav",
     "ScreenerRun", "TrendScreenerRun", "WatchlistDaily", "TrendWatchlistDaily",
+    "SepaAccount", "SepaMarketGate", "SepaWatchlistItem", "SepaTrade",
     "StockDailyQuote", "StockRSRating",
 ]

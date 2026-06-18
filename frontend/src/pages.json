@@ -57,6 +57,16 @@
         "navigationBarTextStyle": "black",
         "backgroundColor": "#f0f2f5"
       }
+    },
+    {
+      "path": "pages/sepa/index",
+      "style": {
+        "navigationBarTitleText": "SEPA 训练",
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationBarTextStyle": "black",
+        "enablePullDownRefresh": true,
+        "backgroundColor": "#f0f2f5"
+      }
     }
   ],
   "tabBar": {
@@ -82,6 +92,12 @@
         "text": "Reports",
         "iconPath": "static/tabbar/reports.svg",
         "selectedIconPath": "static/tabbar/reports-active.svg"
+      },
+      {
+        "pagePath": "pages/sepa/index",
+        "text": "SEPA",
+        "iconPath": "static/tabbar/sepa.svg",
+        "selectedIconPath": "static/tabbar/sepa-active.svg"
       }
     ]
   },
