@@ -2,13 +2,21 @@
 =================================
 职责：从多个中英文金融/科技信源并发抓取新闻，返回去重后的原始新闻列表。
 
-当前活跃信源（11 个）：
+当前活跃信源（24 个）：
   财经类：财联社（通过 JSON API）
-         MarketWatch / Seeking Alpha（通过 RSS/Atom XML）
+         MarketWatch / Seeking Alpha / CNBC / Investing.com（RSS/Atom XML）
+         Reuters / Yahoo Finance（通过 Google News RSS 按站点过滤，无需 RSSHub）
+         SEC EDGAR（Atom，一手 8-K filing 流，UA 需带联系邮箱）
          Finnhub（通过 JSON API，需 API Key）
   科技类：TechCrunch / OpenAI Blog / Google AI Blog / Anthropic /
-         Hugging Face / MIT Technology Review（通过 RSS/Atom XML）
-         Hacker News（通过 Firebase API）
+         Hugging Face / MIT Tech Review / MarkTechPost / The Verge AI /
+         Last Week in AI / The Gradient / NVIDIA Blog / Simon Willison（RSS/Atom XML）
+         arXiv(cs.AI, cs.CL)（RSS/Atom XML，论文流）
+         Hacker News（通过 Algolia API）
+
+  注：Benzinga 因 Cloudflare 拦截（403）且无可用端点已移除；
+      MarkTechPost 同样可能被 Cloudflare 挑战，保留其 RSSHub 备用路由；
+      Reuters/Yahoo 依赖公共 RSSHub 实例，可通过环境变量 RSSHUB_INSTANCES 覆盖。
 
 处理流程：
   1. 使用 httpx 并发请求所有信源
@@ -647,6 +655,126 @@ def _parse_mit_tech_review(raw_text: str) -> list[RawNewsItem]:
             ))
     return items
 
+
+def _generic_rss_parse(
+    raw_text: str, source_name: str, category: str = "财经",
+) -> list[RawNewsItem]:
+    """通用 RSS/Atom 解析器：用 feedparser 解析结构标准的 RSS 源。
+
+    适用于标题/链接/摘要均挂在 entry 标准字段上的信源。
+    新增标准 RSS 信源时，优先复用本函数，避免重复样板代码。
+    """
+    feed = feedparser.parse(raw_text)
+    items: list[RawNewsItem] = []
+    for entry in feed.entries:
+        title = entry.get("title", "").strip()
+        url = entry.get("link", "")
+        content = _strip_html(entry.get("summary", "") or entry.get("description", ""))
+        published = _parse_rss_time(entry)
+        tags = [t.get("term", "") for t in entry.get("tags", []) if t.get("term")]
+        if title and url:
+            items.append(RawNewsItem(
+                title=title, content=content or title,
+                url=url, source=source_name, published_at=published,
+                tags=tags[:3], category=category,
+            ))
+    return items
+
+
+# ── 新增科技信源（标准 RSS，复用 _generic_rss_parse）──
+def _parse_marktechpost(raw_text: str) -> list[RawNewsItem]:
+    """Parse MarkTechPost RSS (https://www.marktechpost.com/feed/)."""
+    return _generic_rss_parse(raw_text, source_name="MarkTechPost", category="科技")
+
+
+def _parse_arxiv_ai(raw_text: str) -> list[RawNewsItem]:
+    """Parse arXiv cs.AI RSS (https://rss.arxiv.org/rss/cs.AI)."""
+    return _generic_rss_parse(raw_text, source_name="arXiv cs.AI", category="科技")
+
+
+def _parse_arxiv_cl(raw_text: str) -> list[RawNewsItem]:
+    """Parse arXiv cs.CL RSS (https://rss.arxiv.org/rss/cs.CL)."""
+    return _generic_rss_parse(raw_text, source_name="arXiv cs.CL", category="科技")
+
+
+def _parse_theverge_ai(raw_text: str) -> list[RawNewsItem]:
+    """Parse The Verge AI RSS (https://www.theverge.com/rss/ai-artificial-intelligence/index.xml)."""
+    return _generic_rss_parse(raw_text, source_name="The Verge AI", category="科技")
+
+
+def _parse_lastweekin_ai(raw_text: str) -> list[RawNewsItem]:
+    """Parse Last Week in AI RSS (https://lastweekin.ai/feed)."""
+    return _generic_rss_parse(raw_text, source_name="Last Week in AI", category="科技")
+
+
+def _parse_gradient(raw_text: str) -> list[RawNewsItem]:
+    """Parse The Gradient RSS (https://thegradient.pub/rss/)."""
+    return _generic_rss_parse(raw_text, source_name="The Gradient", category="科技")
+
+
+def _parse_nvidia_blog(raw_text: str) -> list[RawNewsItem]:
+    """Parse NVIDIA Blog RSS (https://blogs.nvidia.com/feed/)."""
+    return _generic_rss_parse(raw_text, source_name="NVIDIA Blog", category="科技")
+
+
+def _parse_simonwillison(raw_text: str) -> list[RawNewsItem]:
+    """Parse Simon Willison Atom feed (https://simonwillison.net/atom/everything/)."""
+    return _generic_rss_parse(raw_text, source_name="Simon Willison", category="科技")
+
+
+# ── 新增财经信源（标准 RSS，复用 _generic_rss_parse）──
+def _parse_investinglive(raw_text: str) -> list[RawNewsItem]:
+    """Parse Investing.com / investinglive market RSS (https://investinglive.com/rss/)."""
+    return _generic_rss_parse(raw_text, source_name="Investing.com", category="财经")
+
+
+def _parse_reuters(raw_text: str) -> list[RawNewsItem]:
+    """Parse Reuters news feed (via RSSHub, e.g. /reuters/world/us)."""
+    return _generic_rss_parse(raw_text, source_name="Reuters", category="财经")
+
+
+def _parse_yahoo_finance(raw_text: str) -> list[RawNewsItem]:
+    """Parse Yahoo Finance news feed (via RSSHub, e.g. /yahoo/finance/news)."""
+    return _generic_rss_parse(raw_text, source_name="Yahoo Finance", category="财经")
+
+
+def _parse_sec_edgar(raw_text: str) -> list[RawNewsItem]:
+    """解析 SEC EDGAR Latest Filings Atom feed。
+
+    URL: https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&output=atom
+
+    条目结构（Atom）：
+      title  = "8-K - Company Name (CIK) (Filer)"
+      link   = 指向该 filing 的 -index.htm
+      summary= HTML 片段，含 "Filed: YYYY-MM-DD" 和 AccNo
+      updated= filing 接收时间
+
+    注意：SEC 要求请求方 UA 带联系邮箱（在 FeedSource.extra_headers 配置）。
+    """
+    feed = feedparser.parse(raw_text)
+    items: list[RawNewsItem] = []
+    for entry in feed.entries:
+        title = entry.get("title", "").strip()
+        url = entry.get("link", "")
+        summary = _strip_html(entry.get("summary", "") or entry.get("description", ""))
+        published = _parse_rss_time(entry)
+
+        # 从 title 中提取 form type（8-K/10-K/...）与公司名作为标签
+        tags: list[str] = []
+        m = re.match(r"^([A-Z0-9\-/]+)\s*-\s*(.+?)\s*\(\d+\)\s*\(Filer\)\s*$", title)
+        if m:
+            form_type, company = m.group(1), m.group(2).strip()
+            tags = [form_type, company]
+
+        if title and url:
+            items.append(RawNewsItem(
+                title=title, content=summary or title,
+                url=url, source="SEC EDGAR", published_at=published,
+                tags=tags[:3], category="财经",
+            ))
+    return items
+
+
 @dataclass
 class FeedSource:
     """信源配置：name=信源名称，url=API地址，parser=对应解析函数，is_rss=是否RSS格式"""
@@ -655,6 +783,7 @@ class FeedSource:
     parser: Callable
     is_rss: bool = False                        # True = RSS/Atom 格式，用 feedparser 解析
     fallback_urls: list[str] = field(default_factory=list)  # 主 URL 失败时按顺序尝试的备用 URL
+    extra_headers: dict[str, str] = field(default_factory=dict)  # 追加到该源 HTTP 请求的自定义头（覆盖 HTTP_HEADERS）
 
 
 # RSSHub 备用实例列表（可通过环境变量 RSSHUB_INSTANCES 覆盖，逗号分隔）
@@ -695,6 +824,39 @@ FEED_SOURCES: list[FeedSource] = [
         is_rss=True,
     ),
     FeedSource(
+        name="CNBC",
+        url="https://www.cnbc.com/id/100003114/device/rss/rss.html",
+        parser=_parse_cnbc,
+        is_rss=True,
+    ),
+    FeedSource(
+        name="Investing.com",
+        url="https://www.investing.com/rss/news_25.rss",
+        parser=_parse_investinglive,
+        is_rss=True,
+    ),
+    # Reuters / Yahoo Finance 无原生 RSS，改用 Google News RSS 按站点过滤
+    # （稳定、无需第三方 RSSHub 实例；标题会带 " - Reuters" 后缀，内容为标准 RSS 摘要）
+    FeedSource(
+        name="Reuters",
+        url="https://news.google.com/rss/search?q=site:reuters.com&hl=en-US&gl=US&ceid=US:en",
+        parser=_parse_reuters,
+        is_rss=True,
+    ),
+    FeedSource(
+        name="Yahoo Finance",
+        url="https://news.google.com/rss/search?q=site:finance.yahoo.com&hl=en-US&gl=US&ceid=US:en",
+        parser=_parse_yahoo_finance,
+        is_rss=True,
+    ),
+    # SEC EDGAR: 一手 8-K filing 流。UA 必须带联系邮箱（extra_headers 动态注入见 fetch_all_feeds）
+    FeedSource(
+        name="SEC EDGAR",
+        url="https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&company=&dateb=&owner=include&count=40&output=atom",
+        parser=_parse_sec_edgar,
+        is_rss=True,
+    ),
+    FeedSource(
         name="Finnhub",
         url="",  # 动态构建，见 fetch_all_feeds()
         parser=_parse_finnhub,
@@ -718,7 +880,7 @@ FEED_SOURCES: list[FeedSource] = [
     ),
     FeedSource(
         name="OpenAI Blog",
-        url="https://openai.com/blog/rss.xml",
+        url="https://openai.com/news/rss.xml",
         parser=_parse_openai_blog,
         is_rss=True,
     ),
@@ -750,6 +912,61 @@ FEED_SOURCES: list[FeedSource] = [
         name="MIT Tech Review",
         url="https://www.technologyreview.com/feed/",
         parser=_parse_mit_tech_review,
+        is_rss=True,
+    ),
+    # ── 新增科技信源（2026-07-08）──
+    FeedSource(
+        name="MarkTechPost",
+        url="https://www.marktechpost.com/feed/",
+        parser=_parse_marktechpost,
+        is_rss=True,
+        fallback_urls=[
+            f"{inst}/marktechpost" for inst in _RSSHUB_INSTANCES
+        ],
+    ),
+    FeedSource(
+        name="arXiv cs.AI",
+        url="https://rss.arxiv.org/rss/cs.AI",
+        parser=_parse_arxiv_ai,
+        is_rss=True,
+    ),
+    FeedSource(
+        name="arXiv cs.CL",
+        url="https://rss.arxiv.org/rss/cs.CL",
+        parser=_parse_arxiv_cl,
+        is_rss=True,
+    ),
+    FeedSource(
+        name="The Verge AI",
+        url="https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+        parser=_parse_theverge_ai,
+        is_rss=True,
+        fallback_urls=[
+            f"{inst}/theverge" for inst in _RSSHUB_INSTANCES
+        ],
+    ),
+    FeedSource(
+        name="Last Week in AI",
+        url="https://lastweekin.ai/feed",
+        parser=_parse_lastweekin_ai,
+        is_rss=True,
+    ),
+    FeedSource(
+        name="The Gradient",
+        url="https://thegradient.pub/rss/",
+        parser=_parse_gradient,
+        is_rss=True,
+    ),
+    FeedSource(
+        name="NVIDIA Blog",
+        url="https://blogs.nvidia.com/feed/",
+        parser=_parse_nvidia_blog,
+        is_rss=True,
+    ),
+    FeedSource(
+        name="Simon Willison",
+        url="https://simonwillison.net/atom/everything/",
+        parser=_parse_simonwillison,
         is_rss=True,
     ),
 ]
@@ -825,7 +1042,10 @@ async def _fetch_raw_items(
         return await _fetch_with_fallback(client, source)
 
     try:
-        resp = await client.get(source.url, timeout=20.0)
+        resp = await client.get(
+            source.url, timeout=20.0,
+            headers=source.extra_headers or None,
+        )
         resp.raise_for_status()
     except Exception as e:
         logger.warning("Failed to fetch %s: %s", source.name, e)
@@ -860,7 +1080,10 @@ async def _fetch_with_fallback(
 
         for attempt in range(_BACKOFF_MAX_RETRIES + 1):
             try:
-                resp = await client.get(url, timeout=20.0)
+                resp = await client.get(
+                    url, timeout=20.0,
+                    headers=source.extra_headers or None,
+                )
                 resp.raise_for_status()
 
                 # Success — parse and return
@@ -930,6 +1153,14 @@ async def fetch_all_feeds() -> FetchResult:
                 src.url = f"https://finnhub.io/api/v1/news?category=general&token={key}"
             else:
                 logger.warning("FINNHUB_API_KEY not set, skipping Finnhub source")
+        elif src.name == "SEC EDGAR" and not src.extra_headers:
+            # SEC 强制要求 UA 带联系邮箱，否则返回 403
+            # 参考: https://www.sec.gov/os/accessing-edgar-data
+            email = settings.SEC_CONTACT_EMAIL
+            src.extra_headers = {
+                "User-Agent": f"AlphaReader Research {email}",
+                "Accept": "application/atom+xml, application/xml",
+            }
 
     active_sources = [s for s in FEED_SOURCES if s.url]
 

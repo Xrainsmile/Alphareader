@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     # ── Finnhub 市场新闻 ──
     FINNHUB_API_KEY: str = Field("", repr=False)                        # Finnhub API Token (https://finnhub.io)
 
+    # ── SEC EDGAR（一手 filing 流）──
+    # SEC 强制要求请求方 UA 带联系邮箱，格式：<Company/Project> <email>
+    # 建议在 .env 覆盖为真实运维邮箱；否则使用默认占位（仍可通过 SEC 校验，但不礼貌）
+    SEC_CONTACT_EMAIL: str = "alphareader@example.com"
+
     # ── Embedding 去重 — 提供商切换 ──
     # 可选值："zhipu"（智谱 AI）或 "siliconflow"（硅基流动，免费）
     EMBEDDING_PROVIDER: str = "siliconflow"
