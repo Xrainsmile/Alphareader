@@ -5,6 +5,14 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /build
 
+# Switch Debian bookworm apt sources to Tencent mirror (server is in Guangzhou)
+# to avoid slow/timeout on deb.debian.org from mainland China networks.
+# python:3.12-slim uses the new deb822 format at /etc/apt/sources.list.d/debian.sources.
+RUN sed -i 's|http://deb.debian.org|http://mirrors.tencentyun.com|g; s|http://security.debian.org|http://mirrors.tencentyun.com|g' \
+        /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|http://deb.debian.org|http://mirrors.tencentyun.com|g; s|http://security.debian.org|http://mirrors.tencentyun.com|g' \
+        /etc/apt/sources.list 2>/dev/null || true
+
 # Install system deps needed to compile C extensions (asyncpg, lxml, scikit-learn, etc.)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -31,6 +39,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
+
+# Switch Debian bookworm apt sources to Tencent mirror (see builder stage).
+RUN sed -i 's|http://deb.debian.org|http://mirrors.tencentyun.com|g; s|http://security.debian.org|http://mirrors.tencentyun.com|g' \
+        /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|http://deb.debian.org|http://mirrors.tencentyun.com|g; s|http://security.debian.org|http://mirrors.tencentyun.com|g' \
+        /etc/apt/sources.list 2>/dev/null || true
 
 # Only the minimal runtime libraries — no gcc/g++/dev headers
 RUN apt-get update && \
