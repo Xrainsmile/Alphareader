@@ -135,6 +135,12 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                         tickers_as_tags = [f"${t}" for t in item.relevant_tickers]
                         tags = list(set((tags or []) + tickers_as_tags))
 
+                    # 去除与 source 同名的 tag（LLM 有时会把来源名当标签返回，
+                    # 而 meta 行已显示 source，tag 中重复无信息增量）
+                    src_name = (item.raw.source or "").strip()
+                    if src_name and tags:
+                        tags = [t for t in tags if t != src_name]
+
                     # 事件聚合：related_to_url → related_to_id
                     related_to_id = None
                     raw_related_url = getattr(item.raw, "related_to_url", None)
