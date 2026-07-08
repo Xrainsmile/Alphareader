@@ -65,13 +65,14 @@ USER appuser
 EXPOSE 8000
 
 # Production: gunicorn with uvicorn worker
-# Single worker to avoid duplicate APScheduler instances across processes.
-# Async I/O handles concurrency within the single worker — sufficient for
-# our pipeline-heavy workload on a 2-core Lighthouse instance.
+# 多 worker 提升 API 并发：pipeline 跑批（抓取/打分/去重）为 CPU 密集任务，
+# 单 worker 时会在跑批期间阻塞事件循环，导致浏览器 API 请求 15s 超时（Nginx 499）。
+# 多 worker 下，仅有持有 Redis 调度锁的 worker 跑 pipeline，其余 worker 专责 API，
+# 避免全部 worker 被饿死。见 app/services/scheduler.py 的分布式锁逻辑。
 CMD ["python", "-m", "gunicorn", "app.main:app", \
      "-k", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8000", \
-     "--workers", "1", \
+     "--workers", "2", \
      "--timeout", "1800", \
      "--graceful-timeout", "30", \
      "--access-logfile", "-"]

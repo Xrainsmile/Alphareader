@@ -29,7 +29,7 @@ function request(url, options = {}) {
       method: options.method || 'GET',
       data: options.data || {},
       header: headers,
-      timeout: 15000,
+      timeout: 30000,
       success: (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           // 自动解包 APIResponse / PaginatedResponse 格式

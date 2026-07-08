@@ -42,6 +42,44 @@ from app.services.digest_service import generate_digest
 
 logger = logging.getLogger("alphareader.scheduler")
 
+# ── 分布式调度锁（多 worker 场景）──
+# gunicorn 多 worker 时，每个 worker 都会启动自己的 AsyncIOScheduler。
+# 若不加锁，多个 worker 会各自独立跑 pipeline，造成重复抓取 / 重复入库。
+# 用 Redis SET NX 保证同一时刻只有一个 worker 持有调度权。
+# 锁带 TTL：持有锁的 worker 异常退出后，其他 worker 能在 TTL 内接管。
+SCHEDULER_LOCK_KEY = "alphareader:scheduler_lock"
+SCHEDULER_LOCK_TTL = 3600  # 1 小时
+
+
+async def _try_acquire_scheduler_lock() -> bool:
+    """尝试获取分布式调度锁（Redis SET NX）。
+
+    Returns:
+        True  → 本 worker 成功获取锁，应启动调度器
+        False → 锁已被其他 worker 持有，本 worker 不应启动调度器
+    """
+    try:
+        from app.redis import get_redis
+        r = get_redis()
+        acquired = await r.set(SCHEDULER_LOCK_KEY, "1", nx=True, ex=SCHEDULER_LOCK_TTL)
+        return bool(acquired)
+    except Exception as e:
+        # Redis 不可用等异常 → fail-open：仍启动调度器（pipeline 去重层会兜住重复）
+        logger.warning("[scheduler] 获取调度锁失败（fail-open，仍启动调度器）: %s", e)
+        return True
+
+
+def _release_scheduler_lock_bg():
+    """后台线程释放调度锁，避免 shutdown 时阻塞事件循环。"""
+    try:
+        import redis
+        from app.config import settings
+        r = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        r.delete(SCHEDULER_LOCK_KEY)
+    except Exception:
+        pass
+
+
 # ── 延迟容忍配置 ──
 # 允许最多 10 分钟的延迟，超过后才视为"错过"（misfire）
 # 覆盖场景：容器冷启动慢、DB/Redis 健康检查等待、瞬时负载高峰
@@ -391,14 +429,33 @@ async def _catalyst_job():
         raise
 
 
-def start_scheduler():
+async def start_scheduler():
     """注册 Cron 定时任务并启动调度器。
 
     - 每 PIPELINE_INTERVAL_MINUTES 分钟执行一次（默认 15 分钟）
     - 运行时间范围：PIPELINE_START_HOUR ~ PIPELINE_END_HOUR
     - 启动时立即执行一次（next_run_time=now），不等待下一个调度点
     - max_instances=1 防止任务堆叠
+
+    多 worker 场景：只有成功获取 Redis 调度锁的 worker 才真正启动调度器，
+    其余 worker 仅承担 API 请求处理，避免重复跑 pipeline 并防止 pipeline
+    跑批时阻塞全部 worker 导致 API 超时。
     """
+    # ── 分布式锁：仅一个 worker 拥有调度权 ──
+    try:
+        acquired = await _try_acquire_scheduler_lock()
+    except Exception:
+        acquired = True  # 极端情况下 fail-open
+
+    if not acquired:
+        logger.info(
+            "[scheduler] 本 worker 未获取调度锁（其他 worker 已持有），"
+            "跳过调度器启动，仅处理 API 请求"
+        )
+        return
+
+    logger.info("[scheduler] 本 worker 已获取调度锁，启动定时任务调度器")
+
     start_h = settings.PIPELINE_START_HOUR
     end_h = settings.PIPELINE_END_HOUR
     interval = settings.PIPELINE_INTERVAL_MINUTES
@@ -766,3 +823,6 @@ def stop_scheduler():
     if scheduler.running:
         scheduler.shutdown(wait=False)
         logger.info("Scheduler stopped")
+    # 释放调度锁，让其他 worker 可立即接管（后台线程执行，不阻塞事件循环）
+    import threading
+    threading.Thread(target=_release_scheduler_lock_bg, daemon=True).start()

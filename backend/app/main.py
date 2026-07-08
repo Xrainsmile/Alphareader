@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
     logger.info("Redis connected")
 
     # Start the periodic news pipeline scheduler
-    start_scheduler()
+    await start_scheduler()
 
     yield
 
