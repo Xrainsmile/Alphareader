@@ -179,12 +179,13 @@ JSON 字段及规则：
 - chinese_summary：【必填】不超过 80 字的纯中文摘要。⚠️ 严禁留空、严禁使用英文
 - tags: 提取 3-5 个核心标签（必须用中文），包含：① 所属板块（如"半导体"） ② 明确个股（如"英伟达"，若无则省略） ③ 事件定性（如"业绩指引上调"、"宏观流动性"、"供需逆转"、"无效噪音"）
 - relevant_tickers: 提取相关股票代码（可为空数组）。美股用字母代码（如 "NVDA"），港股用5位数字（如 "00700"、"09988"），注意港股代码固定为5位，不足5位前面补0
+- why_it_matters: 一句话"推荐理由"，告诉投资者为什么值得关注这条新闻（不超过40字，结合催化类型与预期差，例："业绩超预期且指引上调，构成实质盈余惊喜，关注产业链机会"）。
 - 每条新闻都必须评分并翻译，即使是低分
 - 所有字段都必须返回，不可省略任何字段
 
 # JSON Format Example
-[{"id": 1, "score": 8, "chinese_title": "英伟达第三季度业绩指引大幅上调", "chinese_summary": "英伟达公布第三季度营收350亿美元，同比增长94%，指引远超市场预期，构成实质性盈余惊喜", "tags": ["AI算力", "英伟达", "业绩指引上调", "核心催化"], "relevant_tickers": ["NVDA"]},
-{"id": 2, "score": 7, "chinese_title": "腾讯加大股票回购力度", "chinese_summary": "腾讯控股本周回购金额创新高，持续释放管理层信心信号", "tags": ["互联网", "腾讯", "回购", "港股"], "relevant_tickers": ["00700"]}]"""
+[{"id": 1, "score": 8, "chinese_title": "英伟达第三季度业绩指引大幅上调", "chinese_summary": "英伟达公布第三季度营收350亿美元，同比增长94%，指引远超市场预期，构成实质性盈余惊喜", "tags": ["AI算力", "英伟达", "业绩指引上调", "核心催化"], "relevant_tickers": ["NVDA"], "why_it_matters": "业绩超预期且指引上调，构成实质盈余惊喜，关注AI算力产业链"},
+{"id": 2, "score": 7, "chinese_title": "腾讯加大股票回购力度", "chinese_summary": "腾讯控股本周回购金额创新高，持续释放管理层信心信号", "tags": ["互联网", "腾讯", "回购", "港股"], "relevant_tickers": ["00700"], "why_it_matters": "大额回购释放管理层信心，对估值形成支撑"}]"""
 
 
 def _detect_is_english(text: str) -> bool:
@@ -216,6 +217,8 @@ class ScoredNewsItem:
     tags: list[str]
     chinese_title: str = ""
     relevant_tickers: list[str] = field(default_factory=list)
+    # 推荐理由：一句话告诉投资者"为什么该关注这条"（中文复用 reason，英文由 LLM 生成）
+    why_it_matters: str = ""
     sentiment_score: int | None = None
     surprise_factor: int | None = None
     catalyst_type: str | None = None
@@ -319,6 +322,7 @@ def _parse_response(raw_text: str, batch: list[RawNewsItem], is_english: bool) -
                         chinese_title, batch[idx].title[:50],
                     )
 
+                why_it_matters = str(item.get("why_it_matters", ""))[:256]
                 scored.append(ScoredNewsItem(
                     raw=batch[idx],
                     score=min(score, 10),
@@ -327,6 +331,7 @@ def _parse_response(raw_text: str, batch: list[RawNewsItem], is_english: bool) -
                     tags=[str(t) for t in item.get("tags", []) if t][:5],
                     chinese_title=chinese_title,
                     relevant_tickers=tickers,
+                    why_it_matters=why_it_matters,
                 ))
             else:
                 tickers = [str(t) for t in item.get("relevant_tickers", []) if t][:5]
@@ -337,6 +342,7 @@ def _parse_response(raw_text: str, batch: list[RawNewsItem], is_english: bool) -
                     summary=str(item.get("summary", ""))[:100],
                     tags=[str(t) for t in item.get("tags", []) if t][:5],
                     relevant_tickers=tickers,
+                    why_it_matters=str(item.get("reason", ""))[:256],
                 ))
         except (ValueError, TypeError) as e:
             logger.warning("Skipping malformed item in LLM response: %s (%s)", item, e)

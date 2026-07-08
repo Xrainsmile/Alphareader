@@ -26,6 +26,8 @@ class News(Base):
     )
     ai_score: Mapped[int] = mapped_column(Integer, nullable=True, default=0, index=True)
     ai_summary: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # 推荐理由：一句话告诉用户"为什么该关注这条"，类比 AIHOT 的推荐理由
+    why_it_matters: Mapped[str | None] = mapped_column(String(256), nullable=True)
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     # 事件聚合：指向同一事件的更早报道（自引用外键），前端可据此折叠关联新闻
     related_to_id: Mapped[uuid.UUID | None] = mapped_column(

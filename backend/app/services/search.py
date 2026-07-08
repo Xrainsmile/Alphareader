@@ -204,6 +204,7 @@ async def search_news(
             "url": r["url"],
             "ai_score": r["ai_score"],
             "ai_summary": r["ai_summary"],
+            "why_it_matters": r["why_it_matters"],
             "summary_highlighted": r["summary_highlighted"],
             "tags": r["tags"],
             "related_to_id": str(r["related_to_id"]) if r["related_to_id"] else None,

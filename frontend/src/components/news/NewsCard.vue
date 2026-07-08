@@ -13,6 +13,12 @@
       <rich-text v-if="highlighted && (item.summary_highlighted || item.ai_summary)" class="news-summary search-highlight" :nodes="item.summary_highlighted || item.ai_summary || ''"></rich-text>
       <text v-else-if="item.ai_summary" class="news-summary">{{ item.ai_summary }}</text>
 
+      <!-- 推荐理由（why_it_matters）：一句话告诉用户为什么该关注 -->
+      <view v-if="item.why_it_matters" class="news-why">
+        <text class="why-icon">💡</text>
+        <text class="why-text">{{ item.why_it_matters }}</text>
+      </view>
+
       <!-- Tags -->
       <view v-if="item.tags && item.tags.length" class="news-tags">
         <text

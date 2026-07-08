@@ -150,6 +150,7 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                         published_at=item.raw.published_at,
                         ai_score=item.score,
                         ai_summary=summary,
+                        why_it_matters=item.why_it_matters or None,
                         tags=tags,
                     )
                     if related_to_id is not None:

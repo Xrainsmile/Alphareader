@@ -105,6 +105,18 @@ export function fetchHotTopics() {
 }
 
 /**
+ * 多信源热点榜 — 聚合同一事件的多家媒体报道，按信源数排序
+ * @param {Object} params - { limit, min_score, category, window_hours }
+ */
+export function fetchNewsHotTopics(params = {}) {
+  const query = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return request(`/api/v1/news/hot-topics${query ? '?' + query : ''}`)
+}
+
+/**
  * 生成大模型提示词
  */
 export function generatePrompt(params = {}) {

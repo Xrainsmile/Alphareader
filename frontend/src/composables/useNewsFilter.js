@@ -15,6 +15,12 @@ export function useNewsFilter() {
   const cnSources = ['财联社']
   const enSources = ['MarketWatch', 'Seeking Alpha', 'Finnhub']
   const techSources = ['TechCrunch', 'Hacker News', 'OpenAI Blog', 'Google AI Blog', 'Anthropic', 'Hugging Face', 'MIT Tech Review']
+  // 视图切换：推荐流（聚合评分流） / 热点（多信源事件榜）
+  const viewTabs = [
+    { value: 'feed', label: '推荐流' },
+    { value: 'hot', label: '热点' },
+  ]
+  const currentView = ref('feed')
   const sortTabs = [
     { value: 'hot', label: 'Gravity' },
     { value: 'latest', label: '最新' },
@@ -116,6 +122,8 @@ export function useNewsFilter() {
     // 常量
     scoreOptions,
     categoryTabs,
+    viewTabs,
+    currentView,
     cnSources,
     enSources,
     techSources,

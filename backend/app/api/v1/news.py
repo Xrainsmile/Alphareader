@@ -179,6 +179,7 @@ async def list_news(
             "ai_score": n.ai_score,
             "ranking_score": ranking_score,
             "ai_summary": n.ai_summary,
+            "why_it_matters": n.why_it_matters,
             "tags": n.tags,
             "related_to_id": str(n.related_to_id) if n.related_to_id else None,
             "published_at": n.published_at.isoformat() if n.published_at else None,
@@ -199,6 +200,96 @@ async def list_news(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/hot-topics")
+async def hot_topics(
+    limit: int = Query(10, ge=1, le=50),
+    min_score: int = Query(5, ge=0, le=10),
+    category: str | None = Query(None, description="分类筛选: 财经 / 科技"),
+    window_hours: int = Query(72, ge=1, le=720, description="统计时间窗口（小时）"),
+    db: AsyncSession = Depends(get_db),
+    _: str | None = Depends(require_api_key),
+):
+    """多信源热点榜 — 聚合同一事件的多家媒体报道，按信源数排序。
+
+    利用 related_to_id 父子关系：父条目（related_to_id 为 NULL）下挂的
+    关联报道（related_to_id 指向父）视为"同一事件的不同信源"。
+    仅保留"信源数 ≥ 2"的事件，按信源数降序排列，直观呈现"多方在谈什么事"。
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+    conditions = [
+        "n.related_to_id IS NULL",
+        "n.ai_score >= :min_score",
+        "n.created_at >= :cutoff",
+    ]
+    params: dict = {"min_score": min_score, "cutoff": cutoff, "limit": limit}
+    if category:
+        conditions.append("n.category = :category")
+        params["category"] = category
+
+    sql = f"""
+    WITH parents AS (
+        SELECT n.id, n.title, n.source, n.url, n.ai_score, n.ai_summary,
+               n.tags, n.published_at, n.created_at, n.why_it_matters
+        FROM news n
+        WHERE {' AND '.join(conditions)}
+    ),
+    child_agg AS (
+        SELECT c.related_to_id AS pid,
+               COUNT(*) AS cnt,
+               array_agg(DISTINCT c.source) AS child_sources,
+               array_agg(c.title) AS child_titles
+        FROM news c
+        WHERE c.related_to_id IS NOT NULL
+        GROUP BY c.related_to_id
+    )
+    SELECT
+        p.id, p.title, p.source, p.url, p.ai_score, p.ai_summary, p.tags,
+        p.published_at, p.created_at, p.why_it_matters,
+        (COALESCE(ca.cnt, 0) + 1) AS source_count,
+        COALESCE(ca.child_sources, ARRAY[]::text[]) AS child_sources,
+        COALESCE(ca.child_titles, ARRAY[]::text[]) AS child_titles
+    FROM parents p
+    LEFT JOIN child_agg ca ON ca.pid = p.id
+    WHERE COALESCE(ca.cnt, 0) >= 1
+    ORDER BY source_count DESC, p.ai_score DESC, p.published_at DESC
+    LIMIT :limit
+    """
+    try:
+        result = await db.execute(text(sql), params)
+        rows = result.mappings().all()
+    except Exception as e:
+        logger.warning("hot-topics query failed: %s", e)
+        return APIResponse(data={"items": [], "total": 0})
+
+    items = []
+    for r in rows:
+        child_sources = list(r["child_sources"] or [])
+        seen: set[str] = set()
+        child_sources_unique = []
+        for s in child_sources:
+            if s and s not in seen:
+                seen.add(s)
+                child_sources_unique.append(s)
+        items.append({
+            "id": str(r["id"]),
+            "title": r["title"],
+            "source": r["source"],
+            "url": r["url"],
+            "ai_score": r["ai_score"],
+            "ai_summary": r["ai_summary"],
+            "why_it_matters": r["why_it_matters"],
+            "tags": r["tags"],
+            "published_at": r["published_at"].isoformat() if r["published_at"] else None,
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            # 信源数 = 父条目自身(1) + 关联报道数
+            "source_count": int(r["source_count"]),
+            "child_sources": child_sources_unique,
+            "child_titles": [t for t in (r["child_titles"] or [])][:6],
+        })
+
+    return APIResponse(data={"items": items, "total": len(items)})
 
 
 # ── 搜索 API ──
