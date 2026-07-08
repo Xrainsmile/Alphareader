@@ -134,7 +134,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, nextTick, onMounted, onUnmounted, getCurrentInstance } from 'vue'
+import { ref, reactive, nextTick } from 'vue'
+import { onShow, onHide, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
 import { initTracker, trackImpression, trackClick, destroyTracker } from '../../utils/tracker.js'
 import { tickerLookup } from '../../utils/api.js'
 import SiteFooter from '@/components/common/SiteFooter.vue'
@@ -482,59 +483,55 @@ function _restoreScrollPosition() {
   })
 }
 
-// ── uni-app 页面生命周期（通过 defineOptions 在 script setup 中暂不支持，使用底层实例挂载） ──
-const instance = getCurrentInstance()
-if (instance) {
-  // onShow
-  instance.proxy.$options.onShow = [function () {
-    initTracker()
-    const now = Date.now()
-    const elapsed = _lastHideTime ? (now - _lastHideTime) : Infinity
+// ── uni-app 页面生命周期（使用官方 onX 钩子，确保 H5 下能正常被框架派发） ──
+onShow(() => {
+  initTracker()
+  const now = Date.now()
+  const elapsed = _lastHideTime ? (now - _lastHideTime) : Infinity
 
-    if (!_initialLoaded || elapsed > STALE_THRESHOLD) {
-      // 首次进入 或 离开超过阈值 → 重新加载
-      _initialLoaded = true
-      doResetAndLoad().then(() => {
-        // #ifdef H5
-        nextTick(() => _observeCards())
-        // #endif
-      })
-    } else {
-      // 短时间内返回（如从新闻详情页返回） → 恢复滚动位置，不重新加载
-      _restoreScrollPosition()
+  if (!_initialLoaded || elapsed > STALE_THRESHOLD) {
+    // 首次进入 或 离开超过阈值 → 重新加载
+    _initialLoaded = true
+    doResetAndLoad().then(() => {
       // #ifdef H5
       nextTick(() => _observeCards())
       // #endif
-    }
-    // #ifdef H5
-    _setupImpressionObserver()
-    // #endif
-  }]
-  // onHide
-  instance.proxy.$options.onHide = [function () {
-    _saveScrollPosition()
-    _lastHideTime = Date.now()
-    destroyTracker()
-    // #ifdef H5
-    _destroyImpressionObserver()
-    // #endif
-  }]
-  // onPullDownRefresh
-  instance.proxy.$options.onPullDownRefresh = [function () {
-    _savedScrollTop = 0
-    doResetAndLoad().finally(() => {
-      uni.stopPullDownRefresh()
     })
-  }]
-  // onReachBottom
-  instance.proxy.$options.onReachBottom = [function () {
-    if (searchMode.value && searchSubmitted.value) {
-      searchLoadMore()
-    } else {
-      doLoadMore()
-    }
-  }]
-}
+  } else {
+    // 短时间内返回（如从新闻详情页返回） → 恢复滚动位置，不重新加载
+    _restoreScrollPosition()
+    // #ifdef H5
+    nextTick(() => _observeCards())
+    // #endif
+  }
+  // #ifdef H5
+  _setupImpressionObserver()
+  // #endif
+})
+
+onHide(() => {
+  _saveScrollPosition()
+  _lastHideTime = Date.now()
+  destroyTracker()
+  // #ifdef H5
+  _destroyImpressionObserver()
+  // #endif
+})
+
+onPullDownRefresh(() => {
+  _savedScrollTop = 0
+  doResetAndLoad().finally(() => {
+    uni.stopPullDownRefresh()
+  })
+})
+
+onReachBottom(() => {
+  if (searchMode.value && searchSubmitted.value) {
+    searchLoadMore()
+  } else {
+    doLoadMore()
+  }
+})
 </script>
 
 <style scoped>
