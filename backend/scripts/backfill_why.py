@@ -87,13 +87,15 @@ async def backfill() -> None:
 
     # 1) 取出待回填行
     async with async_session() as session:
-        result = await session.execute(text(f"""
+        # 注意：asyncpg 对 `:window || ' days'` 这种字符串拼接要求参数是 str，
+        # 直接传 int 会 DataError。改用 make_interval(days := :window) 更稳。
+        result = await session.execute(text("""
             SELECT id, title, ai_summary, tags, catalyst_type,
                    sentiment_score, surprise_factor
             FROM news
             WHERE why_it_matters IS NULL
               AND ai_score >= :min_score
-              AND created_at > NOW() - (:window || ' days')::interval
+              AND created_at > NOW() - make_interval(days => :window)
             ORDER BY created_at DESC
         """), {"min_score": MIN_SCORE, "window": WINDOW_DAYS})
         rows = [dict(r._mapping) for r in result.fetchall()]
