@@ -133,6 +133,45 @@ def _should_keep(title: str, source: str = "") -> bool:
     return True
 
 
+def _cls_sign(params: dict) -> str:
+    """财联社 v1 接口签名算法：MD5(SHA1(排序后的 ``k=v&...`` 串))。
+
+    财联社 Web 端对每个请求做签名校验，未带正确 sign 的调用返回
+    ``{"errno":10012,"msg":"签名错误"}``。算法逆向自 cls.cn 前端 JS 的请求层：
+
+      1. 将除 sign 外的参数按 key 升序排列，拼成 ``k1=v1&k2=v2...``
+      2. 对内层串取 SHA1 的十六进制摘要
+      3. 再对 SHA1 摘要取 MD5 得到最终 sign
+
+    注意：该接口此前历经多次改版（updateTelegraphList → telegraphList →
+    v1/roll/get_roll_list），并引入签名校验。若将来再次失效，需重新核对
+    cls.cn 前端 bundle 中的 ``_cls_sign`` 算法与 app/os/sv 版本号。
+    """
+    import hashlib
+
+    raw = "&".join(f"{k}={params[k]}" for k in sorted(params.keys()))
+    sha1 = hashlib.sha1(raw.encode("utf-8")).hexdigest()
+    return hashlib.md5(sha1.encode("utf-8")).hexdigest()
+
+
+def _cls_build_params(rn: int = 30, last_time: int = 0) -> dict:
+    """构造带签名的财联社 ``v1/roll/get_roll_list`` 请求参数。
+
+    app/os/sv 为 Web 端固定标识；refresh_type=1 表示按时间倒序拉取最新电报；
+    rn 为条数；last_time 用于分页（传入上一批最后一条的 ctime，首屏传 0）。
+    """
+    params = {
+        "app": "CailianpressWeb",
+        "os": "web",
+        "sv": "8.7.9",
+        "refresh_type": 1,
+        "rn": rn,
+        "last_time": last_time,
+    }
+    params["sign"] = _cls_sign(params)
+    return params
+
+
 # ════════════════════════════════════════════════════════════════
 # 信源解析器（Source Adapters）
 # 每个解析器负责将特定信源 API 返回的 JSON/XML 转换为 RawNewsItem 列表
@@ -811,6 +850,7 @@ class FeedSource:
     is_rss: bool = False                        # True = RSS/Atom 格式，用 feedparser 解析
     fallback_urls: list[str] = field(default_factory=list)  # 主 URL 失败时按顺序尝试的备用 URL
     extra_headers: dict[str, str] = field(default_factory=dict)  # 追加到该源 HTTP 请求的自定义头（覆盖 HTTP_HEADERS）
+    signed_cls: bool = False                    # True = 财联社 v1 接口，需动态计算签名后作为 query 参数发送
 
 
 # RSSHub 备用实例列表（可通过环境变量 RSSHUB_INSTANCES 覆盖，逗号分隔）
@@ -833,11 +873,12 @@ FEED_SOURCES: list[FeedSource] = [
     # ── 财经信源 ──
     FeedSource(
         name="财联社",
-        # 接口已从 updateTelegraphList 更名为 telegraphList（旧端点 404）
-        url="https://www.cls.cn/nodeapi/telegraphList?app=CailianpressWeb&os=web&sv=8.4.6&rn=30",
+        # 财联社电报接口（v1/roll/get_roll_list），需动态签名，见 _cls_sign
+        url="https://www.cls.cn/v1/roll/get_roll_list",
         # 显式带浏览器 UA，规避 CloudWAF 对默认 httpx UA 的拦截
         extra_headers=HTTP_HEADERS,
         parser=_parse_cls,
+        signed_cls=True,
     ),
     # 华尔街见闻已移除（2026-03-09，内容与财联社高度重叠）
     # ── International Sources (RSS/Atom XML) ──
@@ -1070,6 +1111,24 @@ async def _fetch_raw_items(
     """
     if source.fallback_urls:
         return await _fetch_with_fallback(client, source)
+
+    # 财联社 v1 接口需动态计算签名，并以 query 参数形式随请求发送
+    if source.signed_cls:
+        params = _cls_build_params()
+        try:
+            resp = await client.get(
+                source.url, params=params, timeout=20.0,
+                headers=source.extra_headers or None,
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            logger.warning("Failed to fetch %s: %s", source.name, e)
+            return None
+        try:
+            return source.parser(resp.json())
+        except Exception as e:
+            logger.error("Parser error for %s: %s", source.name, e)
+            return None
 
     try:
         resp = await client.get(
