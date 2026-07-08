@@ -140,21 +140,48 @@ def _should_keep(title: str, source: str = "") -> bool:
 
 def _parse_cls(data: dict) -> list[RawNewsItem]:
     """解析财联社电报 API（cls.cn）
-    数据路径: data.roll_data[] → 取 title/brief/content/ctime
+
+    接口近期从 updateTelegraphList 更名为 telegraphList，且不同版本返回结构有差异
+    （数组可能位于 data.roll_data / data.telegraphList / data.list；单条字段可能为
+    ctime/created_at/timestamp、id/aid、brief/content/description）。此处做多路径兼容。
     URL 格式: https://www.cls.cn/detail/{id}
     """
     items: list[RawNewsItem] = []
-    for entry in data.get("data", {}).get("roll_data", []):
-        title = entry.get("title", "") or entry.get("brief", "") or ""
-        content = entry.get("content", "") or entry.get("brief", "") or ""
-        aid = entry.get("id", "")
-        url = f"https://www.cls.cn/detail/{aid}" if aid else ""
-        ts = entry.get("ctime")
-        published = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
+    if not isinstance(data, dict):
+        return items
+    payload = data.get("data", data)
+    if not isinstance(payload, dict):
+        payload = {}
+    raw = (
+        payload.get("roll_data")
+        or payload.get("telegraphList")
+        or payload.get("list")
+        or data.get("roll_data")
+        or []
+    )
+    if not isinstance(raw, list):
+        return items
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        title = (entry.get("title") or entry.get("brief") or "").strip()
+        content = (
+            entry.get("content")
+            or entry.get("brief")
+            or entry.get("description")
+            or ""
+        ).strip()
+        aid = entry.get("id") or entry.get("aid") or ""
+        url = f"https://www.cls.cn/detail/{aid}" if aid else (entry.get("url") or "")
+        ts = entry.get("ctime") or entry.get("created_at") or entry.get("timestamp")
+        try:
+            published = datetime.fromtimestamp(int(ts), tz=timezone.utc) if ts else None
+        except (TypeError, ValueError):
+            published = None
 
         if title and url:
             items.append(RawNewsItem(
-                title=title.strip(), content=content.strip(),
+                title=title, content=content,
                 url=url, source="财联社", published_at=published,
             ))
     return items
@@ -806,7 +833,10 @@ FEED_SOURCES: list[FeedSource] = [
     # ── 财经信源 ──
     FeedSource(
         name="财联社",
-        url="https://www.cls.cn/nodeapi/updateTelegraphList?app=CailianpressWeb&os=web&sv=8.4.6&rn=30",
+        # 接口已从 updateTelegraphList 更名为 telegraphList（旧端点 404）
+        url="https://www.cls.cn/nodeapi/telegraphList?app=CailianpressWeb&os=web&sv=8.4.6&rn=30",
+        # 显式带浏览器 UA，规避 CloudWAF 对默认 httpx UA 的拦截
+        extra_headers=HTTP_HEADERS,
         parser=_parse_cls,
     ),
     # 华尔街见闻已移除（2026-03-09，内容与财联社高度重叠）
