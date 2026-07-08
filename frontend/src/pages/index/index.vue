@@ -25,19 +25,6 @@
       </view>
     </view>
 
-    <!-- 视图切换 Tab：推荐流 / 热点 -->
-    <view class="view-tabs">
-      <view
-        v-for="v in viewTabs"
-        :key="v.value"
-        class="view-tab"
-        :class="{ 'view-tab-active': currentView === v.value }"
-        @click="onSwitchView(v.value)"
-      >
-        <text class="view-tab-text" :class="{ 'view-tab-text-active': currentView === v.value }">{{ v.label }}</text>
-      </view>
-    </view>
-
     <!-- 搜索栏 + 搜索面板 + 搜索结果 -->
     <NewsSearchBar
       :search-mode="searchMode"
@@ -66,17 +53,8 @@
     <!-- 以下为 News Feed 内容 (非搜索模式时显示) -->
     <template v-if="!searchMode">
 
-    <!-- 多信源热点榜 -->
-    <template v-if="currentView === 'hot'">
-      <NewsHotTopics
-        :items="hotList"
-        :loading="hotLoading"
-        @open="onOpenUrl"
-      />
-    </template>
-
     <!-- 推荐流（聚合模式） -->
-    <template v-else>
+    <template>
 
     <!-- 筛选面板 -->
     <NewsFilterPopover
@@ -158,12 +136,11 @@
 <script setup>
 import { ref, reactive, nextTick, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { initTracker, trackImpression, trackClick, destroyTracker } from '../../utils/tracker.js'
-import { tickerLookup, fetchNewsHotTopics } from '../../utils/api.js'
+import { tickerLookup } from '../../utils/api.js'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import NewsSearchBar from '@/components/news/NewsSearchBar.vue'
 import NewsFilterPopover from '@/components/news/NewsFilterPopover.vue'
 import NewsCardGroup from '@/components/news/NewsCardGroup.vue'
-import NewsHotTopics from '@/components/news/NewsHotTopics.vue'
 import TickerOverlay from '@/components/news/TickerOverlay.vue'
 import { useNewsFeed } from '@/composables/useNewsFeed.js'
 import { useNewsSearch } from '@/composables/useNewsSearch.js'
@@ -209,8 +186,6 @@ const {
 const {
   scoreOptions,
   categoryTabs,
-  viewTabs,
-  currentView,
   cnSources,
   enSources,
   techSources,
@@ -237,38 +212,6 @@ const {
 // ── Inspire Button ──
 const promptCopied = ref(false)
 
-// ── 多信源热点榜 ──
-const hotList = ref([])
-const hotLoading = ref(false)
-
-/** 加载热点榜（按当前分类筛选） */
-async function loadHot() {
-  hotLoading.value = true
-  try {
-    const data = await fetchNewsHotTopics({
-      category: currentCategory.value || undefined,
-      min_score: minScore.value,
-    })
-    hotList.value = data.items || []
-  } catch (e) {
-    console.error('加载热点失败:', e)
-    uni.showToast({ title: '加载热点失败', icon: 'none' })
-  } finally {
-    hotLoading.value = false
-  }
-}
-
-/** 切换视图（推荐流 / 热点） */
-function onSwitchView(v) {
-  if (currentView.value === v) return
-  currentView.value = v
-  if (v === 'hot') {
-    loadHot()
-  } else {
-    doResetAndLoad()
-  }
-}
-
 // ── 曝光追踪 ──
 let _impressionObserver = null
 let _impressedSet = new Set()
@@ -285,11 +228,7 @@ function doLoadMore() {
 /** 切换分类 Tab */
 function onSwitchCategory(cat) {
   if (switchCategory(cat)) {
-    if (currentView.value === 'hot') {
-      loadHot()
-    } else {
-      doResetAndLoad()
-    }
+    doResetAndLoad()
   }
 }
 
@@ -555,15 +494,11 @@ if (instance) {
     if (!_initialLoaded || elapsed > STALE_THRESHOLD) {
       // 首次进入 或 离开超过阈值 → 重新加载
       _initialLoaded = true
-      if (currentView.value === 'hot') {
-        loadHot()
-      } else {
-        doResetAndLoad().then(() => {
-          // #ifdef H5
-          nextTick(() => _observeCards())
-          // #endif
-        })
-      }
+      doResetAndLoad().then(() => {
+        // #ifdef H5
+        nextTick(() => _observeCards())
+        // #endif
+      })
     } else {
       // 短时间内返回（如从新闻详情页返回） → 恢复滚动位置，不重新加载
       _restoreScrollPosition()
@@ -695,42 +630,6 @@ if (instance) {
   letter-spacing: 1rpx;
 }
 .category-tab-text-active {
-  color: var(--color-text-primary);
-  font-weight: 700;
-}
-
-/* ── View Tabs (推荐流 / 热点) ── */
-.view-tabs {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  margin: 12rpx 0 4rpx;
-  background: var(--color-border);
-  border-radius: 20rpx;
-  padding: 4rpx;
-}
-.view-tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 14rpx 0;
-  border-radius: 16rpx;
-  cursor: pointer;
-  transition: background-color 0.2s, box-shadow 0.2s;
-  -webkit-tap-highlight-color: transparent;
-}
-.view-tab-active {
-  background: var(--color-bg-card);
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
-}
-.view-tab-text {
-  font-size: 26rpx;
-  color: var(--color-text-muted);
-  font-weight: 500;
-  letter-spacing: 1rpx;
-}
-.view-tab-text-active {
   color: var(--color-text-primary);
   font-weight: 700;
 }
@@ -1563,23 +1462,6 @@ if (instance) {
     font-size: 14px;
   }
 
-  /* ── View Tabs (PC) ── */
-  .view-tabs {
-    margin: 10px 0 4px;
-    border-radius: 12px;
-    padding: 3px;
-  }
-  .view-tab {
-    padding: 8px 0;
-    border-radius: 10px;
-  }
-  .view-tab:hover:not(.view-tab-active) {
-    background: rgba(0, 0, 0, 0.03);
-  }
-  .view-tab-text {
-    font-size: 14px;
-  }
-
   /* ── Filter Trigger Bar ── */
   :deep(.filter-trigger-bar) {
     margin: 10px 0 8px;
@@ -1868,6 +1750,41 @@ if (instance) {
   :deep(.news-summary) {
     -webkit-line-clamp: 4;
     line-height: 1.65;
+  }
+}
+
+/* ── 多信源聚合徽标 (🔥 N信源) ── */
+::deep(.source-count-badge) {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 2rpx 12rpx;
+  background: rgba(255, 59, 48, 0.1);
+  border-radius: 16rpx;
+}
+::deep(.source-count-icon) {
+  font-size: 20rpx;
+  line-height: 1.4;
+}
+::deep(.source-count-text) {
+  font-size: 20rpx;
+  color: var(--color-up);
+  font-weight: 600;
+  font-family: var(--font-numeric);
+}
+
+/* ── 多信源聚合徽标 PC ── */
+@media screen and (min-width: 768px) {
+  :deep(.source-count-badge) {
+    gap: 3px;
+    padding: 1px 8px;
+    border-radius: 10px;
+  }
+  :deep(.source-count-icon) {
+    font-size: 11px;
+  }
+  :deep(.source-count-text) {
+    font-size: 11px;
   }
 }
 

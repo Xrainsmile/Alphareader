@@ -34,6 +34,14 @@
         <text class="meta-source">{{ item.source }}</text>
         <text class="meta-dot">·</text>
         <text class="meta-time">{{ formatTime(item.published_at || item.created_at) }}</text>
+        <!-- 多信源聚合：同一事件被多家媒体报道时的信源数徽标 -->
+        <template v-if="childrenCount > 0">
+          <text class="meta-dot">·</text>
+          <view class="source-count-badge">
+            <text class="source-count-icon">🔥</text>
+            <text class="source-count-text">{{ childrenCount + 1 }} 信源</text>
+          </view>
+        </template>
         <!-- Hacker Gravity 指标 -->
         <template v-if="showGravity && item.ranking_score != null">
           <text class="meta-dot">·</text>
