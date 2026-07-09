@@ -134,7 +134,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, nextTick } from 'vue'
+import { ref, reactive, nextTick, onMounted } from 'vue'
 import { onShow, onHide, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
 import { initTracker, trackImpression, trackClick, destroyTracker } from '../../utils/tracker.js'
 import { tickerLookup } from '../../utils/api.js'
@@ -483,15 +483,28 @@ function _restoreScrollPosition() {
   })
 }
 
-// ── uni-app 页面生命周期（使用官方 onX 钩子，确保 H5 下能正常被框架派发） ──
-onShow(() => {
+// ── 页面生命周期 ──
+// 首次加载用 onMounted（Vue 标准 hook，H5 下 100% 可靠触发，与 reports 页一致）；
+// onShow 仅负责「离开后返回」的按需重载 / 滚动恢复，不依赖它做首次加载
+// （某些 uni-app H5 版本下 onShow 首次触发时机不可靠）。
+onMounted(() => {
   initTracker()
-  const now = Date.now()
-  const elapsed = _lastHideTime ? (now - _lastHideTime) : Infinity
+  _initialLoaded = true
+  doResetAndLoad().then(() => {
+    // #ifdef H5
+    nextTick(() => _observeCards())
+    _setupImpressionObserver()
+    // #endif
+  })
+})
 
-  if (!_initialLoaded || elapsed > STALE_THRESHOLD) {
-    // 首次进入 或 离开超过阈值 → 重新加载
-    _initialLoaded = true
+onShow(() => {
+  // 首次会话由 onMounted 负责；这里只处理「离开过再返回」
+  if (!_initialLoaded || _lastHideTime === 0) return
+  initTracker()
+  const elapsed = Date.now() - _lastHideTime
+  if (elapsed > STALE_THRESHOLD) {
+    // 离开超过阈值 → 重新加载
     doResetAndLoad().then(() => {
       // #ifdef H5
       nextTick(() => _observeCards())
