@@ -54,7 +54,6 @@
     <template v-if="!searchMode">
 
     <!-- 推荐流（聚合模式） -->
-    <template>
 
     <!-- 筛选面板 -->
     <NewsFilterPopover
@@ -113,8 +112,6 @@
         <text v-else-if="noMore" class="load-more-text">— 没有更多了 —</text>
       </view>
     </view>
-
-    </template>
 
     </template>
 
