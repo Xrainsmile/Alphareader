@@ -202,7 +202,9 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                         is_highlight=bool(getattr(item, "is_highlight", False)),
                         tags=tags,
                         content_hash=content_hash,
-                        simhash_fingerprint=sh.value,
+                        # Simhash.value 是无符号 64 位整数，PostgreSQL BIGINT 是有符号
+                        # 超过 2^63 的值需转换为负数，否则报 "value out of int64 range"
+                        simhash_fingerprint=sh.value if sh.value < 2**63 else sh.value - 2**64,
                     )
                     if related_to_id is not None:
                         values["related_to_id"] = related_to_id

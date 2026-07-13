@@ -1090,7 +1090,13 @@ class NewsDeduplicator:
 
     @staticmethod
     def _hamming(a: int, b: int) -> int:
-        """计算两个 64-bit 整数之间的汉明距离。"""
+        """计算两个 64-bit 整数之间的汉明距离。
+
+        注意：DB 中 BIGINT 是有符号的，Redis 中存的是无符号的，
+        统一 mask 到无符号 64 位再比较，保证一致性。
+        """
+        a &= 0xFFFFFFFFFFFFFFFF
+        b &= 0xFFFFFFFFFFFFFFFF
         x = a ^ b
         count = 0
         while x:
