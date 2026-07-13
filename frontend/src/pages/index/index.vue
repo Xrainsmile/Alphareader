@@ -1,5 +1,16 @@
 <template>
-  <view class="container">
+  <view class="page-layout">
+    <!-- PC 侧边栏导航 -->
+    <view class="pc-sidebar">
+      <text class="pc-sidebar-logo">AlphaReader</text>
+      <view class="pc-nav-item pc-nav-active" @click="navTo('/pages/index/index')"><text class="pc-nav-text">News</text></view>
+      <view class="pc-nav-item" @click="navTo('/pages/stocks/index')"><text class="pc-nav-text">Stocks</text></view>
+      <view class="pc-nav-item" @click="navTo('/pages/reports/index')"><text class="pc-nav-text">Reports</text></view>
+      <view class="pc-nav-item" @click="navTo('/pages/sepa/index')"><text class="pc-nav-text">SEPA</text></view>
+    </view>
+
+    <!-- 主内容区 -->
+    <view class="container">
     <!-- Header -->
     <view class="header">
       <view class="header-top">
@@ -19,6 +30,20 @@
         <view class="info-panel-item"><text class="info-panel-label">★★★</text><text class="info-panel-desc">综合 AI 评分、时效性与信源权威度排序，三星为高影响力</text></view>
         <view class="info-panel-item"><text class="info-panel-label">▲/▽</text><text class="info-panel-desc">情绪倾向：基于催化类型与预期差判定，非随机数</text></view>
         <view class="info-panel-item"><text class="info-panel-label">信源</text><text class="info-panel-desc">同一事件被多家媒体报道时显示信源数</text></view>
+      </view>
+    </view>
+
+    <!-- 时间筛选 + 密度切换 -->
+    <view class="info-bar">
+      <view class="time-filters">
+        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 24 }" @click="setTimeFilter(24)">今日</view>
+        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 48 }" @click="setTimeFilter(48)">昨日</view>
+        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 168 }" @click="setTimeFilter(168)">本周</view>
+      </view>
+      <view class="density-toggle">
+        <view class="density-btn" :class="{ 'density-btn-active': density === 'compact' }" @click="setDensity('compact')">紧凑</view>
+        <view class="density-btn" :class="{ 'density-btn-active': density === 'standard' }" @click="setDensity('standard')">标准</view>
+        <view class="density-btn" :class="{ 'density-btn-active': density === 'detailed' }" @click="setDensity('detailed')">详情</view>
       </view>
     </view>
 
@@ -113,6 +138,7 @@
           :is-last="idx === groupedNews.length - 1"
           :expanded="!!expandedGroups[group.id]"
           :show-gravity="currentSort === 'hot'"
+          :density="density"
           @open="onOpenUrl"
           @tag-search="onTagSearch"
           @ticker-click="onTickerClick"
@@ -141,14 +167,30 @@
     />
 
     <SiteFooter mobile-padding="40rpx 0 60rpx" desktop-padding="32px 0 48px" />
-  </view>
+    </view><!-- /container -->
+
+    <!-- PC 右侧看板 -->
+    <view class="pc-right-panel">
+      <view class="right-section">
+        <text class="right-section-title">TOP 5 高分</text>
+        <view v-for="(item, i) in topNews" :key="item.id" class="right-news-item" @click="onOpenUrl(item.url, item.id)">
+          <text class="right-news-rank">{{ i + 1 }}</text>
+          <view class="right-news-body">
+            <text class="right-news-title">{{ item.title }}</text>
+            <text class="right-news-meta">{{ item.source }} · {{ item.ai_score }}分</text>
+          </view>
+        </view>
+        <view v-if="!topNews.length" class="right-empty"><text class="right-empty-text">加载中...</text></view>
+      </view>
+    </view>
+  </view><!-- /page-layout -->
 </template>
 
 <script setup>
 import { ref, reactive, nextTick, onMounted } from 'vue'
 import { onShow, onHide, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
 import { initTracker, trackImpression, trackClick, destroyTracker } from '../../utils/tracker.js'
-import { tickerLookup } from '../../utils/api.js'
+import { tickerLookup, fetchNews } from '../../utils/api.js'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import NewsSearchBar from '@/components/news/NewsSearchBar.vue'
 import NewsFilterPopover from '@/components/news/NewsFilterPopover.vue'
@@ -207,6 +249,8 @@ const {
   currentSort,
   currentCategory,
   onlyHighlight,
+  density,
+  setDensity,
   filterOpen,
   tmpSort,
   tmpAge,
@@ -259,6 +303,26 @@ function onConfirmFilter() {
 function onToggleHighlight() {
   onlyHighlight.value = !onlyHighlight.value
   doResetAndLoad()
+}
+
+/** 时间快捷筛选 */
+function setTimeFilter(hours) {
+  maxAgeHours.value = hours
+  doResetAndLoad()
+}
+
+/** PC 侧边栏导航 */
+function navTo(url) {
+  uni.switchTab({ url })
+}
+
+// ── PC 右侧看板：TOP5 高分新闻 ──
+const topNews = ref([])
+async function loadTopNews() {
+  try {
+    const data = await fetchNews({ limit: 5, sort: 'score', min_score: 7 })
+    topNews.value = data.items || []
+  } catch (e) { /* ignore */ }
 }
 
 // ── Ticker 速览浮层 ──
@@ -512,6 +576,7 @@ function _restoreScrollPosition() {
 onMounted(() => {
   initTracker()
   _initialLoaded = true
+  loadTopNews()
   doResetAndLoad().then(() => {
     // #ifdef H5
     nextTick(() => _observeCards())
@@ -678,6 +743,45 @@ onReachBottom(() => {
   color: var(--color-text-secondary);
   line-height: 1.5;
 }
+
+/* ── Info Bar (时间筛选 + 密度切换) ── */
+.info-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16rpx 0 4rpx;
+}
+.time-filters, .density-toggle {
+  display: flex;
+  gap: 8rpx;
+}
+.time-filter, .density-btn {
+  padding: 8rpx 20rpx;
+  font-size: 24rpx;
+  border-radius: 16rpx;
+  background: var(--color-bg-card);
+  border: 1rpx solid var(--color-border);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.15s;
+}
+.time-filter-active, .density-btn-active {
+  background: var(--color-bg-brand-light);
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+  font-weight: 600;
+}
+
+/* ── PC 侧边栏/右侧看板（移动端隐藏）── */
+.pc-sidebar, .pc-right-panel { display: none; }
+
+/* ── 紧凑模式卡片 ── */
+:deep(.density-compact) { padding: 20rpx 28rpx; }
+:deep(.density-compact .news-title) { -webkit-line-clamp: 1; font-size: 28rpx; }
+:deep(.density-compact .news-tags) { margin-top: 6rpx; }
+:deep(.density-compact .news-meta) { margin-top: 8rpx; }
+:deep(.density-compact .score-badge) { height: 44rpx; margin-top: 2rpx; }
 
 /* ── Category Tabs ── */
 .category-tabs {
@@ -1493,11 +1597,56 @@ onReachBottom(() => {
    PC / Tablet 适配 (屏幕宽度 > 768px)
    ═══════════════════════════════════════════════════════════ */
 @media screen and (min-width: 768px) {
+  .page-layout {
+    display: flex;
+    align-items: flex-start;
+  }
+  .pc-sidebar {
+    position: sticky;
+    top: 0;
+    width: 180px;
+    height: 100vh;
+    flex-shrink: 0;
+    padding: 24px 16px;
+    background: var(--color-bg-card);
+    border-right: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .pc-sidebar-logo {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--color-text-primary);
+    margin-bottom: 20px;
+    letter-spacing: 0.5px;
+  }
+  .pc-nav-item {
+    padding: 10px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+  .pc-nav-item:hover { background: var(--color-bg-hover); }
+  .pc-nav-active { background: var(--color-bg-brand-light); }
+  .pc-nav-text { font-size: 14px; color: var(--color-text-secondary); font-weight: 500; }
+  .pc-nav-active .pc-nav-text { color: var(--color-brand); font-weight: 700; }
   .container {
-    max-width: 800px;
-    margin: 0 auto;
+    flex: 1;
+    max-width: 700px;
+    margin: 0;
     padding: 0 24px;
   }
+  .info-bar { margin: 10px 0 4px; }
+  .time-filter, .density-btn {
+    padding: 5px 12px;
+    font-size: 13px;
+    border-radius: 10px;
+    border-width: 1px;
+  }
+  :deep(.density-compact) { padding: 12px 20px; }
+  :deep(.density-compact .news-title) { font-size: 14px; }
+  :deep(.density-compact .score-badge) { height: 32px; }
 
   /* ── Search Bar (PC) ── */
   :deep(.search-bar) {
@@ -1890,8 +2039,30 @@ onReachBottom(() => {
    大屏 (≥1200px)
    ═══════════════════════════════════════════════════════════ */
 @media screen and (min-width: 1200px) {
+  .pc-right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 240px;
+    flex-shrink: 0;
+    padding: 24px 16px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .right-section { margin-bottom: 20px; }
+  .right-section-title { font-size: 14px; font-weight: 700; color: var(--color-text-primary); margin-bottom: 12px; }
+  .right-news-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--color-border-light); cursor: pointer; }
+  .right-news-item:hover { background: var(--color-bg-hover); }
+  .right-news-rank { font-size: 16px; font-weight: 800; color: var(--color-brand); flex-shrink: 0; }
+  .right-news-body { flex: 1; min-width: 0; }
+  .right-news-title { font-size: 13px; color: var(--color-text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .right-news-meta { font-size: 11px; color: var(--color-text-muted); margin-top: 4px; }
+  .right-empty { padding: 20px 0; text-align: center; }
+  .right-empty-text { font-size: 13px; color: var(--color-text-muted); }
   .container {
-    max-width: 860px;
+    max-width: 640px;
   }
   :deep(.news-summary) {
     -webkit-line-clamp: 4;
@@ -1939,4 +2110,15 @@ onReachBottom(() => {
   }
 }
 
+</style>
+
+<style>
+/* PC 端隐藏底部 tabbar，改用侧边栏导航 */
+@media screen and (min-width: 768px) {
+  uni-tabbar,
+  .uni-tabbar,
+  .uni-tabbar-bottom {
+    display: none !important;
+  }
+}
 </style>

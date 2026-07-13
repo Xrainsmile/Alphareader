@@ -1,5 +1,5 @@
 <template>
-  <view class="news-card" :data-news-id="item.id" @click="$emit('open', item.url, item.id)">
+  <view class="news-card" :class="{ 'density-compact': isCompact }" :data-news-id="item.id" @click="$emit('open', item.url, item.id)">
     <!-- Score Badge -->
     <view class="score-badge" :class="scoreClass(item.ai_score)">
       <text class="score-num">{{ formatScore(item.ai_score) }}</text>
@@ -11,18 +11,18 @@
       <text v-else class="news-title">{{ item.title }}</text>
 
       <rich-text v-if="highlighted && (item.summary_highlighted || item.ai_summary)" class="news-summary search-highlight" :nodes="item.summary_highlighted || item.ai_summary || ''"></rich-text>
-      <text v-else-if="item.ai_summary" class="news-summary">{{ item.ai_summary }}</text>
+      <text v-else-if="!isCompact && item.ai_summary" class="news-summary">{{ item.ai_summary }}</text>
 
       <!-- 推荐理由（why_it_matters）：一句话告诉用户为什么该关注 -->
-      <view v-if="item.why_it_matters" class="news-why">
+      <view v-if="!isCompact && item.why_it_matters" class="news-why">
         <view class="why-icon-svg"></view>
         <text class="why-text">{{ item.why_it_matters }}</text>
       </view>
 
       <!-- Tags -->
-      <view v-if="item.tags && item.tags.length" class="news-tags">
+      <view v-if="displayTags.length" class="news-tags">
         <text
-          v-for="tag in item.tags"
+          v-for="tag in displayTags"
           :key="tag"
           class="news-tag"
           :class="isTickerTag(tag) ? 'news-tag-ticker' : 'news-tag-clickable'"
@@ -35,7 +35,7 @@
         <text class="meta-dot">·</text>
         <text class="meta-time">{{ formatTime(item.published_at || item.created_at) }}</text>
         <!-- 多信源聚合：同一事件被多家媒体报道时的信源数徽标 -->
-        <template v-if="childrenCount > 0">
+        <template v-if="density === 'detailed' && childrenCount > 0">
           <text class="meta-dot">·</text>
           <view class="source-count-badge">
             <view class="source-count-icon-svg"></view>
@@ -43,7 +43,7 @@
           </view>
         </template>
         <!-- Hacker Gravity 指标 -->
-        <template v-if="showGravity && item.ranking_score != null">
+        <template v-if="!isCompact && showGravity && item.ranking_score != null">
           <text class="meta-dot">·</text>
           <view class="gravity-badge" :class="gravityClass(computedGravity)">
             <text class="gravity-value">{{ gravityStars(computedGravity) }}</text>
@@ -58,7 +58,7 @@
           </view>
         </template>
         <!-- 情绪指标 -->
-        <template v-if="item.sentiment_score != null">
+        <template v-if="density === 'detailed' && item.sentiment_score != null">
           <text class="meta-dot">·</text>
           <view class="sentiment-badge" :class="sentimentClass(item.sentiment_score)">
             <view v-if="item.sentiment_score > 0" class="sentiment-icon-svg sentiment-icon-up"></view>
@@ -92,6 +92,8 @@ const props = defineProps({
   showGravity: { type: Boolean, default: false },
   /** 子新闻数量（用于计算聚合热度加成） */
   childrenCount: { type: Number, default: 0 },
+  /** 密度模式: compact(紧凑) / standard(标准) / detailed(详情) */
+  density: { type: String, default: 'standard' },
 })
 
 const emit = defineEmits(['open', 'tag-search', 'ticker-click'])
@@ -117,4 +119,14 @@ const computedGravity = computed(() => {
   const boost = props.childrenCount > 0 ? props.childrenCount * 0.2 : 0
   return base + boost
 })
+
+/** 根据密度模式决定显示的标签数量 */
+const displayTags = computed(() => {
+  const tags = props.item.tags || []
+  if (props.density === 'compact') return tags.slice(0, 1)
+  return tags
+})
+
+/** 是否为紧凑模式 */
+const isCompact = computed(() => props.density === 'compact')
 </script>

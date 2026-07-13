@@ -5,6 +5,7 @@
       :item="group"
       :show-gravity="showGravity"
       :children-count="group.children ? group.children.length : 0"
+      :density="density"
       @open="(url, id) => $emit('open', url, id)"
       @tag-search="(tag) => $emit('tag-search', tag)"
       @ticker-click="(code) => $emit('ticker-click', code)"
@@ -49,6 +50,7 @@ defineProps({
   isLast: { type: Boolean, default: false },
   expanded: { type: Boolean, default: false },
   showGravity: { type: Boolean, default: false },
+  density: { type: String, default: 'standard' },
 })
 
 defineEmits(['open', 'tag-search', 'toggle-related', 'ticker-click'])

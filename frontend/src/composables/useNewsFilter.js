@@ -36,6 +36,20 @@ export function useNewsFilter() {
   const currentCategory = ref('')
   const onlyHighlight = ref(false)
 
+  // ── 密度模式（compact / standard / detailed）──
+  const density = ref('standard')
+  try {
+    const saved = uni.getStorageSync('news_density')
+    if (saved === 'compact' || saved === 'standard' || saved === 'detailed') {
+      density.value = saved
+    }
+  } catch (_) {}
+
+  function setDensity(mode) {
+    density.value = mode
+    try { uni.setStorageSync('news_density', mode) } catch (_) {}
+  }
+
   // ── 面板暂存值 ──
   const filterOpen = ref(false)
   const tmpSort = ref('hot')
@@ -135,6 +149,8 @@ export function useNewsFilter() {
     maxAgeHours,
     currentCategory,
     onlyHighlight,
+    density,
+    setDensity,
     // 面板
     filterOpen,
     tmpSort,
