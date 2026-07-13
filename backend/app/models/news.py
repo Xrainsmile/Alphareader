@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, SmallInteger, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, SmallInteger, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,6 +28,10 @@ class News(Base):
     ai_summary: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # 推荐理由：一句话告诉用户"为什么该关注这条"，类比 AIHOT 的推荐理由
     why_it_matters: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # P2 ③：两层筛选——由 LLM 显式判定是否为"重点推荐"，前端可据此突出显示
+    is_highlight: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     # 事件聚合：指向同一事件的更早报道（自引用外键），前端可据此折叠关联新闻
     related_to_id: Mapped[uuid.UUID | None] = mapped_column(

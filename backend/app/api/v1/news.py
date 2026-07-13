@@ -180,6 +180,7 @@ async def list_news(
             "ranking_score": ranking_score,
             "ai_summary": n.ai_summary,
             "why_it_matters": n.why_it_matters,
+            "is_highlight": bool(getattr(n, "is_highlight", False)),
             "tags": n.tags,
             "related_to_id": str(n.related_to_id) if n.related_to_id else None,
             "published_at": n.published_at.isoformat() if n.published_at else None,
@@ -231,7 +232,7 @@ async def hot_topics(
     sql = f"""
     WITH parents AS (
         SELECT n.id, n.title, n.source, n.url, n.ai_score, n.ai_summary,
-               n.tags, n.published_at, n.created_at, n.why_it_matters
+               n.tags, n.published_at, n.created_at, n.why_it_matters, n.is_highlight
         FROM news n
         WHERE {' AND '.join(conditions)}
     ),
@@ -246,7 +247,7 @@ async def hot_topics(
     )
     SELECT
         p.id, p.title, p.source, p.url, p.ai_score, p.ai_summary, p.tags,
-        p.published_at, p.created_at, p.why_it_matters,
+        p.published_at, p.created_at, p.why_it_matters, p.is_highlight,
         (COALESCE(ca.cnt, 0) + 1) AS source_count,
         COALESCE(ca.child_sources, ARRAY[]::text[]) AS child_sources,
         COALESCE(ca.child_titles, ARRAY[]::text[]) AS child_titles
@@ -280,6 +281,7 @@ async def hot_topics(
             "ai_score": r["ai_score"],
             "ai_summary": r["ai_summary"],
             "why_it_matters": r["why_it_matters"],
+            "is_highlight": bool(r["is_highlight"]),
             "tags": r["tags"],
             "published_at": r["published_at"].isoformat() if r["published_at"] else None,
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,

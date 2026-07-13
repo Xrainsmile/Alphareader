@@ -7,11 +7,11 @@
   - 摘要（digest_service）：DeepSeek-V3（付费，但调用量极小）
 
 核心逻辑：
-  1. 将新闻按语言分为中文组和英文组（使用 langdetect 自动检测）
+  1. 将新闻按语言分为中文组和英文组（字符占比优先、langdetect 兜底）
   2. 每组按 batch_size=20 分批，发送给 SiliconFlow API
   3. 中文新闻：投资参考价值 + 催化剂/预期差评分框架
   4. 英文新闻：同评分框架 + 翻译标题和摘要为简体中文
-  5. 丢弃 score < 5 的新闻，返回高分条目列表
+  5. 丢弃 score < 阈值的新闻，返回高分条目列表
 
 评分核心（参考价值与催化剂）：
   - 0-2: 纯噪音（无信息量/重复旧闻/空洞评论）
@@ -20,8 +20,11 @@
   - 7-8: 强力催化剂/显著预期差（业绩惊喜/指引上调/供需逆转）
   - 9-10: 历史性拐点/颠覆性变量（爆炸性财报/技术颠覆/央行级政策转向）
 
-错误处理：
-  - 内容审查触发（Content Exists Risk）→ 跳过整个 batch，不重试
+错误处理（P0 重构后）：
+  - filter_batch 返回 BatchResult，明确区分：ok / api_error / parse_error /
+    content_risk / empty_after_filter，让上层 filter_news 能准确统计
+    skipped_batches，pipeline 的 had_errors 判断真正生效。
+  - 内容审查触发（Content Exists Risk）→ status=content_risk（P1 二分隔离时会覆盖此路径）
   - 429/5xx/超时 → 指数退避重试
   - 单 batch 失败不影响其他 batch
 """
@@ -32,9 +35,10 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
+from typing import Literal
 
 import httpx
-from langdetect import detect, LangDetectException
+from langdetect import DetectorFactory, detect, LangDetectException
 
 from app.config import settings
 from app.services.rss_fetcher import RawNewsItem
@@ -42,11 +46,26 @@ from app.utils.json_extractor import extract_json_from_deepseek
 
 logger = logging.getLogger("alphareader.deepseek")
 
+# ── langdetect 随机种子，保证短文本可重复 ──
+DetectorFactory.seed = 0
+
 # DeepSeek 内容安全审查的关键词——匹配到这些关键词时跳过整个 batch，不重试
 _CONTENT_RISK_KEYWORDS = ("Content Exists Risk", "content_filter", "content_policy")
 
+# ── 语言/字符校验正则 ──
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+_ASCII_LETTER_RE = re.compile(r"[A-Za-z]")
+
+# ── ticker 校验正则（P0 ⑨）──
+_TICKER_A = re.compile(r"^\d{6}$")          # A股 6 位
+_TICKER_HK = re.compile(r"^\d{5}$")         # 港股 5 位
+_TICKER_US = re.compile(r"^[A-Z]{3,5}(\.[A-Z])?$")  # 美股 3-5 位字母，可选 .X 后缀（如 BRK.B）
+_TICKER_HK_SHORT = re.compile(r"^\d{4}$")   # 港股 4 位（补 0 兼容）
+
+
 # ── 中文新闻评分的 System Prompt ──
 # Minervini SEPA / O'Neil CAN SLIM 预期差评分框架
+# P0 ④: prompt 增加发布时间语义 + 旧闻硬规则
 SYSTEM_PROMPT_CN = """你是一位资深金融市场分析师，熟悉 Minervini SEPA 策略与 O'Neil CAN SLIM 体系。你的目标是：从碎片化的市场资讯中，筛选出对投资者有参考价值的信息，并识别其中的核心催化剂与预期差。
 
 # 评分逻辑
@@ -56,6 +75,7 @@ SYSTEM_PROMPT_CN = """你是一位资深金融市场分析师，熟悉 Minervini
 ## 0-2分：纯噪音 (Pure Noise)
 - 特征：完全无信息量的内容、重复旧闻、在社区被重新传播的历史旧闻（如数月甚至数年前已发生的事件被重新讨论）、无任何数据支撑的空洞评论、与金融市场完全无关的内容。
 - ⚠️ 特别注意：如果新闻描述的事件明显发生在过去（如提到"2019年"、"去年发布"等时间线索），即使标题看起来像新闻，也应视为旧闻给 0-2 分。
+- ⚠️ 旧闻硬规则：若输入中的"发布时间"距离"抓取时间"超过 24 小时，或正文明确提及事件发生在 3 天前以上，一律判定为旧闻，最高给 3 分。
 
 ## 3-4分：低价值信息 (Low Value)
 - 特征：管理层画大饼/口号式愿景、分析师常规无新意的研报、已被市场充分消化的旧闻、常规人事变动、无实质约束力的合作意向。
@@ -70,6 +90,7 @@ SYSTEM_PROMPT_CN = """你是一位资深金融市场分析师，熟悉 Minervini
   1. 【内生】：业绩大幅超预期（Earnings Surprise）、指引上调、毛利率拐点、高管大额增持。
   2. 【外生】：超预期的行业政策、核心产业链供需逆转（涨价潮/缺货潮）、重大并购交易落地。
 - 逻辑：可能直接驱动股价趋势性变化。
+- ⚠️ 预期差判定收紧：只有当新闻**文本中明确出现** beat/miss/超预期/低于预期/上调指引/下调指引 等字样，或给出**具体的对比数字**（如"营收 350 亿 vs 市场预期 320 亿"），才可判定为"显著预期差"。仅凭语气推测不算。
 
 ## 9-10分：历史性拐点/颠覆性变量 (Transformative)
 - 特征：远超预期的爆炸性财报、颠覆性技术突破、央行级别重大政策转向。
@@ -85,27 +106,29 @@ SYSTEM_PROMPT_CN = """你是一位资深金融市场分析师，熟悉 Minervini
 
 # Output Constraints (Strict)
 
-你必须且只能返回原始 JSON 数组。
+你必须且只能返回原始 JSON 数组，且**每一条输入都必须返回一条对应输出**（即使给 0 分也要返回）。
 严禁输出：Markdown 代码块符号（```）、<think> 标签、XML 标签、任何解释文字、开场白或总结。
+严禁遗漏、重复或编造 id。id 必须与输入编号严格一致。
 
 JSON 字段及规则：
 - id: 对应新闻编号（从1开始）
 - score: 整数，范围 0-10（严格参考上述评分标尺）
+- is_highlight: 布尔值。⚠️ **仅当同时满足**：① score ≥ 8；② 存在明确的强催化剂（业绩超预期/指引上调/重大并购落地/颠覆性技术/央行级政策转向/供需拐点）；③ 新闻明文包含具体量化数据（如 "营收 350 亿 vs 预期 320 亿"、"同比 +94%"），仅靠语气推测不算；④ 事件新近发生（一周内），非旧闻。**只是"信息量大"或"有数据但无强催化"应保持 false**。
 - reason: 限 30 字以内，简述评分理由（例："Q4指引大幅上调，强力催化"或"常规合作意向，无数据支撑"）。
-- tags: 提取 3-5 个核心标签，包含：① 所属板块（如"半导体"） ② 明确个股（如"宁德时代"，若无则省略） ③ 事件定性（如"业绩指引上调"、"宏观数据"、"行业政策"、"市场行情"）。
-- relevant_tickers: 提取新闻中明确涉及的股票代码，仅限新闻正文中有明确提及的个股，没有则返回空数组 []。
+- tags: 提取 3-5 个核心标签（数组，元素为字符串），包含：① 所属板块（如"半导体"） ② 明确个股（如"宁德时代"，若无则省略） ③ 事件定性（如"业绩指引上调"、"宏观数据"、"行业政策"、"市场行情"）。
+- relevant_tickers: 提取新闻中明确涉及的股票代码（数组，元素为字符串），仅限新闻正文中有明确提及的个股，没有则返回空数组 []。
   - A 股：6位纯数字（如 ["300750", "600519"]）
   - 港股：5位数字（如 ["00700", "09988"]），注意港股代码固定为5位，不足5位前面补0
 
 # JSON Format Example
 [
-  {"id": 1, "score": 7, "reason": "CPI数据发布，具体数据对通胀判断有参考价值", "tags": ["宏观经济", "通胀", "宏观数据"], "relevant_tickers": []},
-  {"id": 2, "score": 8, "reason": "Q4指引大幅上调，构成实质性盈余惊喜", "tags": ["AI算力", "宁德时代", "业绩指引上调", "核心催化"], "relevant_tickers": ["300750"]},
-  {"id": 3, "score": 7, "reason": "腾讯回购力度加大，释放信心信号", "tags": ["互联网", "腾讯", "回购", "港股"], "relevant_tickers": ["00700"]}
+  {"id": 1, "score": 7, "is_highlight": false, "reason": "CPI数据发布，具体数据对通胀判断有参考价值", "tags": ["宏观经济", "通胀", "宏观数据"], "relevant_tickers": []},
+  {"id": 2, "score": 8, "is_highlight": true, "reason": "Q4指引大幅上调，构成实质性盈余惊喜", "tags": ["AI算力", "宁德时代", "业绩指引上调", "核心催化"], "relevant_tickers": ["300750"]},
+  {"id": 3, "score": 7, "is_highlight": false, "reason": "腾讯回购力度加大，释放信心信号", "tags": ["互联网", "腾讯", "回购", "港股"], "relevant_tickers": ["00700"]}
 ]"""
 
 # ── 英文新闻评分+翻译的 System Prompt ──
-# 同中文评分框架 + 额外翻译要求（标题/摘要翻译为纯简体中文）
+# P0 ⑦：翻译规则从"绝对不可包含任何英文"改为"以简体中文为主体，允许保留品牌名/型号/金融缩写"
 SYSTEM_PROMPT_EN = """你是一位资深金融市场分析师，熟悉 Minervini SEPA 策略与 O'Neil CAN SLIM 体系，同时精通中英双语金融翻译。
 输入：一批原始的英文财经新闻片段。
 任务：
@@ -120,6 +143,7 @@ SYSTEM_PROMPT_EN = """你是一位资深金融市场分析师，熟悉 Minervini
 ## 0-2分：纯噪音 (Pure Noise)
 - 特征：完全无信息量的内容、重复旧闻、在社区被重新传播的历史旧闻（如数月甚至数年前已发生的事件被重新讨论）、无任何数据支撑的空洞评论、与金融市场完全无关的内容。
 - ⚠️ 特别注意：如果新闻描述的事件明显发生在过去（如提到"2019年"、"last year released"等时间线索），即使标题看起来像新闻，也应视为旧闻给 0-2 分。
+- ⚠️ 旧闻硬规则：若输入中的"发布时间"距离"抓取时间"超过 24 小时，或正文明确提及事件发生在 3 天前以上，一律判定为旧闻，最高给 3 分。
 
 ## 3-4分：低价值信息 (Low Value)
 - 特征：管理层画大饼/口号式愿景、分析师常规无新意的研报、已被市场充分消化的旧闻、常规人事变动、无实质约束力的合作意向。
@@ -134,6 +158,7 @@ SYSTEM_PROMPT_EN = """你是一位资深金融市场分析师，熟悉 Minervini
   1. 【内生】：业绩大幅超预期（Earnings Surprise）、指引上调、毛利率拐点、高管大额增持。
   2. 【外生】：超预期的行业政策、核心产业链供需逆转（涨价潮/缺货潮）、重大并购交易落地。
 - 逻辑：可能直接驱动股价趋势性变化。
+- ⚠️ 预期差判定收紧：只有当新闻**文本中明确出现** beat/miss/超预期/低于预期/上调指引/下调指引 等字样，或给出**具体的对比数字**（如"营收 350 亿 vs 市场预期 320 亿"），才可判定为"显著预期差"。仅凭语气推测不算。
 
 ## 9-10分：历史性拐点/颠覆性变量 (Transformative)
 - 特征：远超预期的爆炸性财报、颠覆性技术突破、央行级别重大政策转向。
@@ -149,58 +174,146 @@ SYSTEM_PROMPT_EN = """你是一位资深金融市场分析师，熟悉 Minervini
 
 # 翻译要求（极其重要）
 
-- chinese_title 和 chinese_summary 必须是 **纯简体中文**，绝对不可包含任何英文单词或字母。
+- chinese_title 和 chinese_summary 应**以简体中文为主体**：中文字符占比 chinese_title ≥ 50%、chinese_summary ≥ 60%。
+- **允许保留**以下英文形态，不必强译：
+  - 品牌名/公司简称：OpenAI、Meta、AMD、TSMC 等无广泛通用译名的品牌；
+  - 产品型号：GPT-5、H100、iPhone、o1-mini；
+  - 通用金融缩写：EPS、CPI、GDP、PCE、PMI、IPO、M&A、P/E。
+- **必须翻译**：常见公司名请用通用中文译名（NVIDIA → 英伟达，Apple → 苹果，Tesla → 特斯拉，Microsoft → 微软，Google → 谷歌，Amazon → 亚马逊，Goldman Sachs → 高盛，JPMorgan → 摩根大通，Morgan Stanley → 摩根士丹利）。
 - **当标题过短或为纯产品名（如 "OpenAI o1-mini"、"Hello GPT-4o"、"Dota 2"）时，必须结合 Content 内容生成一个描述性的中文标题**。例如：
-  - "OpenAI o1-mini" + Content 提到推进低成本推理 → chinese_title: "OpenAI发布推理模型o1迷你版，推进低成本AI推理"
-  - "Hello GPT-4o" + Content 提到多模态旗舰模型 → chinese_title: "OpenAI发布多模态旗舰模型GPT-4o"
-  - "OpenAI API" + Content 提到开放API访问 → chinese_title: "OpenAI开放API接口供开发者使用"
-  - 绝对不可直接复制英文标题作为 chinese_title！
-- 公司名称必须翻译为中文通用译名（NVIDIA → 英伟达，Apple → 苹果，Tesla → 特斯拉，Microsoft → 微软，Google → 谷歌，Amazon → 亚马逊，Meta → Meta/脸书，Goldman Sachs → 高盛，JPMorgan → 摩根大通，Morgan Stanley → 摩根士丹利）。
-- 股票代码仅放在 relevant_tickers 字段中，不要出现在 chinese_title 里。
+  - "OpenAI o1-mini" + Content 提到推进低成本推理 → chinese_title: "OpenAI 发布推理模型 o1-mini，推进低成本 AI 推理"
+  - "Hello GPT-4o" + Content 提到多模态旗舰模型 → chinese_title: "OpenAI 发布多模态旗舰模型 GPT-4o"
+- 股票代码仅放在 relevant_tickers 字段中，**不要出现在 chinese_title 里**。
 - 使用专业中文金融术语：
   Earnings → 财报 | Beat → 超预期 | Miss → 不及预期 | Guidance → 业绩指引 |
   Rally → 大涨 | Selloff → 抛售 | Yield → 收益率 | Hawkish → 鹰派 |
-  Dovish → 鸽派 | Revenue → 营收 | EPS → 每股收益 | IPO → 首次公开募股 |
-  Buyback → 回购 | Dividend → 股息 | Short Squeeze → 轧空 |
-  Fed → 美联储 | ECB → 欧央行 | BOJ → 日本央行 | CPI → 消费者物价指数 |
-  PPI → 生产者物价指数 | GDP → 国内生产总值 | PCE → 个人消费支出 |
-  Non-Farm Payrolls → 非农就业 | Layoffs → 裁员 | M&A → 并购 |
-  Market Cap → 市值 | P/E → 市盈率 | Downgrade → 下调评级 | Upgrade → 上调评级
+  Dovish → 鸽派 | Revenue → 营收 | Buyback → 回购 | Dividend → 股息 |
+  Fed → 美联储 | ECB → 欧央行 | BOJ → 日本央行 | Non-Farm Payrolls → 非农就业 |
+  Layoffs → 裁员 | Market Cap → 市值 | Downgrade → 下调评级 | Upgrade → 上调评级
 
 # Output Constraints (Strict)
 
-你必须且只能返回原始 JSON 数组。
+你必须且只能返回原始 JSON 数组，且**每一条输入都必须返回一条对应输出**（即使给 0 分也要返回）。
 严禁输出：Markdown 代码块符号（```）、<think> 标签、XML 标签、任何解释文字、开场白或总结。
+严禁遗漏、重复或编造 id。id 必须与输入编号严格一致。
 
 JSON 字段及规则：
 - id: 对应新闻编号（从1开始）
-- score: 整数，范围 0-10（严格参考上述评分标尺）
-- chinese_title：【必填】不超过 30 字的纯中文翻译标题。⚠️ 严禁留空、严禁使用英文、严禁直接复制原标题
-- chinese_summary：【必填】不超过 80 字的纯中文摘要。⚠️ 严禁留空、严禁使用英文
-- tags: 提取 3-5 个核心标签（必须用中文），包含：① 所属板块（如"半导体"） ② 明确个股（如"英伟达"，若无则省略） ③ 事件定性（如"业绩指引上调"、"宏观流动性"、"供需逆转"、"无效噪音"）
-- relevant_tickers: 提取相关股票代码（可为空数组）。美股用字母代码（如 "NVDA"），港股用5位数字（如 "00700"、"09988"），注意港股代码固定为5位，不足5位前面补0
-- why_it_matters: 一句话"推荐理由"，告诉投资者为什么值得关注这条新闻（不超过40字，结合催化类型与预期差，例："业绩超预期且指引上调，构成实质盈余惊喜，关注产业链机会"）。
+- score: 整数，范围 0-10
+- is_highlight: 布尔值（true/false）。⚠️ **仅当同时满足以下所有条件时才为 true**：
+  1. score ≥ 8
+  2. 存在**明确的强催化剂**（业绩超预期/指引上调/重大并购落地/颠覆性技术/央行级政策转向/供需拐点）
+  3. 新闻**明文包含**具体量化数据（营收 XX 亿 vs 预期 YY 亿 / 同比 +NN% / 上调指引至 ZZ 等），仅靠语气推测不算
+  4. 时效性：新闻描述的是**新近发生**（一周内）的事件，非旧闻/回顾/展望
+  - 满足上述条件即为「重点推荐」；只是"信息量大"或"有数据但无强催化"应保持 false
+- chinese_title：【必填】不超过 30 字的中文主体标题（品牌/型号/缩写可保留）。⚠️ 严禁留空、严禁直接复制英文原标题
+- chinese_summary：【必填】不超过 80 字的中文主体摘要。⚠️ 严禁留空
+- tags: 提取 3-5 个核心标签（数组，元素为字符串，用中文）
+- relevant_tickers: 提取相关股票代码（数组）。美股用字母代码（如 "NVDA"），港股用5位数字（如 "00700"），注意港股代码固定为5位，不足5位前面补0
+- why_it_matters: 一句话"推荐理由"，40 字内，结合催化类型与预期差
 - 每条新闻都必须评分并翻译，即使是低分
 - 所有字段都必须返回，不可省略任何字段
 
 # JSON Format Example
-[{"id": 1, "score": 8, "chinese_title": "英伟达第三季度业绩指引大幅上调", "chinese_summary": "英伟达公布第三季度营收350亿美元，同比增长94%，指引远超市场预期，构成实质性盈余惊喜", "tags": ["AI算力", "英伟达", "业绩指引上调", "核心催化"], "relevant_tickers": ["NVDA"], "why_it_matters": "业绩超预期且指引上调，构成实质盈余惊喜，关注AI算力产业链"},
-{"id": 2, "score": 7, "chinese_title": "腾讯加大股票回购力度", "chinese_summary": "腾讯控股本周回购金额创新高，持续释放管理层信心信号", "tags": ["互联网", "腾讯", "回购", "港股"], "relevant_tickers": ["00700"], "why_it_matters": "大额回购释放管理层信心，对估值形成支撑"}]"""
+[{"id": 1, "score": 8, "is_highlight": true, "chinese_title": "英伟达 Q3 业绩指引大幅上调", "chinese_summary": "英伟达公布 Q3 营收 350 亿美元，同比增长 94%，指引远超市场预期，构成实质盈余惊喜", "tags": ["AI算力", "英伟达", "业绩指引上调", "核心催化"], "relevant_tickers": ["NVDA"], "why_it_matters": "业绩超预期且指引上调，构成实质盈余惊喜，关注 AI 算力产业链"},
+{"id": 2, "score": 7, "is_highlight": false, "chinese_title": "腾讯加大股票回购力度", "chinese_summary": "腾讯控股本周回购金额创新高，持续释放管理层信心信号", "tags": ["互联网", "腾讯", "回购", "港股"], "relevant_tickers": ["00700"], "why_it_matters": "大额回购释放管理层信心，对估值形成支撑"}]"""
+
+
+# ═══════════════════════════════════════════════════════════════
+# 语言 / 中文占比 / ticker 校验工具（P0 ⑦⑧⑨）
+# ═══════════════════════════════════════════════════════════════
+
+def _chinese_ratio(text: str) -> float:
+    """返回中文字符 / (中文字符 + 英文字母) 的比例；无字符返回 0"""
+    if not text:
+        return 0.0
+    cn = len(_CJK_RE.findall(text))
+    en = len(_ASCII_LETTER_RE.findall(text))
+    total = cn + en
+    if total == 0:
+        return 0.0
+    return cn / total
+
+
+def _is_chinese_dominant(text: str, min_ratio: float) -> bool:
+    """判定文本是否以中文为主体（品牌/型号/缩写允许保留）"""
+    return _chinese_ratio(text) >= min_ratio
+
+
+def _contains_chinese(text: str) -> bool:
+    """检查文本是否包含中文字符（CJK 统一表意字符范围）——保留供其他模块使用"""
+    return bool(_CJK_RE.search(text or ""))
 
 
 def _detect_is_english(text: str) -> bool:
-    """使用 langdetect 检测文本是否为英语"""
+    """判定文本是否为英语。
+
+    P0 ⑧：先按中文字符占比判定，langdetect 只在模糊地带（0 < ratio < 0.3）兜底。
+    - ratio >= 0.3：判为中文
+    - ratio == 0 且含英文字母：判为英文
+    - ratio == 0 且无英文字母（纯数字/符号）：默认中文
+    - 0 < ratio < 0.3：交给 langdetect（已固定随机种子）
+    """
+    if not text:
+        return False
+    ratio = _chinese_ratio(text)
+    if ratio >= 0.3:
+        return False
+    if ratio == 0.0:
+        return bool(_ASCII_LETTER_RE.search(text))
     try:
-        lang = detect(text)
-        return lang == "en"
+        return detect(text) == "en"
     except LangDetectException:
         return False
 
 
-def _contains_chinese(text: str) -> bool:
-    """检查文本是否包含中文字符（CJK 统一表意字符范围），用于验证翻译结果"""
-    return bool(re.search(r"[\u4e00-\u9fff]", text))
+def _ensure_string_list(value, max_items: int = 5) -> list[str]:
+    """严格类型校验：只接受 list[str]，去重去空白，截断到 max_items（P0 ⑨）"""
+    if not isinstance(value, list):
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        s = item.strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+        if len(out) >= max_items:
+            break
+    return out
 
+
+def _validate_ticker(t: str) -> str | None:
+    """校验并规范化 ticker：A股6位/港股5位/美股字母开头；4位港股自动补0（P0 ⑨）"""
+    if not t:
+        return None
+    t = t.strip().upper()
+    if _TICKER_A.match(t) or _TICKER_HK.match(t):
+        return t
+    if _TICKER_HK_SHORT.match(t):
+        return "0" + t
+    if _TICKER_US.match(t):
+        return t
+    return None
+
+
+def _clean_tickers(raw_list) -> list[str]:
+    """从 LLM 原始 tickers 输出提取合法 ticker"""
+    cleaned = []
+    for t in _ensure_string_list(raw_list, max_items=10):
+        v = _validate_ticker(t)
+        if v:
+            cleaned.append(v)
+    # 二次去重（补0 之后可能与原值重复）
+    return list(dict.fromkeys(cleaned))[:5]
+
+
+# ═══════════════════════════════════════════════════════════════
+# 数据结构
+# ═══════════════════════════════════════════════════════════════
 
 @dataclass
 class ScoredNewsItem:
@@ -219,6 +332,8 @@ class ScoredNewsItem:
     relevant_tickers: list[str] = field(default_factory=list)
     # 推荐理由：一句话告诉投资者"为什么该关注这条"（中文复用 reason，英文由 LLM 生成）
     why_it_matters: str = ""
+    # P2 ③：两层筛选——LLM 显式判定是否为"重点推荐"（信息流 vs 重点推荐）
+    is_highlight: bool = False
     sentiment_score: int | None = None
     surprise_factor: int | None = None
     catalyst_type: str | None = None
@@ -226,167 +341,330 @@ class ScoredNewsItem:
     sentiment_reasoning: str | None = None
 
 
+# P0 ①⑥：批次结果的显式状态，让 filter_news 能准确统计
+BatchStatus = Literal[
+    "ok",                    # 完整成功
+    "api_error",             # HTTP/网络失败，重试也没救
+    "parse_error",           # 无法解析出任何 JSON 或缺失严重
+    "content_risk",          # 内容审查触发（P1 会做二分隔离）
+    "empty_after_filter",    # 解析成功但全部低于阈值（不是错误）
+    "no_api_key",            # 未配置 API Key
+]
+
+
+@dataclass
+class BatchResult:
+    """单批次评分结果，包含状态诊断信息（P0 ①⑥；P1 ⑤ 新增 content_risk_dropped）"""
+    scored: list[ScoredNewsItem]
+    status: BatchStatus
+    processed_ids: set[int] = field(default_factory=set)  # 模型实际返回的 1-indexed id
+    missing_ids: set[int] = field(default_factory=set)    # 未在响应中出现的输入 id
+    duplicate_ids: set[int] = field(default_factory=set)  # 重复出现的 id
+    raw_response: str = ""
+    # P1 ⑤：二分隔离中被单独触发内容审查而丢弃的条目数（仅本批次内累计）
+    content_risk_dropped: int = 0
+
+    @property
+    def is_success(self) -> bool:
+        return self.status in ("ok", "empty_after_filter")
+
+
+# ═══════════════════════════════════════════════════════════════
+# Prompt 构造
+# ═══════════════════════════════════════════════════════════════
+
+def _format_time_hint(item: RawNewsItem) -> str:
+    """构造发布时间提示（P0 ④）——只有 published_at 存在时才输出"""
+    published_at = getattr(item, "published_at", None)
+    if not published_at:
+        return ""
+    try:
+        return published_at.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return ""
+
+
 def _build_user_prompt(batch: list[RawNewsItem], is_english: bool) -> str:
-    """将一批新闻条目格式化为发送给 DeepSeek 的用户提示词。
-    格式：[编号] 标题 + 摘要前200字 + 来源，中英文使用不同模板。
+    """将一批新闻条目格式化为发送给 LLM 的用户提示词。
+    P0 ④：正文预览长度从 200 提到 settings.DEEPSEEK_CONTENT_PREVIEW_CHARS（默认 800），
+           并加入发布时间与"抓取时间（=当前时间）"，让模型能识别旧闻。
     """
+    from datetime import datetime, timezone
+    _preview_len = getattr(settings, "DEEPSEEK_CONTENT_PREVIEW_CHARS", 800)
+    preview_len = int(_preview_len) if isinstance(_preview_len, (int, float)) else 800
+    fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+
     lines: list[str] = []
     for i, item in enumerate(batch, 1):
-        content_preview = item.content[:200] if item.content else ("No content" if is_english else "无正文")
+        content_preview = (item.content or "")[:preview_len]
+        if not content_preview:
+            content_preview = "No content" if is_english else "无正文"
+        published_hint = _format_time_hint(item)
         if is_english:
-            lines.append(
-                f"[{i}] Title: {item.title}\n"
-                f"    Content: {content_preview}\n"
-                f"    Source: {item.source}"
-            )
+            block = [
+                f"[{i}] Title: {item.title}",
+                f"    Source: {item.source}",
+            ]
+            if published_hint:
+                block.append(f"    Published: {published_hint}")
+            block.append(f"    Fetched: {fetched_at}")
+            block.append(f"    Content: {content_preview}")
+            lines.append("\n".join(block))
         else:
-            lines.append(
-                f"[{i}] 标题: {item.title}\n"
-                f"    摘要: {content_preview}\n"
-                f"    来源: {item.source}"
-            )
+            block = [
+                f"[{i}] 标题: {item.title}",
+                f"    来源: {item.source}",
+            ]
+            if published_hint:
+                block.append(f"    发布时间: {published_hint}")
+            block.append(f"    抓取时间: {fetched_at}")
+            block.append(f"    摘要: {content_preview}")
+            lines.append("\n".join(block))
     return "\n\n".join(lines)
 
 
-def _extract_json_array(raw_text: str) -> list[dict] | None:
-    """从 DeepSeek 响应中提取 JSON 数组。
+# ═══════════════════════════════════════════════════════════════
+# 响应解析（P0 ①②⑥⑦⑨）
+# ═══════════════════════════════════════════════════════════════
 
-    LLM 输出格式不稳定，使用多层策略：
-    1. 去除 <think> 标签 → 2. 提取 Markdown 代码块 → 3. 正则匹配 [...] → 4. 回退解析
-    支持 dict 包装器（如 {"results": [...]}）自动解包。
-    """
+def _extract_json_array(raw_text: str) -> "list[dict[str, object]] | None":
+    """从 LLM 响应中提取 JSON 数组，支持 dict 包装器自动解包"""
     result = extract_json_from_deepseek(raw_text)
-
     if result is None:
         return None
-
     if isinstance(result, list):
         return result
-
-    # Handle dict wrapper: {"results": [...]} etc.
     if isinstance(result, dict):
         for key in ("results", "data", "items", "news"):
             if key in result and isinstance(result[key], list):
                 return result[key]
         if all(isinstance(v, dict) for v in result.values()):
             return list(result.values())
-
     logger.error("Extracted JSON is not an array: %s", type(result).__name__)
     return None
 
 
-def _parse_response(raw_text: str, batch: list[RawNewsItem], is_english: bool) -> list[ScoredNewsItem]:
-    """解析 DeepSeek API 响应为评分结果列表。
+def _parse_response_detailed(
+    raw_text: str,
+    batch: list[RawNewsItem],
+    is_english: bool,
+) -> tuple[list[ScoredNewsItem], set[int], set[int], set[int], bool]:
+    """解析 LLM 响应，返回 (scored, processed_ids, missing_ids, duplicate_ids, parse_ok)。
 
-    处理逻辑：
-    - 从 JSON 数组中逐条解析，id 为 1-indexed 转 0-indexed
-    - score < 阈值（默认 5）的条目被丢弃
-    - 英文新闻额外提取 chinese_title/chinese_summary/relevant_tickers
-    - 翻译结果通过 _contains_chinese() 验证，非中文的丢弃
+    P0 ⑥：新增完整性校验：
+      - 记录返回的 1-indexed id 集合、missing、duplicate
+      - parse_ok 表示 JSON 是否能被解析成数组（与"是否有 item 通过阈值"解耦）
+
+    P0 ⑦：中文占比校验取代"只要一个汉字"的判定。
+    P0 ⑨：tags/tickers 走严格类型校验。
     """
     results = _extract_json_array(raw_text)
     if results is None:
-        return []
+        return [], set(), set(range(1, len(batch) + 1)), set(), False
 
+    threshold = settings.DEEPSEEK_SCORE_THRESHOLD
+    # getattr 兜底：测试 mock 可能没定义这两个字段，用默认值避免 MagicMock 参与比较
+    _title_ratio = getattr(settings, "DEEPSEEK_MIN_CHINESE_RATIO_TITLE", 0.5)
+    _summary_ratio = getattr(settings, "DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY", 0.6)
+    title_ratio = float(_title_ratio) if isinstance(_title_ratio, (int, float)) else 0.5
+    summary_ratio = float(_summary_ratio) if isinstance(_summary_ratio, (int, float)) else 0.6
+
+    processed: list[int] = []      # 保留顺序用于 duplicate 检测
     scored: list[ScoredNewsItem] = []
+
     for item in results:
+        if not isinstance(item, dict):
+            logger.warning("Skipping non-dict entry in LLM response: %r", item)
+            continue
         try:
-            idx = int(item.get("id", 0)) - 1  # 1-indexed to 0-indexed
-            if idx < 0 or idx >= len(batch):
-                continue
-
-            score = int(item.get("score", 0))
-            if score < settings.DEEPSEEK_SCORE_THRESHOLD:
-                continue
-
-            if is_english:
-                chinese_title = str(item.get("chinese_title", ""))[:60]
-                chinese_summary = str(item.get("chinese_summary", ""))[:200]
-                tickers = [str(t) for t in item.get("relevant_tickers", []) if t][:5]
-
-                # Validate chinese_title is actually Chinese (contains CJK chars)
-                if chinese_title and not _contains_chinese(chinese_title):
-                    logger.warning("chinese_title is not Chinese, discarding: %s", chinese_title[:50])
-                    chinese_title = ""
-
-                if chinese_summary and not _contains_chinese(chinese_summary):
-                    logger.warning("chinese_summary is not Chinese, discarding: %s", chinese_summary[:50])
-                    chinese_summary = ""
-
-                # 兜底：如果 chinese_title 为空但 chinese_summary 有中文，
-                # 从摘要截取前30字作为标题，避免回退到英文原标题
-                if not chinese_title and chinese_summary and _contains_chinese(chinese_summary):
-                    chinese_title = chinese_summary[:30].rstrip("，。、；：")
-                    logger.info(
-                        "chinese_title empty, fallback from summary: '%s' (original: '%s')",
-                        chinese_title, batch[idx].title[:50],
-                    )
-
-                why_it_matters = str(item.get("why_it_matters", ""))[:256]
-                scored.append(ScoredNewsItem(
-                    raw=batch[idx],
-                    score=min(score, 10),
-                    reason="",
-                    summary=chinese_summary or str(item.get("summary", ""))[:100],
-                    tags=[str(t) for t in item.get("tags", []) if t][:5],
-                    chinese_title=chinese_title,
-                    relevant_tickers=tickers,
-                    why_it_matters=why_it_matters,
-                ))
-            else:
-                tickers = [str(t) for t in item.get("relevant_tickers", []) if t][:5]
-                scored.append(ScoredNewsItem(
-                    raw=batch[idx],
-                    score=min(score, 10),
-                    reason=str(item.get("reason", "")),
-                    summary=str(item.get("summary", ""))[:100],
-                    tags=[str(t) for t in item.get("tags", []) if t][:5],
-                    relevant_tickers=tickers,
-                    why_it_matters=str(item.get("reason", ""))[:256],
-                ))
-        except (ValueError, TypeError) as e:
-            logger.warning("Skipping malformed item in LLM response: %s (%s)", item, e)
+            raw_id = item.get("id", 0)
+            idx1 = int(raw_id) if isinstance(raw_id, (int, str)) else 0
+        except (ValueError, TypeError):
+            logger.warning("Malformed id in LLM response: %r", item.get("id"))
             continue
 
+        if idx1 < 1 or idx1 > len(batch):
+            logger.warning("Out-of-range id in LLM response: %s (batch size %d)", idx1, len(batch))
+            continue
+
+        # 重复 id：保留第一次
+        if idx1 in processed:
+            processed.append(idx1)   # 用于统计 duplicate 数量
+            continue
+        processed.append(idx1)
+
+        try:
+            raw_score = item.get("score", 0)
+            if isinstance(raw_score, (int, str, float)):
+                score = int(raw_score)
+            else:
+                raise TypeError(f"score is {type(raw_score).__name__}")
+        except (ValueError, TypeError):
+            logger.warning("Malformed score for id=%d: %r", idx1, item.get("score"))
+            continue
+
+        idx0 = idx1 - 1
+        raw_item = batch[idx0]
+        tags = _ensure_string_list(item.get("tags"), max_items=5)
+        tickers = _clean_tickers(item.get("relevant_tickers"))
+
+        # P2 ③：is_highlight 严格类型校验（只接受 bool；字符串 "true"/"false" 也兼容）
+        raw_highlight = item.get("is_highlight", False)
+        if isinstance(raw_highlight, bool):
+            is_highlight = raw_highlight
+        elif isinstance(raw_highlight, str):
+            is_highlight = raw_highlight.strip().lower() in ("true", "1", "yes")
+        else:
+            is_highlight = False
+        # 硬防线：is_highlight=True 必须 score >= 8，否则强制降级
+        if is_highlight and score < 8:
+            logger.info(
+                "is_highlight=true but score=%d < 8, downgrading to false (id=%d)", score, idx1,
+            )
+            is_highlight = False
+
+        # 低于阈值：不构建 ScoredNewsItem，但仍算入 processed
+        if score < threshold:
+            continue
+
+        if is_english:
+            chinese_title_raw = item.get("chinese_title", "")
+            chinese_title = str(chinese_title_raw)[:60] if isinstance(chinese_title_raw, str) else ""
+            chinese_summary_raw = item.get("chinese_summary", "")
+            chinese_summary = str(chinese_summary_raw)[:200] if isinstance(chinese_summary_raw, str) else ""
+
+            # 中文占比校验（P0 ⑦）
+            if chinese_title and not _is_chinese_dominant(chinese_title, title_ratio):
+                logger.warning(
+                    "chinese_title not Chinese-dominant (ratio=%.2f), discarding: %s",
+                    _chinese_ratio(chinese_title), chinese_title[:50],
+                )
+                chinese_title = ""
+
+            if chinese_summary and not _is_chinese_dominant(chinese_summary, summary_ratio):
+                logger.warning(
+                    "chinese_summary not Chinese-dominant (ratio=%.2f), discarding: %s",
+                    _chinese_ratio(chinese_summary), chinese_summary[:50],
+                )
+                chinese_summary = ""
+
+            # 兜底：title 空 + summary 有中文 → 从 summary 截前 30 字
+            if not chinese_title and chinese_summary and _is_chinese_dominant(chinese_summary, summary_ratio):
+                chinese_title = chinese_summary[:30].rstrip("，。、；：")
+                logger.info(
+                    "chinese_title empty, fallback from summary: '%s' (original: '%s')",
+                    chinese_title, raw_item.title[:50],
+                )
+
+            why_raw = item.get("why_it_matters", "")
+            why_it_matters = str(why_raw)[:256] if isinstance(why_raw, str) else ""
+
+            summary_fallback = ""
+            summary_field = item.get("summary", "")
+            if isinstance(summary_field, str):
+                summary_fallback = summary_field[:100]
+
+            scored.append(ScoredNewsItem(
+                raw=raw_item,
+                score=min(score, 10),
+                reason="",
+                summary=chinese_summary or summary_fallback,
+                tags=tags,
+                chinese_title=chinese_title,
+                relevant_tickers=tickers,
+                why_it_matters=why_it_matters,
+                is_highlight=is_highlight,
+            ))
+        else:
+            reason_raw = item.get("reason", "")
+            reason = str(reason_raw) if isinstance(reason_raw, str) else ""
+            summary_raw = item.get("summary", "")
+            summary = str(summary_raw)[:100] if isinstance(summary_raw, str) else ""
+            scored.append(ScoredNewsItem(
+                raw=raw_item,
+                score=min(score, 10),
+                reason=reason,
+                summary=summary,
+                tags=tags,
+                relevant_tickers=tickers,
+                why_it_matters=reason[:256],
+                is_highlight=is_highlight,
+            ))
+
+    processed_ids = set(processed)
+    duplicate_ids = {i for i in processed_ids if processed.count(i) > 1}
+    expected_ids = set(range(1, len(batch) + 1))
+    missing_ids = expected_ids - processed_ids
+
+    return scored, processed_ids, missing_ids, duplicate_ids, True
+
+
+def _parse_response(
+    raw_text: str,
+    batch: list[RawNewsItem],
+    is_english: bool,
+) -> list[ScoredNewsItem]:
+    """薄包装，保持向后兼容签名（test_parser.py 依赖此函数返回 list[ScoredNewsItem]）"""
+    scored, _, _, _, _ = _parse_response_detailed(raw_text, batch, is_english)
     return scored
 
 
-async def filter_batch(
+# ═══════════════════════════════════════════════════════════════
+# 单批次评分（P0 ①②）
+# ═══════════════════════════════════════════════════════════════
+
+async def _call_llm_once(
+    payload: dict[str, object],
+    headers: dict[str, str],
+    client: httpx.AsyncClient,
+) -> tuple[str | None, BatchStatus, str]:
+    """执行一次 LLM 调用；返回 (raw_content, status, error_body)。
+    status 为 ok / api_error / content_risk / no_api_key（外层会重试 api_error）
+    """
+    try:
+        resp = await client.post(settings.SILICONFLOW_API_URL, json=payload, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPStatusError as e:
+        status_code = e.response.status_code
+        body = e.response.text[:500]
+        if status_code == 400 and any(kw in body for kw in _CONTENT_RISK_KEYWORDS):
+            return None, "content_risk", body
+        # 429/5xx 由外层判断是否重试
+        return None, "api_error", f"HTTP {status_code}: {body}"
+    except (httpx.TimeoutException, httpx.ConnectError) as e:
+        return None, "api_error", f"network: {e}"
+    except Exception as e:
+        return None, "api_error", f"unexpected: {e}"
+
+    try:
+        raw_text = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        return None, "api_error", f"malformed response: {e}"
+
+    return raw_text, "ok", ""
+
+
+async def _score_batch_once(
     batch: list[RawNewsItem],
-    is_english: bool = False,
-    *,
-    client: httpx.AsyncClient | None = None,
-    use_mock: bool = False,
-) -> list[ScoredNewsItem]:
-    """发送单批次（≤20条）到 DeepSeek API 进行评分，返回通过阈值的条目。
+    is_english: bool,
+    client: httpx.AsyncClient,
+) -> BatchResult:
+    """执行一个 batch 的评分并返回 BatchResult（不做二分，只做 API 层重试）。
 
-    参数：
-        client: 共享的 httpx 客户端（复用 TCP 连接）。为 None 时自动创建临时客户端。
-        use_mock: True 时跳过真实 API 调用，使用本地 mock 数据（测试用）。
-
-    API 调用参数：model=deepseek-chat, temperature=0.1, max_tokens=4096
-
-    错误处理策略：
-        - 400 + Content Exists Risk → 跳过整个 batch，不重试（内容审查）
-        - 429/500/502/503 → 指数退避重试 sleep(3 × attempt)
-        - 超时/连接错误 → 同上重试
-        - 0 结果但 batch > 3 → 可能格式异常，重试
+    重试策略：
+      - HTTP 400 + Content Risk → 立即返回 status=content_risk（由调用方决定是否二分）
+      - HTTP 429/5xx / 网络错误 → 指数退避重试
+      - JSON parse 失败 → 重试
+      - 完整性严重缺失（missing_ids > 20% batch）→ 重试
     """
     if not batch:
-        return []
-
-    # ── Mock mode: use local data pool instead of real API ──
-    if use_mock:
-        return _filter_batch_mock(batch, is_english)
-
-    if not settings.SILICONFLOW_API_KEY:
-        logger.warning("SiliconFlow API key not configured, skipping AI scoring")
-        return []
+        return BatchResult(scored=[], status="ok")
 
     system_prompt = SYSTEM_PROMPT_EN if is_english else SYSTEM_PROMPT_CN
     user_prompt = _build_user_prompt(batch, is_english)
 
-    payload = {
+    payload: dict[str, object] = {
         "model": settings.SILICONFLOW_LLM_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -396,99 +674,254 @@ async def filter_batch(
         "max_tokens": 4096,
         "enable_thinking": False,
     }
-
-    headers = {
+    headers: dict[str, str] = {
         "Authorization": f"Bearer {settings.SILICONFLOW_API_KEY}",
         "Content-Type": "application/json",
     }
 
-    # Use shared client if provided; otherwise create a temporary one
+    max_retries = settings.DEEPSEEK_MAX_RETRIES
+    last_raw = ""
+    last_error = ""
+
+    for attempt in range(1, max_retries + 1):
+        raw_text, call_status, err_body = await _call_llm_once(payload, headers, client)
+
+        if call_status == "content_risk":
+            # 不在这里 log,由调用方（可能触发二分）决定。仅返回状态。
+            return BatchResult(scored=[], status="content_risk", raw_response=err_body)
+
+        if call_status == "api_error":
+            last_error = err_body
+            logger.error(
+                "SiliconFlow API error (attempt %d/%d): %s", attempt, max_retries, err_body,
+            )
+            if attempt < max_retries:
+                await asyncio.sleep(3 * attempt)
+                continue
+            return BatchResult(scored=[], status="api_error", raw_response=err_body)
+
+        # call_status == "ok"
+        assert raw_text is not None
+        last_raw = raw_text
+        scored, processed_ids, missing_ids, duplicate_ids, parse_ok = (
+            _parse_response_detailed(raw_text, batch, is_english)
+        )
+
+        missing_ratio = len(missing_ids) / len(batch) if batch else 0
+        should_retry = attempt < max_retries and (
+            (not parse_ok)
+            or (missing_ratio > 0.2 and len(batch) > 3)
+        )
+        if should_retry:
+            logger.warning(
+                "SiliconFlow response incomplete (attempt %d/%d): parse_ok=%s, "
+                "missing=%d/%d, duplicate=%d, retrying...\n── Raw (%d chars) ──\n%s",
+                attempt, max_retries, parse_ok,
+                len(missing_ids), len(batch), len(duplicate_ids),
+                len(raw_text), raw_text[:1500],
+            )
+            await asyncio.sleep(2 * attempt)
+            continue
+
+        if missing_ids:
+            logger.warning(
+                "SiliconFlow missing ids in response: %s (batch=%d, missing=%d)",
+                sorted(missing_ids)[:10], len(batch), len(missing_ids),
+            )
+        if duplicate_ids:
+            logger.warning(
+                "SiliconFlow duplicate ids in response: %s", sorted(duplicate_ids),
+            )
+
+        if not parse_ok:
+            return BatchResult(
+                scored=[],
+                status="parse_error",
+                missing_ids=missing_ids,
+                duplicate_ids=duplicate_ids,
+                raw_response=raw_text,
+            )
+
+        status: BatchStatus = "ok" if scored else "empty_after_filter"
+        logger.info(
+            "SiliconFlow batch: %d/%d passed threshold (>=%d), missing=%d, duplicate=%d",
+            len(scored), len(batch), settings.DEEPSEEK_SCORE_THRESHOLD,
+            len(missing_ids), len(duplicate_ids),
+        )
+        return BatchResult(
+            scored=scored,
+            status=status,
+            processed_ids=processed_ids,
+            missing_ids=missing_ids,
+            duplicate_ids=duplicate_ids,
+            raw_response=raw_text,
+        )
+
+    # 理论不可达（所有 attempt 已在循环内 return）
+    return BatchResult(scored=[], status="api_error", raw_response=last_raw or last_error)
+
+
+async def _bisect_content_risk(
+    batch: list[RawNewsItem],
+    is_english: bool,
+    client: httpx.AsyncClient,
+    depth: int,
+) -> BatchResult:
+    """P1 ⑤：内容审查触发时二分隔离。
+
+    递归策略：
+    - batch=1 且仍触发 → 丢弃该条，返回 content_risk_dropped=1
+    - depth 达到上限 → 保守丢弃整个 sub-batch，返回 content_risk_dropped=len(batch)
+    - 否则拆成左右两半，分别评分并合并结果
+
+    合并语义：
+    - scored 列表拼接
+    - content_risk_dropped 累加
+    - 若两半中任一为其他失败状态（api_error / parse_error），保守把该子批 dropped 计入
+      但不覆盖 status。整体 status 取「有 scored → ok / empty_after_filter；否则 content_risk」
+    """
+    max_depth = getattr(settings, "DEEPSEEK_CONTENT_RISK_MAX_DEPTH", 6)
+    if not isinstance(max_depth, int):
+        max_depth = 6
+
+    n = len(batch)
+    if n == 0:
+        return BatchResult(scored=[], status="ok")
+
+    if n == 1:
+        # 单条仍触发 → 定位到坏条目
+        titles_preview = batch[0].title[:60]
+        logger.warning(
+            "⚠️ Content risk located on single item — dropping: %s", titles_preview,
+        )
+        return BatchResult(scored=[], status="content_risk", content_risk_dropped=1)
+
+    if depth >= max_depth:
+        logger.warning(
+            "⚠️ Content risk bisect max depth (%d) reached — dropping sub-batch of %d",
+            max_depth, n,
+        )
+        return BatchResult(scored=[], status="content_risk", content_risk_dropped=n)
+
+    mid = n // 2
+    left, right = batch[:mid], batch[mid:]
+
+    async def _process_half(sub: list[RawNewsItem]) -> BatchResult:
+        r = await _score_batch_once(sub, is_english, client)
+        if r.status == "content_risk":
+            return await _bisect_content_risk(sub, is_english, client, depth + 1)
+        return r
+
+    left_r = await _process_half(left)
+    right_r = await _process_half(right)
+
+    merged_scored = left_r.scored + right_r.scored
+    dropped = left_r.content_risk_dropped + right_r.content_risk_dropped
+
+    # 记录非 content_risk 的失败也一并当作丢弃（保守）：
+    for r, sub in ((left_r, left), (right_r, right)):
+        if r.status in ("api_error", "parse_error") and not r.scored:
+            dropped += len(sub)
+
+    if merged_scored:
+        merged_status: BatchStatus = "ok"
+    elif dropped:
+        merged_status = "content_risk"
+    else:
+        merged_status = "empty_after_filter"
+
+    return BatchResult(
+        scored=merged_scored,
+        status=merged_status,
+        content_risk_dropped=dropped,
+    )
+
+
+async def filter_batch_detailed(
+    batch: list[RawNewsItem],
+    is_english: bool = False,
+    *,
+    client: httpx.AsyncClient | None = None,
+    use_mock: bool = False,
+) -> BatchResult:
+    """P0 ①②⑥ + P1 ⑤：新入口，返回结构化 BatchResult。
+
+    - Content Risk 触发时若 DEEPSEEK_CONTENT_RISK_BISECT_ENABLED=True，进入二分隔离，
+      定位到具体坏条目并丢弃，其余条目照常评分。
+    """
+    if not batch:
+        return BatchResult(scored=[], status="ok")
+
+    if use_mock:
+        scored = _filter_batch_mock(batch, is_english)
+        return BatchResult(
+            scored=scored,
+            status="ok" if scored else "empty_after_filter",
+            processed_ids=set(range(1, len(batch) + 1)),
+        )
+
+    if not settings.SILICONFLOW_API_KEY:
+        logger.warning("SiliconFlow API key not configured, skipping AI scoring")
+        return BatchResult(scored=[], status="no_api_key")
+
     _owns_client = client is None
     if _owns_client:
         client = httpx.AsyncClient(timeout=90.0)
 
     try:
-        for attempt in range(1, settings.DEEPSEEK_MAX_RETRIES + 1):
-            try:
-                resp = await client.post(settings.SILICONFLOW_API_URL, json=payload, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-            except httpx.HTTPStatusError as e:
-                status = e.response.status_code
-                body = e.response.text[:500]
+        result = await _score_batch_once(batch, is_english, client)
 
-                # ── Content safety filter → skip immediately, no retry ──
-                if status == 400 and any(kw in body for kw in _CONTENT_RISK_KEYWORDS):
-                    titles = [it.title[:40] for it in batch[:3]]
-                    logger.warning(
-                        "⚠️ SiliconFlow content safety triggered — skipping batch "
-                        "(%d items, first titles: %s)",
-                        len(batch), titles,
-                    )
-                    return []
+        if result.status != "content_risk":
+            return result
 
-                max_retries = settings.DEEPSEEK_MAX_RETRIES
-                logger.error(
-                    "SiliconFlow API HTTP %s (attempt %d/%d): %s",
-                    status, attempt, max_retries, body,
-                )
+        # 命中 content_risk：决定是否二分
+        titles = [it.title[:40] for it in batch[:3]]
+        bisect_enabled = getattr(settings, "DEEPSEEK_CONTENT_RISK_BISECT_ENABLED", True)
+        if not bisect_enabled or len(batch) == 1:
+            logger.warning(
+                "⚠️ SiliconFlow content safety triggered — dropping batch of %d "
+                "(bisect_enabled=%s, first titles: %s)",
+                len(batch), bisect_enabled, titles,
+            )
+            return BatchResult(
+                scored=[],
+                status="content_risk",
+                content_risk_dropped=len(batch),
+                raw_response=result.raw_response,
+            )
 
-                # Retryable server / rate-limit errors
-                if attempt < max_retries and status in (429, 500, 502, 503):
-                    await asyncio.sleep(3 * attempt)
-                    continue
-                return []
-            except (httpx.TimeoutException, httpx.ConnectError) as e:
-                max_retries = settings.DEEPSEEK_MAX_RETRIES
-                logger.error(
-                    "SiliconFlow network error (attempt %d/%d): %s", attempt, max_retries, e,
-                )
-                if attempt < max_retries:
-                    await asyncio.sleep(3 * attempt)
-                    continue
-                return []
-            except Exception as e:
-                max_retries = settings.DEEPSEEK_MAX_RETRIES
-                logger.error("SiliconFlow request failed (attempt %d/%d): %s", attempt, max_retries, e)
-                if attempt < max_retries:
-                    await asyncio.sleep(3 * attempt)
-                    continue
-                return []
-
-            try:
-                raw_text = data["choices"][0]["message"]["content"]
-            except (KeyError, IndexError) as e:
-                logger.error("Unexpected SiliconFlow response structure: %s", e)
-                return []
-
-            scored = _parse_response(raw_text, batch, is_english)
-
-            # If we got zero results but had items, might be a bad response — retry
-            max_retries = settings.DEEPSEEK_MAX_RETRIES
-            if not scored and len(batch) > 3 and attempt < max_retries:
-                logger.warning(
-                    "SiliconFlow returned 0 scored items for %d inputs (attempt %d/%d), "
-                    "retrying...\n── Raw response (%d chars) ──\n%s",
-                    len(batch), attempt, max_retries, len(raw_text), raw_text[:1500],
-                )
-                await asyncio.sleep(2 * attempt)
-                continue
-
-            logger.info("SiliconFlow scored batch: %d/%d passed threshold (>=%d)",
-                         len(scored), len(batch), settings.DEEPSEEK_SCORE_THRESHOLD)
-            return scored
+        logger.warning(
+            "⚠️ SiliconFlow content safety triggered — bisecting batch of %d "
+            "(first titles: %s)",
+            len(batch), titles,
+        )
+        bisect_result = await _bisect_content_risk(batch, is_english, client, depth=0)
+        logger.info(
+            "✅ Content-risk bisect done: scored=%d, dropped=%d / %d",
+            len(bisect_result.scored), bisect_result.content_risk_dropped, len(batch),
+        )
+        return bisect_result
     finally:
         if _owns_client:
             await client.aclose()
 
-    return []
+
+async def filter_batch(
+    batch: list[RawNewsItem],
+    is_english: bool = False,
+    *,
+    client: httpx.AsyncClient | None = None,
+    use_mock: bool = False,
+) -> list[ScoredNewsItem]:
+    """向后兼容包装：只返回 scored 列表。test_parser.py 依赖此签名。"""
+    result = await filter_batch_detailed(
+        batch, is_english, client=client, use_mock=use_mock,
+    )
+    return result.scored
 
 
 def _filter_batch_mock(batch: list[RawNewsItem], is_english: bool) -> list[ScoredNewsItem]:
-    """Return scored items from a randomly chosen mock response (no API call).
-
-    Lazy-imports mock_responses to avoid loading test data in production.
-    """
+    """Return scored items from a randomly chosen mock response (no API call)."""
     import random
     try:
         from tests.mock_responses import CN_MOCK_POOL, EN_MOCK_POOL
@@ -503,17 +936,29 @@ def _filter_batch_mock(batch: list[RawNewsItem], is_english: bool) -> list[Score
     return _parse_response(raw_text, batch, is_english)
 
 
+# ═══════════════════════════════════════════════════════════════
+# 主入口
+# ═══════════════════════════════════════════════════════════════
+
 @dataclass
 class FilterResult:
     """评分阶段的总结果，包含错误统计信息。
     - scored: 通过评分阈值的新闻列表
-    - skipped_batches: 因错误跳过的 batch 数量
+    - skipped_batches: 因错误跳过的 batch 数量（仅 api_error/parse_error/content_risk）
     - total_batches: 总 batch 数量
     - had_errors: 是否有任何 batch 出错（用于 pipeline 决定是否标记低分 URL）
+    - content_risk_batches: 整批全部命中内容审查的 batch 数量
+    - content_risk_dropped_items: 二分后被单独定位并丢弃的条目总数（P1 ⑤）
+    - api_error_batches: API 错误的 batch 数量
+    - parse_error_batches: 解析失败的 batch 数量
     """
     scored: list[ScoredNewsItem]
     skipped_batches: int = 0
     total_batches: int = 0
+    content_risk_batches: int = 0
+    content_risk_dropped_items: int = 0
+    api_error_batches: int = 0
+    parse_error_batches: int = 0
 
     @property
     def had_errors(self) -> bool:
@@ -525,14 +970,14 @@ class FilterResult:
 
 
 async def filter_news(items: list[RawNewsItem]) -> FilterResult:
-    """AI 评分的主入口：将所有新闻分批发送 DeepSeek 评分。
+    """AI 评分的主入口：将所有新闻分批发送 LLM 评分。
 
     处理流程：
-    1. langdetect 自动将新闻分为中文/英文两组
+    1. 按中文占比 + langdetect 兜底分为中文/英文两组
     2. 各自按 batch_size=20 分批
     3. 共享同一个 httpx.AsyncClient（复用 TCP/TLS 连接）
     4. 中文 batch 使用 SYSTEM_PROMPT_CN，英文使用 SYSTEM_PROMPT_EN
-    5. 单 batch 失败只记日志，不影响其他 batch
+    5. 单 batch 失败按状态分类统计，不影响其他 batch
     6. 返回 FilterResult（含 scored 列表和错误统计）
     """
     batch_size = settings.DEEPSEEK_BATCH_SIZE
@@ -548,33 +993,63 @@ async def filter_news(items: list[RawNewsItem]) -> FilterResult:
     logger.info("Language split: %d Chinese, %d English items", len(cn_items), len(en_items))
 
     all_scored: list[ScoredNewsItem] = []
-    skipped_batches = 0
     total_batches = 0
+    skipped = 0
+    content_risk = 0
+    content_risk_dropped = 0
+    api_err = 0
+    parse_err = 0
+
+    async def _run_batches(pool: list[RawNewsItem], is_english: bool, client: httpx.AsyncClient) -> None:
+        nonlocal total_batches, skipped, content_risk, content_risk_dropped, api_err, parse_err
+        label = "EN" if is_english else "CN"
+        for i in range(0, len(pool), batch_size):
+            total_batches += 1
+            batch = pool[i : i + batch_size]
+            try:
+                result = await filter_batch_detailed(batch, is_english=is_english, client=client)
+            except Exception as e:
+                skipped += 1
+                api_err += 1
+                logger.error("%s batch %d-%d crashed: %s", label, i, i + len(batch), e)
+                continue
+
+            all_scored.extend(result.scored)
+            content_risk_dropped += result.content_risk_dropped
+            if result.status == "content_risk":
+                skipped += 1
+                content_risk += 1
+            elif result.status == "api_error":
+                skipped += 1
+                api_err += 1
+            elif result.status == "parse_error":
+                skipped += 1
+                parse_err += 1
+            elif result.status == "no_api_key":
+                skipped += 1
+                api_err += 1
 
     async with httpx.AsyncClient(timeout=90.0) as client:
-        # Process Chinese batches
-        for i in range(0, len(cn_items), batch_size):
-            total_batches += 1
-            batch = cn_items[i : i + batch_size]
-            try:
-                scored = await filter_batch(batch, is_english=False, client=client)
-                all_scored.extend(scored)
-            except Exception as e:
-                skipped_batches += 1
-                logger.error("CN batch %d-%d failed, skipping: %s", i, i + len(batch), e)
+        await _run_batches(cn_items, False, client)
+        await _run_batches(en_items, True, client)
 
-        # Process English batches
-        for i in range(0, len(en_items), batch_size):
-            total_batches += 1
-            batch = en_items[i : i + batch_size]
-            try:
-                scored = await filter_batch(batch, is_english=True, client=client)
-                all_scored.extend(scored)
-            except Exception as e:
-                skipped_batches += 1
-                logger.error("EN batch %d-%d failed, skipping: %s", i, i + len(batch), e)
-
-    if skipped_batches:
-        logger.warning("⚠️ %d/%d batch(es) skipped due to errors", skipped_batches, total_batches)
+    if skipped:
+        logger.warning(
+            "⚠️ %d/%d batch(es) skipped (api_error=%d, parse_error=%d, content_risk=%d)",
+            skipped, total_batches, api_err, parse_err, content_risk,
+        )
+    if content_risk_dropped:
+        logger.warning(
+            "⚠️ %d item(s) dropped by content-risk bisect (across all batches)",
+            content_risk_dropped,
+        )
     logger.info("Total items passing SiliconFlow filter: %d / %d", len(all_scored), len(items))
-    return FilterResult(scored=all_scored, skipped_batches=skipped_batches, total_batches=total_batches)
+    return FilterResult(
+        scored=all_scored,
+        skipped_batches=skipped,
+        total_batches=total_batches,
+        content_risk_batches=content_risk,
+        content_risk_dropped_items=content_risk_dropped,
+        api_error_batches=api_err,
+        parse_error_batches=parse_err,
+    )

@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     DEEPSEEK_BATCH_SIZE: int = 20                                   # 每批评分条数
     DEEPSEEK_SCORE_THRESHOLD: int = 5                               # 入库分数阈值（≥5 才存储）
     DEEPSEEK_MAX_RETRIES: int = 2                                   # API 失败最大重试次数
+    DEEPSEEK_CONTENT_PREVIEW_CHARS: int = 800                       # 送给 LLM 的正文预览长度（P0 从 200 提升到 800）
+    DEEPSEEK_MIN_CHINESE_RATIO_TITLE: float = 0.5                   # 中文标题最低中文占比（品牌名允许保留）
+    DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY: float = 0.6                 # 中文摘要最低中文占比（比标题更严）
+    DEEPSEEK_CONTENT_RISK_BISECT_ENABLED: bool = True               # P1 ⑤：内容审查触发时二分隔离，定位坏条目而不是丢整批
+    DEEPSEEK_CONTENT_RISK_MAX_DEPTH: int = 6                        # 二分最大递归深度（batch=20 → 20→10→5→3→2→1 需 5 层）
 
     # ── 调度器 — Pipeline 定时执行 ──
     PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）

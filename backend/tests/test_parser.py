@@ -235,6 +235,9 @@ class TestFilterBatchMocked:
             mock_settings.DEEPSEEK_BATCH_SIZE = 20
             mock_settings.DEEPSEEK_SCORE_THRESHOLD = 6
             mock_settings.DEEPSEEK_MAX_RETRIES = 2
+            # P1 ⑤：既有测试假设 content_risk 只调 1 次；关闭二分以保持兼容
+            mock_settings.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = False
+            mock_settings.DEEPSEEK_CONTENT_RISK_MAX_DEPTH = 6
             yield
 
     @pytest.mark.parametrize(

@@ -157,6 +157,7 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                         ai_score=item.score,
                         ai_summary=summary,
                         why_it_matters=item.why_it_matters or None,
+                        is_highlight=bool(getattr(item, "is_highlight", False)),
                         tags=tags,
                     )
                     if related_to_id is not None:

@@ -14,6 +14,10 @@ build/
 *.egg
 .venv/
 venv/
+.venv-test/
+
+# Playwright CLI local cache
+.playwright-cli/
 
 # Docker
 docker-compose.override.yml
