@@ -255,7 +255,8 @@ class NewsDeduplicator:
     """
 
     def __init__(self) -> None:
-        self._index: list[_IndexEntry] = []           # SimHash 索引（24h 窗口）
+        self._index: list[_IndexEntry] = []           # SimHash 索引（24h 窗口，Redis 持久化）
+        self._historical_index: list[_IndexEntry] = []  # P5: DB 加载的历史指纹（7天，不回写 Redis）
         self._emb_index: list[_EmbeddingEntry] = []   # Embedding 索引（90min 窗口）
 
     # ────────────────────────────────────────────
@@ -266,6 +267,22 @@ class NewsDeduplicator:
         """从 Redis 加载 SimHash 索引和 Embedding 索引。"""
         await self._load_simhash_index()
         await self._load_embedding_index()
+
+    def preload_historical(self, entries: list[tuple[str, str, int, float]]) -> None:
+        """P5: 注入 DB 加载的历史 SimHash 指纹，扩展去重窗口到 7 天。
+
+        entries: [(title, source, simhash_value, timestamp_epoch), ...]
+        这些条目加入 _historical_index，参与 _find_duplicate 比对，
+        但不会通过 save_index() 回写 Redis（避免 Redis 膨胀）。
+        """
+        for title, source, sh_val, ts in entries:
+            self._historical_index.append(_IndexEntry(
+                simhash_value=sh_val,
+                title=title,
+                source=source,
+                timestamp=ts,
+            ))
+        logger.info("Preloaded %d historical SimHash entries from DB (7-day window)", len(entries))
 
     async def save_index(self) -> None:
         """将 SimHash 索引和 Embedding 索引持久化回 Redis。"""
@@ -813,6 +830,7 @@ class NewsDeduplicator:
         """在索引中查找是否存在重复条目。
 
         第一层：SimHash 汉明距离 ≤ 5 → 直接判定重复
+               P5: 同时检查 _index（24h Redis）和 _historical_index（7天 DB），扩展旧闻识别窗口
         第二层：SequenceMatcher 标题相似度 > 0.5 → 判定重复
                包含子串包含检测。对所有索引条目执行，不受汉明距离限制。
                为控制性能，仅对 2 小时内的近期条目做逐条标题比对。
@@ -820,7 +838,9 @@ class NewsDeduplicator:
         recent_cutoff = time.time() - 2 * 3600  # 2 小时窗口
         title_candidates: list[_IndexEntry] = []
 
-        for entry in self._index:
+        # P5: 合并 Redis 索引 + DB 历史索引进行 L1 SimHash 比对
+        all_entries = self._index + self._historical_index
+        for entry in all_entries:
             dist = self._hamming(sh.value, entry.simhash_value)
             if dist <= SIMHASH_HAMMING_THRESHOLD:
                 return entry

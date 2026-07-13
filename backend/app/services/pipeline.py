@@ -70,6 +70,39 @@ async def _mark_urls_as_seen(urls: list[str]) -> None:
         logger.error("Failed to mark URLs as seen in Redis: %s", e)
 
 
+async def _load_historical_fingerprints() -> list[tuple[str, str, int, float]]:
+    """P5: 从 DB 加载最近 N 天的 SimHash 指纹，用于注入去重器扩展旧闻识别窗口。
+
+    返回 [(title, source, simhash_value, timestamp_epoch), ...]
+    """
+    days = getattr(settings, "DEDUP_HISTORICAL_DAYS", 7)
+    if not isinstance(days, int) or days < 1:
+        days = 7
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    try:
+        async with async_session() as session:
+            from sqlalchemy import select as sa_select
+            stmt = (
+                sa_select(News.title, News.source, News.simhash_fingerprint, News.published_at)
+                .where(News.published_at.isnot(None))
+                .where(News.published_at >= cutoff)
+                .where(News.simhash_fingerprint.isnot(None))
+            )
+            result = await session.execute(stmt)
+            entries: list[tuple[str, str, int, float]] = []
+            for row in result.all():
+                ts = row.published_at.timestamp() if row.published_at else 0.0
+                entries.append((row.title, row.source, row.simhash_fingerprint, ts))
+            logger.info(
+                "Loaded %d historical SimHash fingerprints from DB (%d-day window)",
+                len(entries), days,
+            )
+            return entries
+    except Exception as e:
+        logger.warning("Failed to load historical fingerprints: %s", e)
+        return []
+
+
 async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[str]]:
     """将评分通过的新闻条目存入 PostgreSQL。
 
@@ -147,6 +180,15 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                     if raw_related_url:
                         related_to_id = url_to_id.get(raw_related_url)
 
+                    # P5: 计算去重指纹并持久化
+                    from app.utils.deduplicator import NewsDeduplicator
+                    import hashlib as _hashlib
+                    dedup_text = NewsDeduplicator._build_text(title, item.raw.content or "")
+                    sh = NewsDeduplicator._compute_simhash(dedup_text)
+                    content_hash = _hashlib.sha256(
+                        (title + (item.raw.content or "")[:500]).encode("utf-8", errors="ignore")
+                    ).hexdigest()
+
                     values = dict(
                         title=title,
                         content=item.raw.content,
@@ -159,6 +201,8 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                         why_it_matters=item.why_it_matters or None,
                         is_highlight=bool(getattr(item, "is_highlight", False)),
                         tags=tags,
+                        content_hash=content_hash,
+                        simhash_fingerprint=sh.value,
                     )
                     if related_to_id is not None:
                         values["related_to_id"] = related_to_id
@@ -313,6 +357,10 @@ async def run_pipeline() -> dict:
     try:
         dedup = NewsDeduplicator()
         await dedup.load_index()
+        # P5: 注入 DB 历史指纹，扩展旧闻识别窗口到 7 天
+        historical = await _load_historical_fingerprints()
+        if historical:
+            dedup.preload_historical(historical)
         unique_items = await dedup.deduplicate(raw_items)
         await dedup.save_index()
     except Exception as e:

@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     LLM_TRANSLATE_BATCH_SIZE: int = Field(20, validation_alias=AliasChoices("LLM_TRANSLATE_BATCH_SIZE", "DEEPSEEK_TRANSLATE_BATCH_SIZE"))  # 翻译阶段批次大小
     LLM_MAX_CONCURRENCY: int = Field(3, validation_alias=AliasChoices("LLM_MAX_CONCURRENCY", "DEEPSEEK_MAX_CONCURRENCY"))  # 批次并发度
 
+    # ── 去重 — 历史窗口扩展 ──
+    DEDUP_HISTORICAL_DAYS: int = 7  # P5: 评分前从 DB 加载 N 天的 SimHash 指纹注入去重索引，识别跨天旧闻
+
     # ── 调度器 — Pipeline 定时执行 ──
     PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）
     PIPELINE_END_HOUR: int = 23    # 结束小时（0-23）

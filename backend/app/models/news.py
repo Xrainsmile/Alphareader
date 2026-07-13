@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, SmallInteger, String, Text, func
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, SmallInteger, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -45,6 +45,9 @@ class News(Base):
     catalyst_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     sentiment_entity: Mapped[str | None] = mapped_column(String(128), nullable=True)
     sentiment_reasoning: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # P5: 去重指纹——持久化到 DB，评分前加载 7 天历史用于跨天旧闻识别
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    simhash_fingerprint: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
