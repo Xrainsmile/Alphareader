@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY: float = 0.6                 # 中文摘要最低中文占比（比标题更严）
     DEEPSEEK_CONTENT_RISK_BISECT_ENABLED: bool = True               # P1 ⑤：内容审查触发时二分隔离，定位坏条目而不是丢整批
     DEEPSEEK_CONTENT_RISK_MAX_DEPTH: int = 6                        # 二分最大递归深度（batch=20 → 20→10→5→3→2→1 需 5 层）
+    DEEPSEEK_TWO_STAGE_EN_ENABLED: bool = True                      # P3 ②：英文两阶段评分（先评分后翻译），节省低分新闻翻译 token
+    DEEPSEEK_TRANSLATE_BATCH_SIZE: int = 20                         # 翻译阶段批次大小（通过阈值的条目数可能较少，可适当放大）
 
     # ── 调度器 — Pipeline 定时执行 ──
     PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）

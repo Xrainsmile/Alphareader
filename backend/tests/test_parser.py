@@ -238,6 +238,9 @@ class TestFilterBatchMocked:
             # P1 ⑤：既有测试假设 content_risk 只调 1 次；关闭二分以保持兼容
             mock_settings.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = False
             mock_settings.DEEPSEEK_CONTENT_RISK_MAX_DEPTH = 6
+            # P3 ②：既有英文测试假设单阶段；关闭两阶段以保持兼容
+            mock_settings.DEEPSEEK_TWO_STAGE_EN_ENABLED = False
+            mock_settings.DEEPSEEK_TRANSLATE_BATCH_SIZE = 20
             yield
 
     @pytest.mark.parametrize(

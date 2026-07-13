@@ -67,7 +67,7 @@ class TestBisectCore:
         items = _make_items(4)
         bad_titles = {items[2].title}  # 第 3 条
 
-        async def fake_score_once(batch, is_english, client):
+        async def fake_score_once(batch, is_english, client, **kwargs):
             # 只要包含 bad item 就返回 content_risk
             if any(it.title in bad_titles for it in batch):
                 return BatchResult(scored=[], status="content_risk")
@@ -96,7 +96,7 @@ class TestBisectCore:
         """batch=1 且 bad → 直接丢弃，dropped=1。"""
         items = _make_items(1)
 
-        async def fake_score_once(batch, is_english, client):
+        async def fake_score_once(batch, is_english, client, **kwargs):
             return BatchResult(scored=[], status="content_risk")
 
         with patch("app.services.deepseek_filter._score_batch_once", side_effect=fake_score_once):
@@ -113,7 +113,7 @@ class TestBisectCore:
         items = _make_items(4)
         call_count = {"n": 0}
 
-        async def fake_score_once(batch, is_english, client):
+        async def fake_score_once(batch, is_english, client, **kwargs):
             call_count["n"] += 1
             return BatchResult(scored=[], status="content_risk")
 
@@ -131,7 +131,7 @@ class TestBisectCore:
         """2 条都 bad → 递归拆到 batch=1 各自触发丢弃 → dropped=2。"""
         items = _make_items(2)
 
-        async def fake_score_once(batch, is_english, client):
+        async def fake_score_once(batch, is_english, client, **kwargs):
             return BatchResult(scored=[], status="content_risk")
 
         with patch("app.services.deepseek_filter._score_batch_once", side_effect=fake_score_once):
@@ -268,7 +268,7 @@ class TestFilterNewsAccumulation:
         """跨多个 batch 的 dropped 数应累加进 FilterResult.content_risk_dropped_items。"""
         items = _make_items(6)
 
-        async def fake_filter_batch_detailed(batch, is_english, client):
+        async def fake_filter_batch_detailed(batch, is_english, client, **kwargs):
             # 每个 batch 假装 dropped=1，剩余全部 scored
             from app.services.deepseek_filter import ScoredNewsItem
             scored = [
