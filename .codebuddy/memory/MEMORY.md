@@ -43,9 +43,9 @@
 - 若未来再 404/10012：直接逆向 cls.cn 前端 bundle（`/_next/static/chunks/pages/telegraph-*.js` 引用的请求层模块）核对 `_cls_sign` 与 `sv` 版本号，无需全网试错。
 - 历史端点：`nodeapi/updateTelegraphList` → `nodeapi/telegraphList` → `v1/roll/get_roll_list`（均已废弃前者）。
 
-## LLM 评分模块 deepseek_filter.py（2026-07-13 大改）
+## LLM 评分模块 llm_news_filter.py（2026-07-13 大改，P0-P4）
 
-**核心文件**：`backend/app/services/deepseek_filter.py`（不是 deepseek 而是 SiliconFlow，函数/日志名沿用 deepseek 是历史遗留）。
+**核心文件**：`backend/app/services/llm_news_filter.py`（P4-B 从 deepseek_filter.py 重命名，旧文件保留为 re-export shim）。调用 SiliconFlow Qwen3-8B，函数/日志/配置名沿用 deepseek 是历史遗留，P4-B 已统一为 llm。
 
 **关键数据结构**：
 - `BatchResult(scored, status, processed_ids, missing_ids, duplicate_ids, content_risk_dropped, raw_response)`：`status` 为 `Literal["ok"|"api_error"|"parse_error"|"content_risk"|"empty_after_filter"|"no_api_key"]`。
@@ -66,13 +66,15 @@
 - **is_highlight=true 需同时**：score≥8 + 明确强催化 + 明文量化数据 + 一周内事件。代码解析层有硬防线：score<8 时强制降级为 false。
 - **P3 ① schema 对称**：中文 prompt 输出 reason+summary+why_it_matters；英文 prompt 输出 reason+chinese_title+chinese_summary+why_it_matters。
 
-**关键配置**（`app/config.py`）：
-- `DEEPSEEK_BATCH_SIZE=20 / SCORE_THRESHOLD=5 / MAX_RETRIES=2`
-- `DEEPSEEK_CONTENT_PREVIEW_CHARS=800`（旧值 200；仅送 200 字导致模型无法判定旧闻/预期差）
-- `DEEPSEEK_MIN_CHINESE_RATIO_TITLE=0.5 / SUMMARY=0.6`
-- `DEEPSEEK_CONTENT_RISK_BISECT_ENABLED=True / MAX_DEPTH=6`（关闭时回退到"整批丢弃"老行为）
-- `DEEPSEEK_TWO_STAGE_EN_ENABLED=True / DEEPSEEK_TRANSLATE_BATCH_SIZE=20`（P3 ②，关闭时英文走单阶段 SYSTEM_PROMPT_EN）
-- `DEEPSEEK_MAX_CONCURRENCY=3`（P3 ⑤，批次并发度，避免 API 限流；=1 退化为串行）
+**关键配置**（`app/config.py`，P4-B 从 DEEPSEEK_* 重命名为 LLM_*，用 AliasChoices 保持 .env 向后兼容）：
+- `LLM_BATCH_SIZE=20 / LLM_SCORE_THRESHOLD=5 / LLM_MAX_RETRIES=2`
+- `LLM_CONTENT_PREVIEW_CHARS=800`（旧值 200；仅送 200 字导致模型无法判定旧闻/预期差）
+- `LLM_MIN_CHINESE_RATIO_TITLE=0.5 / SUMMARY=0.6`
+- `LLM_CONTENT_RISK_BISECT_ENABLED=True / MAX_DEPTH=6`（关闭时回退到"整批丢弃"老行为）
+- `LLM_TWO_STAGE_EN_ENABLED=True / LLM_TRANSLATE_BATCH_SIZE=20`（P3 ②，关闭时英文走单阶段 SYSTEM_PROMPT_EN）
+- `LLM_MAX_CONCURRENCY=3`（P3 ⑤，批次并发度，避免 API 限流；=1 退化为串行）
+- 保留 `DEEPSEEK_API_KEY/URL/MODEL`（摘要服务确实用 DeepSeek-V3）
+- P4-A 退避：`_backoff_delay()` = `min(30, 2**attempt) + uniform(0,1)`，429 优先读 Retry-After 头
 
 **Ticker 校验规则**（严格）：
 - A股：`^\d{6}$`
@@ -90,10 +92,32 @@
 - `tests/test_deepseek_filter_p2.py`：8 个（is_highlight 提取、硬防线、中英文分支）
 - `tests/test_deepseek_filter_p3.py`：16 个（schema对称4 + 两阶段6 + 注入防护4 + 顺序保留2）
 - `tests/test_parser.py`：40 个既有，保持向后兼容
-- 全套：**116 passed**
-- 本地跑测试用 `.venv-test`（`/opt/homebrew/bin/python3.11 -m venv backend/.venv-test`），backend 里没 sqlalchemy 也能跑（deepseek_filter 不依赖 DB）。
+- 全套：**129 passed**（P0:44 + P1:8 + P2:8 + P3:19 + parser:40 + json_extractor:10）
+- 本地跑测试用 `.venv-test`（`/opt/homebrew/bin/python3.11 -m venv backend/.venv-test`），backend 里没 sqlalchemy 也能跑（llm_news_filter 不依赖 DB）。
 
-**test_parser.py `_patch_api_key` 兼容**：用 MagicMock 时新增的 `DEEPSEEK_CONTENT_RISK_BISECT_ENABLED` 和 `DEEPSEEK_TWO_STAGE_EN_ENABLED` 需要显式设 False，否则 MagicMock() 是 truthy 会触发二分/两阶段逻辑，让"只调 1 次 API"断言失败。test_p1.py mock 函数需加 `**kwargs` 接受 `system_prompt`。
+**test_parser.py `_patch_api_key` 兼容**：用 MagicMock 时新增的 `LLM_CONTENT_RISK_BISECT_ENABLED` 和 `LLM_TWO_STAGE_EN_ENABLED` 需要显式设 False，否则 MagicMock() 是 truthy 会触发二分/两阶段逻辑，让"只调 1 次 API"断言失败。test_p1.py mock 函数需加 `**kwargs` 接受 `system_prompt`。test_p1/p3 mock 的 `_call_llm_once` 返回值需为 4 元组（P4-A 加了 `retry_after`）。
+
+## 去重系统（P5 跨天旧闻识别）
+
+**已有去重技术**（`backend/app/utils/deduplicator.py`）：
+- URL hash（Redis Set + DB unique）
+- SimHash + 汉明距离 ≤5（Redis 24h 窗口）
+- SequenceMatcher 标题相似度 >0.5（2h 窗口）
+- TF-IDF 余弦相似度 >0.65（批次内部）
+- Embedding 向量语义去重（Redis 90min 窗口，cos>0.80 去重 / 0.67~0.80 聚合）
+- 数值抗误杀（灰色地带金融数值实体比对）
+- 事件聚合（`related_to_url` → `related_to_id` 自引用 FK）
+- 源优先级排序
+
+**P5 新增——跨天旧闻识别**：
+- News 表加 `content_hash`(SHA-256, indexed) + `simhash_fingerprint`(BIGINT, indexed)，迁移 `p5q3r4s5t6u7v9`
+- Pipeline 评分前 `_load_historical_fingerprints()` 从 DB 加载 7 天指纹 → `dedup.preload_historical()` 注入 `_historical_index`
+- `_find_duplicate` 同时查 `_index`(24h Redis) + `_historical_index`(7天 DB) 做 L1 SimHash 比对
+- 历史指纹不回写 Redis，每次 pipeline run 重建
+- `_store_scored_items` 存储时计算并持久化两个 hash
+- 配置 `DEDUP_HISTORICAL_DAYS=7`
+- **上线必须先 `alembic upgrade head`**（p5q3r4s5t6u7v9），否则 pipeline 写入报 unknown column
+- 存量新闻无指纹（字段 NULL），新入库新闻才有，旧闻识别能力随数据积累逐步增强
 
 **News 表 is_highlight 字段**（2026-07-13 迁移）：
 - Alembic `q3r4s5t6u7v8_add_is_highlight`（down_revision=`p2q3r4s5t6u7`），`Boolean NOT NULL DEFAULT false`，带索引。
