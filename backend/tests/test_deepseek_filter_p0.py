@@ -274,7 +274,7 @@ class TestParseResponseDetailed:
 # ═══════════════════════════════════════════════════════════════
 
 class TestEnglishTranslationValidation:
-    def test_reject_fake_translation_low_ratio(self):
+    def test_keep_translation_with_any_chinese(self):
         # "OpenAI releases GPT-5，今日发布" — 4 汉字 21 字母 ratio ~0.19
         raw = json.dumps([{
             "id": 1, "score": 8,
@@ -287,8 +287,8 @@ class TestEnglishTranslationValidation:
         batch = _make_batch(1, is_english=True)
         scored, _, _, _, _ = _parse_response_detailed(raw, batch, is_english=True)
         assert len(scored) == 1
-        # chinese_title 太少中文被丢，回落到 summary 前 30 字（如果 summary 中文占比够高的话）
-        assert scored[0].chinese_title != "OpenAI releases GPT-5，今日发布"
+        # 含中文即保留（新策略：不再因占比不足丢弃）
+        assert scored[0].chinese_title == "OpenAI releases GPT-5，今日发布"
 
     def test_accept_brand_preservation(self):
         # "英伟达 Q3 财报大超预期" 中文主体 + 品牌保留 — ratio 高

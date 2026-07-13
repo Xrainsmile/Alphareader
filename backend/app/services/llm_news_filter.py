@@ -560,11 +560,7 @@ def _parse_response_detailed(
         return [], set(), set(range(1, len(batch) + 1)), set(), False
 
     threshold = settings.LLM_SCORE_THRESHOLD
-    # getattr 兜底：测试 mock 可能没定义这两个字段，用默认值避免 MagicMock 参与比较
-    _title_ratio = getattr(settings, "LLM_MIN_CHINESE_RATIO_TITLE", 0.5)
-    _summary_ratio = getattr(settings, "LLM_MIN_CHINESE_RATIO_SUMMARY", 0.6)
-    title_ratio = float(_title_ratio) if isinstance(_title_ratio, (int, float)) else 0.5
-    summary_ratio = float(_summary_ratio) if isinstance(_summary_ratio, (int, float)) else 0.6
+
 
     processed: list[int] = []      # 保留顺序用于 duplicate 检测
     scored: list[ScoredNewsItem] = []
@@ -630,23 +626,23 @@ def _parse_response_detailed(
             chinese_summary_raw = item.get("chinese_summary", "")
             chinese_summary = str(chinese_summary_raw)[:200] if isinstance(chinese_summary_raw, str) else ""
 
-            # 中文占比校验（P0 ⑦）
-            if chinese_title and not _is_chinese_dominant(chinese_title, title_ratio):
+            # 中文校验（放宽：标题/摘要含任一中文字符即接受，不再要求占比）
+            if chinese_title and not _contains_chinese(chinese_title):
                 logger.warning(
-                    "chinese_title not Chinese-dominant (ratio=%.2f), discarding: %s",
-                    _chinese_ratio(chinese_title), chinese_title[:50],
+                    "chinese_title has no Chinese characters, discarding: %s",
+                    chinese_title[:50],
                 )
                 chinese_title = ""
 
-            if chinese_summary and not _is_chinese_dominant(chinese_summary, summary_ratio):
+            if chinese_summary and not _contains_chinese(chinese_summary):
                 logger.warning(
-                    "chinese_summary not Chinese-dominant (ratio=%.2f), discarding: %s",
-                    _chinese_ratio(chinese_summary), chinese_summary[:50],
+                    "chinese_summary has no Chinese characters, discarding: %s",
+                    chinese_summary[:50],
                 )
                 chinese_summary = ""
 
-            # 兜底：title 空 + summary 有中文 → 从 summary 截前 30 字
-            if not chinese_title and chinese_summary and _is_chinese_dominant(chinese_summary, summary_ratio):
+            # 兜底：title 空 + summary 含中文 → 从 summary 截前 30 字
+            if not chinese_title and chinese_summary and _contains_chinese(chinese_summary):
                 chinese_title = chinese_summary[:30].rstrip("，。、；：")
                 logger.info(
                     "chinese_title empty, fallback from summary: '%s' (original: '%s')",
@@ -988,10 +984,7 @@ def _parse_translate_response(
     if results is None:
         return {}
 
-    _title_ratio = getattr(settings, "LLM_MIN_CHINESE_RATIO_TITLE", 0.5)
-    _summary_ratio = getattr(settings, "LLM_MIN_CHINESE_RATIO_SUMMARY", 0.6)
-    title_ratio = float(_title_ratio) if isinstance(_title_ratio, (int, float)) else 0.5
-    summary_ratio = float(_summary_ratio) if isinstance(_summary_ratio, (int, float)) else 0.6
+
 
     translations: dict[int, dict[str, str]] = {}
     for item in results:
@@ -1012,22 +1005,22 @@ def _parse_translate_response(
         why_raw = item.get("why_it_matters", "")
         why_it_matters = str(why_raw)[:256] if isinstance(why_raw, str) else ""
 
-        # 中文占比校验
-        if chinese_title and not _is_chinese_dominant(chinese_title, title_ratio):
+        # 中文校验（放宽：含任一中文字符即接受，不再要求占比）
+        if chinese_title and not _contains_chinese(chinese_title):
             logger.warning(
-                "[translate] chinese_title not Chinese-dominant, discarding: %s",
+                "[translate] chinese_title has no Chinese characters, discarding: %s",
                 chinese_title[:50],
             )
             chinese_title = ""
-        if chinese_summary and not _is_chinese_dominant(chinese_summary, summary_ratio):
+        if chinese_summary and not _contains_chinese(chinese_summary):
             logger.warning(
-                "[translate] chinese_summary not Chinese-dominant, discarding: %s",
+                "[translate] chinese_summary has no Chinese characters, discarding: %s",
                 chinese_summary[:50],
             )
             chinese_summary = ""
 
-        # 兜底：title 空 + summary 有中文 → 截前 30 字
-        if not chinese_title and chinese_summary and _is_chinese_dominant(chinese_summary, summary_ratio):
+        # 兜底：title 空 + summary 含中文 → 截前 30 字
+        if not chinese_title and chinese_summary and _contains_chinese(chinese_summary):
             chinese_title = chinese_summary[:30].rstrip("，。、；：")
 
         translations[idx1] = {
