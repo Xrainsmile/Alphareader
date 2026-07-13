@@ -29,32 +29,35 @@ export function useNewsFilter() {
   ]
 
   // ── 实际生效的筛选值 ──
-  const minScore = ref(5)
+  const minScore = ref(7)
   const currentSource = ref('')
   const currentSort = ref('hot')
-  const maxAgeHours = ref(72)
+  const maxAgeHours = ref(24)
   const currentCategory = ref('')
+  const onlyHighlight = ref(false)
 
   // ── 面板暂存值 ──
   const filterOpen = ref(false)
   const tmpSort = ref('hot')
-  const tmpAge = ref(72)
+  const tmpAge = ref(24)
   const tmpSource = ref('')
-  const tmpScore = ref(5)
+  const tmpScore = ref(7)
+  const tmpHighlight = ref(false)
 
   const hasActiveFilter = computed(() => {
-    return currentSort.value !== 'hot' || minScore.value !== 5 || currentSource.value !== '' || maxAgeHours.value !== 72
+    return currentSort.value !== 'hot' || minScore.value !== 7 || currentSource.value !== '' || maxAgeHours.value !== 24 || onlyHighlight.value
   })
 
   const filterTags = computed(() => {
     const tags = []
+    if (onlyHighlight.value) tags.push('🔥 重点')
     const tab = sortTabs.find(t => t.value === currentSort.value)
     if (tab && currentSort.value !== 'hot') tags.push(tab.label)
     if (currentSort.value === 'hot') tags.push('Gravity')
     const age = ageOptions.find(a => a.value === maxAgeHours.value)
-    if (age && maxAgeHours.value !== 72) tags.push(age.label)
+    if (age && maxAgeHours.value !== 24) tags.push(age.label)
     if (currentSource.value) tags.push(currentSource.value)
-    if (minScore.value !== 5) tags.push(`≥${minScore.value}`)
+    if (minScore.value !== 7) tags.push(`≥${minScore.value}`)
     return tags
   })
 
@@ -66,6 +69,7 @@ export function useNewsFilter() {
       category: currentCategory.value || undefined,
       sort: currentSort.value,
       max_age_hours: maxAgeHours.value || undefined,
+      highlight_only: onlyHighlight.value || undefined,
     }
   }
 
@@ -79,6 +83,7 @@ export function useNewsFilter() {
     tmpAge.value = maxAgeHours.value
     tmpSource.value = currentSource.value
     tmpScore.value = minScore.value
+    tmpHighlight.value = onlyHighlight.value
     filterOpen.value = true
   }
 
@@ -88,6 +93,7 @@ export function useNewsFilter() {
     maxAgeHours.value = tmpAge.value
     currentSource.value = tmpSource.value
     minScore.value = tmpScore.value
+    onlyHighlight.value = tmpHighlight.value
     filterOpen.value = false
     return true
   }
@@ -100,9 +106,10 @@ export function useNewsFilter() {
   /** 重置暂存值为默认 */
   function resetTmp() {
     tmpSort.value = 'hot'
-    tmpAge.value = 72
+    tmpAge.value = 24
     tmpSource.value = ''
-    tmpScore.value = 6
+    tmpScore.value = 7
+    tmpHighlight.value = false
   }
 
   /** 切换分类 Tab，返回 true 表示需要重新加载 */
@@ -127,12 +134,14 @@ export function useNewsFilter() {
     currentSort,
     maxAgeHours,
     currentCategory,
+    onlyHighlight,
     // 面板
     filterOpen,
     tmpSort,
     tmpAge,
     tmpSource,
     tmpScore,
+    tmpHighlight,
     // 计算
     hasActiveFilter,
     filterTags,

@@ -8,6 +8,9 @@
           <text class="filter-trigger-text">筛选</text>
           <text class="filter-arrow" :class="{ 'filter-arrow-up': filterOpen }">›</text>
         </view>
+        <view class="highlight-chip" :class="{ 'highlight-chip-active': onlyHighlight }" @click="$emit('toggle-highlight')">
+          <text class="highlight-chip-text" :class="{ 'highlight-chip-text-active': onlyHighlight }">🔥 只看重点</text>
+        </view>
         <view v-if="filterTags.length" class="filter-tags">
           <view v-for="tag in filterTags" :key="tag" class="filter-tag">
             <text class="filter-tag-text">{{ tag }}</text>
@@ -20,6 +23,18 @@
     <!-- 筛选浮窗 -->
     <view v-if="filterOpen" class="filter-popover">
       <view class="filter-popover-body">
+        <!-- 只看重点 -->
+        <view class="filter-row">
+          <text class="filter-row-label">重点</text>
+          <view class="filter-row-chips">
+            <view class="fc" :class="{ 'fc-active': !tmpHighlight }" @click="$emit('update:tmpHighlight', false)">
+              <text class="fc-text" :class="{ 'fc-text-active': !tmpHighlight }">全部</text>
+            </view>
+            <view class="fc" :class="{ 'fc-active': tmpHighlight }" @click="$emit('update:tmpHighlight', true)">
+              <text class="fc-text" :class="{ 'fc-text-active': tmpHighlight }">🔥 仅重点</text>
+            </view>
+          </view>
+        </view>
         <!-- 排序 -->
         <view class="filter-row">
           <text class="filter-row-label">排序</text>
@@ -127,11 +142,14 @@ defineProps({
   hasActiveFilter: { type: Boolean, default: false },
   filterTags: { type: Array, default: () => [] },
   total: { type: Number, default: 0 },
+  // 实际生效值
+  onlyHighlight: { type: Boolean, default: false },
   // 面板暂存值
   tmpSort: { type: String, default: 'hot' },
-  tmpAge: { type: Number, default: 72 },
+  tmpAge: { type: Number, default: 24 },
   tmpSource: { type: String, default: '' },
-  tmpScore: { type: Number, default: 5 },
+  tmpScore: { type: Number, default: 7 },
+  tmpHighlight: { type: Boolean, default: false },
   // 常量配置
   sortTabs: { type: Array, default: () => [] },
   ageOptions: { type: Array, default: () => [] },
@@ -143,6 +161,7 @@ defineProps({
 
 defineEmits([
   'toggle',
+  'toggle-highlight',
   'confirm',
   'cancel',
   'reset',
@@ -150,5 +169,6 @@ defineEmits([
   'update:tmpAge',
   'update:tmpSource',
   'update:tmpScore',
+  'update:tmpHighlight',
 ])
 </script>

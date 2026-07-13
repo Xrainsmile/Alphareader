@@ -61,10 +61,12 @@
       :has-active-filter="hasActiveFilter"
       :filter-tags="filterTags"
       :total="total"
+      :only-highlight="onlyHighlight"
       :tmp-sort="tmpSort"
       :tmp-age="tmpAge"
       :tmp-source="tmpSource"
       :tmp-score="tmpScore"
+      :tmp-highlight="tmpHighlight"
       :sort-tabs="sortTabs"
       :age-options="ageOptions"
       :cn-sources="cnSources"
@@ -72,6 +74,7 @@
       :tech-sources="techSources"
       :score-options="scoreOptions"
       @toggle="openFilter"
+      @toggle-highlight="onToggleHighlight"
       @confirm="onConfirmFilter"
       @cancel="cancelFilter"
       @reset="resetTmp"
@@ -79,6 +82,7 @@
       @update:tmp-age="(v) => tmpAge = v"
       @update:tmp-source="(v) => tmpSource = v"
       @update:tmp-score="(v) => tmpScore = v"
+      @update:tmp-highlight="(v) => tmpHighlight = v"
     />
 
     <!-- 新闻列表（聚合模式） -->
@@ -192,11 +196,13 @@ const {
   minScore,
   currentSort,
   currentCategory,
+  onlyHighlight,
   filterOpen,
   tmpSort,
   tmpAge,
   tmpSource,
   tmpScore,
+  tmpHighlight,
   hasActiveFilter,
   filterTags,
   buildFilterParams,
@@ -233,6 +239,12 @@ function onSwitchCategory(cat) {
 /** 确认筛选 */
 function onConfirmFilter() {
   confirmFilter()
+  doResetAndLoad()
+}
+
+/** 一键切换「只看重点」*/
+function onToggleHighlight() {
+  onlyHighlight.value = !onlyHighlight.value
   doResetAndLoad()
 }
 
@@ -873,6 +885,32 @@ onReachBottom(() => {
   margin-left: 12rpx;
 }
 
+/* ── Highlight Chip (🔥 只看重点) ── */
+:deep(.highlight-chip) {
+  flex-shrink: 0;
+  padding: 14rpx 24rpx;
+  background: var(--color-bg-card);
+  border-radius: 32rpx;
+  border: 2rpx solid var(--color-border-divider);
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+:deep(.highlight-chip-active) {
+  background: rgba(255, 59, 48, 0.08);
+  border-color: rgba(255, 59, 48, 0.3);
+}
+:deep(.highlight-chip-text) {
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+:deep(.highlight-chip-text-active) {
+  color: var(--color-up);
+  font-weight: 700;
+}
+
 /* ── Filter Popover (浮窗) ── */
 :deep(.filter-popover) {
   position: absolute;
@@ -1509,6 +1547,23 @@ onReachBottom(() => {
   :deep(.stats-text-inline) {
     font-size: 12px;
     margin-left: 8px;
+  }
+
+  /* ── Highlight Chip PC ── */
+  :deep(.highlight-chip) {
+    padding: 8px 16px;
+    border-radius: 20px;
+    border-width: 1px;
+  }
+  :deep(.highlight-chip:hover) {
+    border-color: rgba(255, 59, 48, 0.3);
+    background: rgba(255, 59, 48, 0.04);
+  }
+  :deep(.highlight-chip-active:hover) {
+    background: rgba(255, 59, 48, 0.12);
+  }
+  :deep(.highlight-chip-text) {
+    font-size: 14px;
   }
 
   /* ── Filter Popover (PC) ── */

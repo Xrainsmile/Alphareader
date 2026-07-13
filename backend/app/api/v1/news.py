@@ -78,13 +78,14 @@ async def clear_dedup_cache(_: str | None = Depends(require_api_key)):
 async def list_news(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    min_score: int = Query(5, ge=0, le=10),
+    min_score: int = Query(7, ge=0, le=10),
     source: str | None = Query(None),
     category: str | None = Query(None, description="分类筛选: 财经 / 科技"),
     sector: str | None = Query(None),
     sort: SortMode = Query(SortMode.HOT, description="Sort mode: hot (gravity decay), latest, score"),
     gravity: float = Query(1.8, ge=0.5, le=5.0, description="Gravity factor for hot sort"),
-    max_age_hours: int | None = Query(72, ge=1, le=720, description="Max news age in hours; omit for unlimited"),
+    max_age_hours: int | None = Query(24, ge=1, le=720, description="Max news age in hours; omit for unlimited"),
+    highlight_only: bool = Query(False, description="只返回 is_highlight=true 的精品新闻"),
     db: AsyncSession = Depends(get_db),
     _: str | None = Depends(require_api_key),
 ):
@@ -97,6 +98,8 @@ async def list_news(
     - **score**: AI 评分倒序，最高优先。
     """
     conditions = [News.ai_score >= min_score]
+    if highlight_only:
+        conditions.append(News.is_highlight == True)  # noqa: E712
     if source:
         conditions.append(News.source == source)
     if category:
@@ -208,7 +211,7 @@ async def hot_topics(
     limit: int = Query(10, ge=1, le=50),
     min_score: int = Query(5, ge=0, le=10),
     category: str | None = Query(None, description="分类筛选: 财经 / 科技"),
-    window_hours: int = Query(72, ge=1, le=720, description="统计时间窗口（小时）"),
+    window_hours: int = Query(24, ge=1, le=720, description="统计时间窗口（小时）"),
     db: AsyncSession = Depends(get_db),
     _: str | None = Depends(require_api_key),
 ):
