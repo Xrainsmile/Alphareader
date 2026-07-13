@@ -15,10 +15,6 @@
     <view class="header">
       <view class="header-top">
         <text class="logo">AlphaReader</text>
-        <view class="inspire-btn" :class="{ 'inspire-btn-copied': promptCopied }" @click="onInspireCopy">
-          <image v-if="!promptCopied" class="inspire-icon" src="/static/icons/circle-three.svg" mode="aspectFit" />
-          <image v-else class="inspire-icon" src="/static/icons/done-all.svg" mode="aspectFit" />
-        </view>
       </view>
       <view class="subtitle-row">
         <text class="subtitle">高频金融情报 · 信噪比优先</text>
@@ -267,9 +263,6 @@ const {
   switchCategory,
 } = useNewsFilter()
 
-// ── Inspire Button ──
-const promptCopied = ref(false)
-
 // ── 评分说明面板 ──
 const showScoreInfo = ref(false)
 
@@ -386,111 +379,6 @@ function onOpenUrl(url, newsId) {
   // #endif
   // #ifndef H5
   uni.setClipboardData({ data: url })
-  // #endif
-}
-
-/** 灵感按钮：用前端已有 newsList 同步组装 Prompt 并复制 */
-function onInspireCopy() {
-  if (promptCopied.value) return
-  const list = newsList.value
-  if (!list || list.length === 0) {
-    uni.showToast({ title: '暂无新闻数据', icon: 'none' })
-    return
-  }
-  const top = list.slice(0, 66)
-  const dateStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
-  const newsBlock = top.map((item, i) => {
-    const tags = (item.tags && item.tags.length) ? `【${item.tags.join('、')}】` : ''
-    const score = item.ai_score != null ? `[评分: ${item.ai_score}]` : ''
-    const summary = item.ai_summary || ''
-    return `${i + 1}. ${tags} ${item.title} ${score}\n   ${summary}`
-  }).join('\n\n')
-
-  const prompt = `# Role
-你是一位拥有 20 年经验、擅长"基本面+趋势分析"的对冲基金首席策略师。你具备极强的信息穿透力，能从碎片化的新闻中识别出影响市场估值和流动性的核心逻辑，并识别出隐藏在利好背后的潜在风险。
-
-# Context
-以下是 ${dateStr} 高价值情报列表（共 ${top.length} 条），已按热度排序并经 AI 评分筛选。
-
-${newsBlock}
-
-# Investment Logic Framework
-在分析时，请遵循以下分析框架：
-1. 互联性分析：识别不同新闻之间是否存在因果、协同或对冲关系。
-2. 预期差分析：判断该信息是已被市场充分定价，还是存在超预期空间。
-3. 风险收益比：每一个机会点必须伴随对应的反面逻辑。
-
-# Task
-请基于上述情报生成一份深度分析报告，要求逻辑严密，专业性极强，可读性也很高，减少 AI 语气和措辞。
-
-## 1. 市场图谱与情绪博弈
-- **核心逻辑聚类**：用一句话概括今日市场的驱动力。
-- **情绪定性**：在 [极度悲观/悲观/中性/乐观/极度乐观] 中选一，并给出理由。
-
-## 2. 核心投资信号挖掘 (High-Conviction Signals)
-选出 2-3 个最有价值的信号：
-- **【信号名称】**
-- **关联证据**：极简概括关联的新闻
-- **影响深度**：是"短期刺激"还是"中长期逻辑改变"
-- **博弈核心**：当前市场在该信号上的分歧点
-
-## 3. 风险雷达 (Blind Spots)
-- **显性风险**：情报中直接提到的负面因素
-- **隐性风险**：如果利好逻辑证伪，最坏情况是什么
-- **合规/监管预警**：政策或外部环境的潜在冲击
-
-## 4. 短线情绪展望
-- 下一个交易日/本周的情绪方向判断
-- 需要重点观察的关键数据或事件节点`
-
-  // iOS Safari 兼容
-  // #ifdef H5
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(prompt).then(() => {
-      promptCopied.value = true
-      uni.showToast({ title: 'Prompt 已复制', icon: 'success' })
-      setTimeout(() => { promptCopied.value = false }, 3000)
-    }).catch(() => {
-      _fallbackCopy(prompt)
-    })
-  } else {
-    _fallbackCopy(prompt)
-  }
-  // #endif
-  // #ifndef H5
-  uni.setClipboardData({
-    data: prompt,
-    success: () => {
-      promptCopied.value = true
-      uni.showToast({ title: 'Prompt 已复制', icon: 'success' })
-      setTimeout(() => { promptCopied.value = false }, 3000)
-    },
-  })
-  // #endif
-}
-
-/** Clipboard fallback */
-function _fallbackCopy(text) {
-  // #ifdef H5
-  try {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0'
-    document.body.appendChild(ta)
-    ta.focus()
-    ta.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(ta)
-    if (ok) {
-      promptCopied.value = true
-      uni.showToast({ title: 'Prompt 已复制', icon: 'success' })
-      setTimeout(() => { promptCopied.value = false }, 3000)
-    } else {
-      uni.showToast({ title: '复制失败，请手动复制', icon: 'none' })
-    }
-  } catch {
-    uni.showToast({ title: '复制失败', icon: 'none' })
-  }
   // #endif
 }
 
@@ -660,34 +548,6 @@ onReachBottom(() => {
   -webkit-user-select: none;
 }
 
-/* ── Inspire Button ── */
-.inspire-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 50%;
-  background: rgba(26, 26, 46, 0.06);
-  border: 1rpx solid rgba(26, 26, 46, 0.1);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-}
-.inspire-btn:active {
-  transform: scale(0.9);
-  background: rgba(26, 26, 46, 0.12);
-}
-.inspire-btn-copied {
-  background: rgba(52, 199, 89, 0.1);
-  border-color: rgba(52, 199, 89, 0.25);
-}
-.inspire-icon {
-  width: 36rpx;
-  height: 36rpx;
-}
 .subtitle {
   font-size: 24rpx;
   color: var(--color-text-muted);
@@ -1696,19 +1556,6 @@ onReachBottom(() => {
     font-size: 28px;
     letter-spacing: 0.5px;
   }
-  .inspire-btn {
-    width: 36px;
-    height: 36px;
-  }
-  .inspire-btn:hover {
-    background: rgba(26, 26, 46, 0.1);
-    box-shadow: 0 2px 8px rgba(26, 26, 46, 0.08);
-  }
-  .inspire-btn-copied:hover {
-    background: rgba(52, 199, 89, 0.15);
-    box-shadow: 0 2px 8px rgba(52, 199, 89, 0.1);
-  }
-  .inspire-icon { width: 20px; height: 20px; }
   .subtitle {
     font-size: 13px;
     margin-top: 4px;
