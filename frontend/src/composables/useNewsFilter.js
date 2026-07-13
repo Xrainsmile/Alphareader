@@ -12,7 +12,7 @@ export function useNewsFilter() {
     { value: '财经', label: '财经' },
     { value: '科技', label: '科技' },
   ]
-  const cnSources = ['财联社']
+  const cnSources = ['富途新闻']
   const enSources = ['MarketWatch', 'Seeking Alpha', 'Finnhub']
   const techSources = ['TechCrunch', 'Hacker News', 'OpenAI Blog', 'Google AI Blog', 'Anthropic', 'Hugging Face', 'MIT Tech Review']
   const sortTabs = [

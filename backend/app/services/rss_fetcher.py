@@ -3,7 +3,7 @@
 职责：从多个中英文金融/科技信源并发抓取新闻，返回去重后的原始新闻列表。
 
 当前活跃信源（24 个）：
-  财经类：财联社（通过 JSON API）
+  财经类：富途新闻（通过 JSON API，快讯流）
          MarketWatch / Seeking Alpha / CNBC / Investing.com（RSS/Atom XML）
          Reuters / Yahoo Finance（通过 Google News RSS 按站点过滤，无需 RSSHub）
          SEC EDGAR（Atom，一手 8-K filing 流，UA 需带联系邮箱）
@@ -872,15 +872,65 @@ _RSSHUB_INSTANCES = [
 FEED_SOURCES: list[FeedSource] = [
     # ── 财经信源 ──
     FeedSource(
-        name="财联社",
-        # 财联社电报接口（v1/roll/get_roll_list），需动态签名，见 _cls_sign
-        url="https://www.cls.cn/v1/roll/get_roll_list",
-        # 显式带浏览器 UA，规避 CloudWAF 对默认 httpx UA 的拦截
-        extra_headers=HTTP_HEADERS,
-        parser=_parse_cls,
-        signed_cls=True,
+        name="富途新闻",
+        # 富途快讯接口，无需签名，需带 Referer
+        url="https://news.futunn.com/news-site-api/main/get-flash-list?pageSize=30&lastTime=0",
+        extra_headers={
+            **HTTP_HEADERS,
+            "Referer": "https://news.futunn.com/main/live",
+        },
+        parser=_parse_futu,
     ),
     # 华尔街见闻已移除（2026-03-09，内容与财联社高度重叠）
+    # 财联社已移除（2026-07-13，电报流含大量 A 股个股异动/盘面快讯噪音，替换为富途新闻快讯）
+
+
+def _parse_futu(data: dict) -> list[RawNewsItem]:
+    """解析富途新闻快讯 API（news.futunn.com）
+
+    接口: https://news.futunn.com/news-site-api/main/get-flash-list
+    参数: pageSize（条数，支持 30+）, lastTime（分页时间戳，0=最新一页）
+
+    返回结构: data.data.news[] → 取 title/content/detailUrl/time/relatedStocks
+
+    富途快讯以宏观政策、市场要闻为主，相比财联社电报的 A 股个股异动噪音更少。
+    部分快讯 title 为空，此时用 content 前 60 字作为标题。
+    """
+    items: list[RawNewsItem] = []
+    if not isinstance(data, dict):
+        return items
+    news_list = data.get("data", {}).get("data", {}).get("news", [])
+    if not isinstance(news_list, list):
+        return items
+    for entry in news_list:
+        if not isinstance(entry, dict):
+            continue
+        title = (entry.get("title") or "").strip()
+        content = (entry.get("content") or "").strip()
+        if not title and content:
+            title = content[:60]
+        url = entry.get("detailUrl", "")
+        ts = entry.get("time")
+        published = None
+        if ts:
+            try:
+                published = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+            except (TypeError, ValueError):
+                pass
+        # relatedStocks 可能包含关联个股
+        tags: list[str] = []
+        for stock in entry.get("relatedStocks", []):
+            if isinstance(stock, dict):
+                name = stock.get("stock_name", "") or stock.get("name", "")
+                if name:
+                    tags.append(name)
+        if title and url:
+            items.append(RawNewsItem(
+                title=title, content=content or title,
+                url=url, source="富途新闻", published_at=published,
+                tags=tags[:5],
+            ))
+    return items
     # ── International Sources (RSS/Atom XML) ──
     FeedSource(
         name="MarketWatch",
