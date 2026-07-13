@@ -241,6 +241,8 @@ class TestFilterBatchMocked:
             # P3 ②：既有英文测试假设单阶段；关闭两阶段以保持兼容
             mock_settings.DEEPSEEK_TWO_STAGE_EN_ENABLED = False
             mock_settings.DEEPSEEK_TRANSLATE_BATCH_SIZE = 20
+            # P3 ⑤：并发度（既有测试不依赖并发，但需避免 MagicMock truthy 问题）
+            mock_settings.DEEPSEEK_MAX_CONCURRENCY = 3
             yield
 
     @pytest.mark.parametrize(

@@ -449,3 +449,111 @@ class TestOriginalOrderPreservation:
         assert "Test News 2" == result.scored[1].raw.title
         assert "测试新闻1" == result.scored[2].raw.title
         assert "测试新闻2" == result.scored[3].raw.title
+
+
+# ═══════════════════════════════════════════════════════════════
+# P3 ⑤：批次并发执行
+# ═══════════════════════════════════════════════════════════════
+
+class TestConcurrentBatching:
+    """filter_news 的批次并发执行，而非串行。"""
+
+    @pytest.mark.asyncio
+    async def test_batches_run_concurrently(self):
+        """多个 batch 并发执行：总耗时 ≈ 单批耗时（而非 N×单批）。"""
+        import asyncio as _asyncio
+
+        # 6 个中文条目 → batch_size=2 → 3 个 batch
+        items = [_make_cn_item(i) for i in range(1, 7)]
+
+        call_times: list[float] = []
+
+        async def fake_filter_batch_detailed(batch, is_english, client, **kwargs):
+            call_times.append(_asyncio.get_event_loop().time())
+            # 模拟每批 0.3s 延迟
+            await _asyncio.sleep(0.3)
+            scored = [
+                ScoredNewsItem(raw=it, score=7, reason="ok", summary="s",
+                               tags=[], why_it_matters="w")
+                for it in batch
+            ]
+            return BatchResult(scored=scored, status="ok",
+                               processed_ids=set(range(1, len(batch) + 1)))
+
+        with patch("app.services.deepseek_filter.filter_batch_detailed",
+                    side_effect=fake_filter_batch_detailed), \
+             patch("app.services.deepseek_filter.settings") as mock_s:
+            mock_s.DEEPSEEK_BATCH_SIZE = 2
+            mock_s.DEEPSEEK_MAX_CONCURRENCY = 3
+            t0 = _asyncio.get_event_loop().time()
+            result = await filter_news(items)
+            elapsed = _asyncio.get_event_loop().time() - t0
+
+        assert len(result.scored) == 6
+        # 3 批并发（max_concurrency=3）→ 总耗时 ≈ 0.3s，而非 0.9s
+        # 留余量：< 0.7s 说明确实并发了
+        assert elapsed < 0.7, f"Expected concurrent (<0.7s), got {elapsed:.2f}s"
+
+    @pytest.mark.asyncio
+    async def test_concurrency_limit_respected(self):
+        """并发度限制生效：max_concurrency=1 时退化为串行。"""
+        import asyncio as _asyncio
+
+        items = [_make_cn_item(i) for i in range(1, 7)]
+
+        active = {"n": 0, "max": 0}
+
+        async def fake_filter_batch_detailed(batch, is_english, client, **kwargs):
+            active["n"] += 1
+            active["max"] = max(active["max"], active["n"])
+            await _asyncio.sleep(0.1)
+            active["n"] -= 1
+            scored = [
+                ScoredNewsItem(raw=it, score=7, reason="ok", summary="s",
+                               tags=[], why_it_matters="w")
+                for it in batch
+            ]
+            return BatchResult(scored=scored, status="ok",
+                               processed_ids=set(range(1, len(batch) + 1)))
+
+        with patch("app.services.deepseek_filter.filter_batch_detailed",
+                    side_effect=fake_filter_batch_detailed), \
+             patch("app.services.deepseek_filter.settings") as mock_s:
+            mock_s.DEEPSEEK_BATCH_SIZE = 2
+            mock_s.DEEPSEEK_MAX_CONCURRENCY = 1
+            await filter_news(items)
+
+        # max_concurrency=1 → 同时最多 1 个 batch 在跑
+        assert active["max"] == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrency_3_allows_parallel(self):
+        """并发度=3 时多个 batch 同时在跑。"""
+        import asyncio as _asyncio
+
+        items = [_make_cn_item(i) for i in range(1, 7)]
+
+        active = {"n": 0, "max": 0}
+
+        async def fake_filter_batch_detailed(batch, is_english, client, **kwargs):
+            active["n"] += 1
+            active["max"] = max(active["max"], active["n"])
+            await _asyncio.sleep(0.1)
+            active["n"] -= 1
+            scored = [
+                ScoredNewsItem(raw=it, score=7, reason="ok", summary="s",
+                               tags=[], why_it_matters="w")
+                for it in batch
+            ]
+            return BatchResult(scored=scored, status="ok",
+                               processed_ids=set(range(1, len(batch) + 1)))
+
+        with patch("app.services.deepseek_filter.filter_batch_detailed",
+                    side_effect=fake_filter_batch_detailed), \
+             patch("app.services.deepseek_filter.settings") as mock_s:
+            mock_s.DEEPSEEK_BATCH_SIZE = 2
+            mock_s.DEEPSEEK_MAX_CONCURRENCY = 3
+            await filter_news(items)
+
+        # 3 批 max_concurrency=3 → 全部同时跑
+        assert active["max"] == 3

@@ -1313,7 +1313,7 @@ async def filter_news(items: list[RawNewsItem]) -> FilterResult:
     1. 按中文占比 + langdetect 兜底分为中文/英文两组
     2. 各自按 batch_size=20 分批
     3. 共享同一个 httpx.AsyncClient（复用 TCP/TLS 连接）
-    4. 中文 batch 使用 SYSTEM_PROMPT_CN，英文使用 SYSTEM_PROMPT_EN（或两阶段）
+    4. P3 ⑤：所有批次并发执行，用 Semaphore 控制并发度（避免 API 限流）
     5. 单 batch 失败按状态分类统计，不影响其他 batch
     6. P3 ④：最终按原始输入顺序排序 scored 列表（语言分组不再破坏顺序）
     7. 返回 FilterResult（含 scored 列表和错误统计）
@@ -1334,46 +1334,68 @@ async def filter_news(items: list[RawNewsItem]) -> FilterResult:
 
     logger.info("Language split: %d Chinese, %d English items", len(cn_items), len(en_items))
 
+    # 预分批：每条记录 (batch, is_english)
+    all_batches: list[tuple[list[RawNewsItem], bool]] = []
+    for i in range(0, len(cn_items), batch_size):
+        all_batches.append((cn_items[i : i + batch_size], False))
+    for i in range(0, len(en_items), batch_size):
+        all_batches.append((en_items[i : i + batch_size], True))
+
+    total_batches = len(all_batches)
+    if total_batches == 0:
+        return FilterResult(scored=[], skipped_batches=0, total_batches=0)
+
+    # P3 ⑤：并发度控制
+    _max_concurrency = getattr(settings, "DEEPSEEK_MAX_CONCURRENCY", 3)
+    if not isinstance(_max_concurrency, int) or _max_concurrency < 1:
+        _max_concurrency = 3
+    semaphore = asyncio.Semaphore(_max_concurrency)
+
+    async def _run_one_batch(
+        batch: list[RawNewsItem], is_english: bool, client: httpx.AsyncClient,
+    ) -> BatchResult:
+        """单个 batch 的并发执行单元，受 semaphore 控制。"""
+        async with semaphore:
+            try:
+                return await filter_batch_detailed(batch, is_english=is_english, client=client)
+            except Exception as e:
+                label = "EN" if is_english else "CN"
+                logger.error("%s batch crashed: %s", label, e)
+                return BatchResult(scored=[], status="api_error")
+
     all_scored: list[ScoredNewsItem] = []
-    total_batches = 0
     skipped = 0
     content_risk = 0
     content_risk_dropped = 0
     api_err = 0
     parse_err = 0
 
-    async def _run_batches(pool: list[RawNewsItem], is_english: bool, client: httpx.AsyncClient) -> None:
-        nonlocal total_batches, skipped, content_risk, content_risk_dropped, api_err, parse_err
-        label = "EN" if is_english else "CN"
-        for i in range(0, len(pool), batch_size):
-            total_batches += 1
-            batch = pool[i : i + batch_size]
-            try:
-                result = await filter_batch_detailed(batch, is_english=is_english, client=client)
-            except Exception as e:
-                skipped += 1
-                api_err += 1
-                logger.error("%s batch %d-%d crashed: %s", label, i, i + len(batch), e)
-                continue
-
-            all_scored.extend(result.scored)
-            content_risk_dropped += result.content_risk_dropped
-            if result.status == "content_risk":
-                skipped += 1
-                content_risk += 1
-            elif result.status == "api_error":
-                skipped += 1
-                api_err += 1
-            elif result.status == "parse_error":
-                skipped += 1
-                parse_err += 1
-            elif result.status == "no_api_key":
-                skipped += 1
-                api_err += 1
-
     async with httpx.AsyncClient(timeout=90.0) as client:
-        await _run_batches(cn_items, False, client)
-        await _run_batches(en_items, True, client)
+        logger.info(
+            "Concurrent scoring: %d batches, max_concurrency=%d",
+            total_batches, _max_concurrency,
+        )
+        tasks = [
+            asyncio.ensure_future(_run_one_batch(batch, is_en, client))
+            for batch, is_en in all_batches
+        ]
+        results = await asyncio.gather(*tasks)
+
+    for result in results:
+        all_scored.extend(result.scored)
+        content_risk_dropped += result.content_risk_dropped
+        if result.status == "content_risk":
+            skipped += 1
+            content_risk += 1
+        elif result.status == "api_error":
+            skipped += 1
+            api_err += 1
+        elif result.status == "parse_error":
+            skipped += 1
+            parse_err += 1
+        elif result.status == "no_api_key":
+            skipped += 1
+            api_err += 1
 
     # P3 ④：恢复原始顺序（语言分组后不再"中文全在前英文全在后"）
     all_scored.sort(key=lambda si: _order.get(id(si.raw), len(items)))
