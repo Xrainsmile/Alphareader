@@ -29,7 +29,7 @@ export function useNewsFilter() {
   ]
 
   // ── 实际生效的筛选值 ──
-  const minScore = ref(7)
+  const minScore = ref(6)
   const currentSource = ref('')
   const currentSort = ref('hot')
   const maxAgeHours = ref(24)
@@ -41,11 +41,11 @@ export function useNewsFilter() {
   const tmpSort = ref('hot')
   const tmpAge = ref(24)
   const tmpSource = ref('')
-  const tmpScore = ref(7)
+  const tmpScore = ref(6)
   const tmpHighlight = ref(false)
 
   const hasActiveFilter = computed(() => {
-    return currentSort.value !== 'hot' || minScore.value !== 7 || currentSource.value !== '' || maxAgeHours.value !== 24 || onlyHighlight.value
+    return currentSort.value !== 'hot' || minScore.value !== 6 || currentSource.value !== '' || maxAgeHours.value !== 24 || onlyHighlight.value
   })
 
   const filterTags = computed(() => {
@@ -57,7 +57,7 @@ export function useNewsFilter() {
     const age = ageOptions.find(a => a.value === maxAgeHours.value)
     if (age && maxAgeHours.value !== 24) tags.push(age.label)
     if (currentSource.value) tags.push(currentSource.value)
-    if (minScore.value !== 7) tags.push(`≥${minScore.value}`)
+    if (minScore.value !== 6) tags.push(`≥${minScore.value}`)
     return tags
   })
 
@@ -108,7 +108,7 @@ export function useNewsFilter() {
     tmpSort.value = 'hot'
     tmpAge.value = 24
     tmpSource.value = ''
-    tmpScore.value = 7
+    tmpScore.value = 6
     tmpHighlight.value = false
   }
 

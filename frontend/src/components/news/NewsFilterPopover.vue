@@ -148,7 +148,7 @@ defineProps({
   tmpSort: { type: String, default: 'hot' },
   tmpAge: { type: Number, default: 24 },
   tmpSource: { type: String, default: '' },
-  tmpScore: { type: Number, default: 7 },
+  tmpScore: { type: Number, default: 6 },
   tmpHighlight: { type: Boolean, default: false },
   // 常量配置
   sortTabs: { type: Array, default: () => [] },

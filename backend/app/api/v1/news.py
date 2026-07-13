@@ -78,7 +78,7 @@ async def clear_dedup_cache(_: str | None = Depends(require_api_key)):
 async def list_news(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    min_score: int = Query(7, ge=0, le=10),
+    min_score: int = Query(6, ge=0, le=10),
     source: str | None = Query(None),
     category: str | None = Query(None, description="分类筛选: 财经 / 科技"),
     sector: str | None = Query(None),
