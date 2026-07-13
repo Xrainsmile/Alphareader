@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from app.services.deepseek_filter import (
+from app.services.llm_news_filter import (
     RawNewsItem,
     ScoredNewsItem,
     _parse_response_detailed,

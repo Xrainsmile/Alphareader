@@ -95,7 +95,7 @@ async def _fetch_period_news(
                 and_(
                     News.published_at >= period_start,
                     News.published_at < period_end,
-                    News.ai_score >= settings.DEEPSEEK_SCORE_THRESHOLD,
+                    News.ai_score >= settings.LLM_SCORE_THRESHOLD,
                 )
             )
             .order_by(News.ai_score.desc(), News.published_at.desc())
@@ -161,7 +161,7 @@ async def _call_deepseek_digest(user_prompt: str) -> str:
         "Content-Type": "application/json",
     }
 
-    max_retries = max(settings.DEEPSEEK_MAX_RETRIES, 3)  # 至少重试 3 次
+    max_retries = max(settings.LLM_MAX_RETRIES, 3)  # 至少重试 3 次
 
     import json as _json
 

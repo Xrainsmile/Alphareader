@@ -20,6 +20,7 @@ System Prompt 作为模块级全局常量定义（见文件顶部），
 from __future__ import annotations
 
 import asyncio
+import random
 import json
 import logging
 import uuid
@@ -30,7 +31,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
-from app.utils.json_extractor import extract_json_from_deepseek
+from app.utils.json_extractor import extract_llm_json
 
 # ══════════════════════════════════════════════════════════════════
 # System Prompt —— 情绪分析专用
@@ -176,7 +177,7 @@ async def analyze_sentiment_and_surprise_with_llm(
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        for attempt in range(1, settings.DEEPSEEK_MAX_RETRIES + 1):
+        for attempt in range(1, settings.LLM_MAX_RETRIES + 1):
             try:
                 resp = await client.post(
                     settings.SILICONFLOW_API_URL,
@@ -189,23 +190,33 @@ async def analyze_sentiment_and_surprise_with_llm(
                 # 内容安全审查触发 → 不重试，直接抛出让上层用默认值兜底
                 if status_code == 400:
                     raise RuntimeError(f"LLM 内容审查拦截 (400): {e.response.text[:200]}") from e
-                # 限速或服务端错误 → 退避重试
-                if attempt < settings.DEEPSEEK_MAX_RETRIES and status_code in (429, 500, 502, 503):
-                    await asyncio.sleep(2 * attempt)
+                # P4-A: 429 优先读 Retry-After，指数退避 + 抖动
+                if attempt < settings.LLM_MAX_RETRIES and status_code in (429, 500, 502, 503):
+                    retry_after = None
+                    if status_code == 429:
+                        ra = e.response.headers.get("Retry-After")
+                        if ra:
+                            try:
+                                retry_after = float(ra)
+                            except (ValueError, TypeError):
+                                pass
+                    delay = retry_after if retry_after else min(30.0, 2.0 ** attempt)
+                    delay += random.uniform(0, 1.0)
+                    await asyncio.sleep(delay)
                     continue
                 raise RuntimeError(f"SiliconFlow HTTP {status_code}") from e
             except (httpx.TimeoutException, httpx.ConnectError) as e:
-                if attempt < settings.DEEPSEEK_MAX_RETRIES:
-                    await asyncio.sleep(2 * attempt)
+                if attempt < settings.LLM_MAX_RETRIES:
+                    await asyncio.sleep(min(30.0, 2.0 ** attempt) + random.uniform(0, 1.0))
                     continue
                 raise TimeoutError(f"SiliconFlow 请求超时/连接失败: {e}") from e
 
             # ── 解析响应 ──
             raw_content: str = resp.json()["choices"][0]["message"]["content"]
 
-            result = extract_json_from_deepseek(raw_content)
+            result = extract_llm_json(raw_content)
 
-            # extract_json_from_deepseek 对单个 {} 对象也能解析，直接判断类型
+            # extract_llm_json 对单个 {} 对象也能解析，直接判断类型
             if not isinstance(result, dict):
                 # LLM 返回了数组或无法解析 → 当作 JSON 异常抛出，让上层兜底
                 raise json.JSONDecodeError(

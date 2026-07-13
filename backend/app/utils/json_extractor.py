@@ -77,8 +77,8 @@ def _fix_common_json_errors(text: str) -> str:
     return text
 
 
-def extract_json_from_deepseek(raw_text: str) -> list[dict] | dict | None:
-    """Extract JSON (array or object) from a DeepSeek LLM response.
+def extract_llm_json(raw_text: str) -> list[dict] | dict | None:
+    """Extract JSON (array or object) from an LLM response.
 
     Pipeline:
       1. Clean output (strip <think>, markdown fences, filler).
@@ -129,6 +129,10 @@ def extract_json_from_deepseek(raw_text: str) -> list[dict] | dict | None:
     return None
 
 
+# P4-B: 向后兼容别名
+extract_llm_json = extract_llm_json
+
+
 if __name__ == "__main__":
     # ── Test with a realistic DeepSeek R1 response ──
     sample = """<think>
@@ -149,7 +153,7 @@ That's my analysis."""
     print("=" * 60)
     print("Test 1: <think> + markdown fence + filler text")
     print("=" * 60)
-    result = extract_json_from_deepseek(sample)
+    result = extract_llm_json(sample)
     if result:
         print(f"✅ Parsed {len(result)} items:")
         for item in result:
@@ -164,7 +168,7 @@ That's my analysis."""
     print("=" * 60)
     print("Test 2: Clean JSON (no wrapper)")
     print("=" * 60)
-    result2 = extract_json_from_deepseek(sample_clean)
+    result2 = extract_llm_json(sample_clean)
     print(f"✅ Parsed: {result2}" if result2 else "❌ Failed")
 
     print()
@@ -174,5 +178,9 @@ That's my analysis."""
     print("=" * 60)
     print("Test 3: Broken response (should fail gracefully)")
     print("=" * 60)
-    result3 = extract_json_from_deepseek(sample_broken)
+    result3 = extract_llm_json(sample_broken)
     print(f"Result: {result3}  (expected: None)")
+
+
+# P4-B: 向后兼容别名
+extract_json_from_deepseek = extract_llm_json

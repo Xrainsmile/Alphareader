@@ -17,7 +17,7 @@
   - REDIS_URL：根据 Redis 各字段动态拼接 DSN
 """
 
-from pydantic import Field, computed_field
+from pydantic import AliasChoices, Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -73,17 +73,20 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = Field("", repr=False)                       # API 密钥
     DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # API 地址
     DEEPSEEK_MODEL: str = "deepseek-chat"                           # 模型名称（仅 digest 使用）
-    DEEPSEEK_BATCH_SIZE: int = 20                                   # 每批评分条数
-    DEEPSEEK_SCORE_THRESHOLD: int = 5                               # 入库分数阈值（≥5 才存储）
-    DEEPSEEK_MAX_RETRIES: int = 2                                   # API 失败最大重试次数
-    DEEPSEEK_CONTENT_PREVIEW_CHARS: int = 800                       # 送给 LLM 的正文预览长度（P0 从 200 提升到 800）
-    DEEPSEEK_MIN_CHINESE_RATIO_TITLE: float = 0.5                   # 中文标题最低中文占比（品牌名允许保留）
-    DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY: float = 0.6                 # 中文摘要最低中文占比（比标题更严）
-    DEEPSEEK_CONTENT_RISK_BISECT_ENABLED: bool = True               # P1 ⑤：内容审查触发时二分隔离，定位坏条目而不是丢整批
-    DEEPSEEK_CONTENT_RISK_MAX_DEPTH: int = 6                        # 二分最大递归深度（batch=20 → 20→10→5→3→2→1 需 5 层）
-    DEEPSEEK_TWO_STAGE_EN_ENABLED: bool = True                      # P3 ②：英文两阶段评分（先评分后翻译），节省低分新闻翻译 token
-    DEEPSEEK_TRANSLATE_BATCH_SIZE: int = 20                         # 翻译阶段批次大小（通过阈值的条目数可能较少，可适当放大）
-    DEEPSEEK_MAX_CONCURRENCY: int = 3                               # P3 ⑤：批次并发度（SiliconFlow 免费版有 RPM 限制，3 比较安全）
+
+    # ── LLM 评分/翻译（SiliconFlow Qwen3-8B）──
+    # P4-B: 配置项从 DEEPSEEK_* 重命名为 LLM_*，AliasChoices 保持 .env 向后兼容
+    LLM_BATCH_SIZE: int = Field(20, validation_alias=AliasChoices("LLM_BATCH_SIZE", "DEEPSEEK_BATCH_SIZE"))                        # 每批评分条数
+    LLM_SCORE_THRESHOLD: int = Field(5, validation_alias=AliasChoices("LLM_SCORE_THRESHOLD", "DEEPSEEK_SCORE_THRESHOLD"))          # 入库分数阈值（≥5 才存储）
+    LLM_MAX_RETRIES: int = Field(2, validation_alias=AliasChoices("LLM_MAX_RETRIES", "DEEPSEEK_MAX_RETRIES"))                       # API 失败最大重试次数
+    LLM_CONTENT_PREVIEW_CHARS: int = Field(800, validation_alias=AliasChoices("LLM_CONTENT_PREVIEW_CHARS", "DEEPSEEK_CONTENT_PREVIEW_CHARS"))  # 送给 LLM 的正文预览长度
+    LLM_MIN_CHINESE_RATIO_TITLE: float = Field(0.5, validation_alias=AliasChoices("LLM_MIN_CHINESE_RATIO_TITLE", "DEEPSEEK_MIN_CHINESE_RATIO_TITLE"))  # 中文标题最低中文占比
+    LLM_MIN_CHINESE_RATIO_SUMMARY: float = Field(0.6, validation_alias=AliasChoices("LLM_MIN_CHINESE_RATIO_SUMMARY", "DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY"))  # 中文摘要最低中文占比
+    LLM_CONTENT_RISK_BISECT_ENABLED: bool = Field(True, validation_alias=AliasChoices("LLM_CONTENT_RISK_BISECT_ENABLED", "DEEPSEEK_CONTENT_RISK_BISECT_ENABLED"))  # 内容审查触发时二分隔离
+    LLM_CONTENT_RISK_MAX_DEPTH: int = Field(6, validation_alias=AliasChoices("LLM_CONTENT_RISK_MAX_DEPTH", "DEEPSEEK_CONTENT_RISK_MAX_DEPTH"))  # 二分最大递归深度
+    LLM_TWO_STAGE_EN_ENABLED: bool = Field(True, validation_alias=AliasChoices("LLM_TWO_STAGE_EN_ENABLED", "DEEPSEEK_TWO_STAGE_EN_ENABLED"))  # 英文两阶段评分
+    LLM_TRANSLATE_BATCH_SIZE: int = Field(20, validation_alias=AliasChoices("LLM_TRANSLATE_BATCH_SIZE", "DEEPSEEK_TRANSLATE_BATCH_SIZE"))  # 翻译阶段批次大小
+    LLM_MAX_CONCURRENCY: int = Field(3, validation_alias=AliasChoices("LLM_MAX_CONCURRENCY", "DEEPSEEK_MAX_CONCURRENCY"))  # 批次并发度
 
     # ── 调度器 — Pipeline 定时执行 ──
     PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）

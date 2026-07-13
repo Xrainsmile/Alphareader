@@ -1,7 +1,7 @@
 """Full-stack parser tests — from raw LLM text to scored news items.
 
 Tests three layers:
-  1. JSON extraction: extract_json_from_deepseek() on every mock response
+  1. JSON extraction: extract_llm_json() on every mock response
   2. Parse pipeline: _extract_json_array() + _parse_response() end-to-end
   3. filter_batch() with mocked httpx, verifying the complete flow
      without any real API calls
@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.services.deepseek_filter import (
+from app.services.llm_news_filter import (
     FilterResult,
     ScoredNewsItem,
     _build_user_prompt,
@@ -31,7 +31,7 @@ from app.services.deepseek_filter import (
     filter_news,
 )
 from app.services.rss_fetcher import RawNewsItem
-from app.utils.json_extractor import extract_json_from_deepseek
+from app.utils.json_extractor import extract_llm_json
 
 from tests.mock_responses import (
     ALL_MOCK_POOL,
@@ -103,7 +103,7 @@ def _make_api_response(content: str, status_code: int = 200) -> httpx.Response:
 # ═══════════════════════════════════════════════════════════════
 
 class TestJsonExtractionOnAllMocks:
-    """extract_json_from_deepseek() must return non-None for every mock."""
+    """extract_llm_json() must return non-None for every mock."""
 
     @pytest.mark.parametrize(
         "desc, raw_text, expected_count",
@@ -111,9 +111,9 @@ class TestJsonExtractionOnAllMocks:
         ids=[m[0] for m in ALL_MOCK_POOL],
     )
     def test_extraction_succeeds(self, desc: str, raw_text: str, expected_count: int):
-        result = extract_json_from_deepseek(raw_text)
+        result = extract_llm_json(raw_text)
         assert result is not None, (
-            f"[FAIL] extract_json_from_deepseek returned None\n"
+            f"[FAIL] extract_llm_json returned None\n"
             f"Scenario: {desc}\n"
             f"Raw text ({len(raw_text)} chars):\n{raw_text[:500]}"
         )
@@ -228,21 +228,21 @@ class TestFilterBatchMocked:
     @pytest.fixture(autouse=True)
     def _patch_api_key(self):
         """Ensure DEEPSEEK_API_KEY is set so filter_batch doesn't bail out."""
-        with patch("app.services.deepseek_filter.settings") as mock_settings:
+        with patch("app.services.llm_news_filter.settings") as mock_settings:
             mock_settings.DEEPSEEK_API_KEY = "sk-test-mock-key"
             mock_settings.DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
             mock_settings.DEEPSEEK_MODEL = "deepseek-chat"
-            mock_settings.DEEPSEEK_BATCH_SIZE = 20
-            mock_settings.DEEPSEEK_SCORE_THRESHOLD = 6
-            mock_settings.DEEPSEEK_MAX_RETRIES = 2
+            mock_settings.LLM_BATCH_SIZE = 20
+            mock_settings.LLM_SCORE_THRESHOLD = 6
+            mock_settings.LLM_MAX_RETRIES = 2
             # P1 ⑤：既有测试假设 content_risk 只调 1 次；关闭二分以保持兼容
-            mock_settings.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = False
-            mock_settings.DEEPSEEK_CONTENT_RISK_MAX_DEPTH = 6
+            mock_settings.LLM_CONTENT_RISK_BISECT_ENABLED = False
+            mock_settings.LLM_CONTENT_RISK_MAX_DEPTH = 6
             # P3 ②：既有英文测试假设单阶段；关闭两阶段以保持兼容
-            mock_settings.DEEPSEEK_TWO_STAGE_EN_ENABLED = False
-            mock_settings.DEEPSEEK_TRANSLATE_BATCH_SIZE = 20
+            mock_settings.LLM_TWO_STAGE_EN_ENABLED = False
+            mock_settings.LLM_TRANSLATE_BATCH_SIZE = 20
             # P3 ⑤：并发度（既有测试不依赖并发，但需避免 MagicMock truthy 问题）
-            mock_settings.DEEPSEEK_MAX_CONCURRENCY = 3
+            mock_settings.LLM_MAX_CONCURRENCY = 3
             yield
 
     @pytest.mark.parametrize(
@@ -303,7 +303,7 @@ class TestFilterBatchMocked:
         """filter_batch should return [] when API key is not configured."""
         batch = _make_batch(3)
         # Override the autouse fixture's key with empty
-        with patch("app.services.deepseek_filter.settings") as mock_settings:
+        with patch("app.services.llm_news_filter.settings") as mock_settings:
             mock_settings.DEEPSEEK_API_KEY = ""
             result = await filter_batch(batch, is_english=False)
         assert result == []
@@ -359,17 +359,17 @@ class TestFilterNewsMocked:
             return cn_response if call_count == 1 else en_response
 
         with (
-            patch("app.services.deepseek_filter.httpx.AsyncClient") as MockClient,
-            patch("app.services.deepseek_filter.settings") as mock_settings,
+            patch("app.services.llm_news_filter.httpx.AsyncClient") as MockClient,
+            patch("app.services.llm_news_filter.settings") as mock_settings,
             patch.object(type(cn_response), "raise_for_status", lambda self: None),
             patch.object(type(en_response), "raise_for_status", lambda self: None),
         ):
             mock_settings.DEEPSEEK_API_KEY = "sk-test-mock-key"
             mock_settings.DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
             mock_settings.DEEPSEEK_MODEL = "deepseek-chat"
-            mock_settings.DEEPSEEK_BATCH_SIZE = 20
-            mock_settings.DEEPSEEK_SCORE_THRESHOLD = 6
-            mock_settings.DEEPSEEK_MAX_RETRIES = 2
+            mock_settings.LLM_BATCH_SIZE = 20
+            mock_settings.LLM_SCORE_THRESHOLD = 6
+            mock_settings.LLM_MAX_RETRIES = 2
 
             mock_instance = AsyncMock()
             mock_instance.post = AsyncMock(side_effect=mock_post)
@@ -398,7 +398,7 @@ class TestExtractionStress:
         """Every mock must parse on every iteration — no flakiness allowed."""
         failures = []
         for desc, raw_text, expected_count in ALL_MOCK_POOL:
-            result = extract_json_from_deepseek(raw_text)
+            result = extract_llm_json(raw_text)
             if result is None:
                 failures.append(
                     f"  FAIL [{desc}]: returned None\n"

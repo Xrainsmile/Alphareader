@@ -376,7 +376,7 @@ async def _call_deepseek_catalyst(user_prompt: str) -> dict | None:
         "Content-Type": "application/json",
     }
 
-    max_retries = max(settings.DEEPSEEK_MAX_RETRIES, 3)
+    max_retries = max(settings.LLM_MAX_RETRIES, 3)
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=120.0)) as client:
         for attempt in range(1, max_retries + 1):

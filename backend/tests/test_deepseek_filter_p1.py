@@ -13,7 +13,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.deepseek_filter import (
+from app.services.llm_news_filter import (
     BatchResult,
     RawNewsItem,
     filter_batch_detailed,
@@ -73,7 +73,7 @@ class TestBisectCore:
                 return BatchResult(scored=[], status="content_risk")
             # 否则返回 ok（所有条目高分）
             scored = []
-            from app.services.deepseek_filter import ScoredNewsItem
+            from app.services.llm_news_filter import ScoredNewsItem
             for it in batch:
                 scored.append(ScoredNewsItem(
                     raw=it, score=8, reason="ok", summary="", tags=[],
@@ -81,7 +81,7 @@ class TestBisectCore:
                 ))
             return BatchResult(scored=scored, status="ok")
 
-        with patch("app.services.deepseek_filter._score_batch_once", side_effect=fake_score_once):
+        with patch("app.services.llm_news_filter._score_batch_once", side_effect=fake_score_once):
             client = MagicMock()
             result = await _bisect_content_risk(items, False, client, depth=0)
 
@@ -99,7 +99,7 @@ class TestBisectCore:
         async def fake_score_once(batch, is_english, client, **kwargs):
             return BatchResult(scored=[], status="content_risk")
 
-        with patch("app.services.deepseek_filter._score_batch_once", side_effect=fake_score_once):
+        with patch("app.services.llm_news_filter._score_batch_once", side_effect=fake_score_once):
             client = MagicMock()
             result = await _bisect_content_risk(items, False, client, depth=0)
 
@@ -117,7 +117,7 @@ class TestBisectCore:
             call_count["n"] += 1
             return BatchResult(scored=[], status="content_risk")
 
-        with patch("app.services.deepseek_filter._score_batch_once", side_effect=fake_score_once):
+        with patch("app.services.llm_news_filter._score_batch_once", side_effect=fake_score_once):
             # 传入 depth=6（已达 max_depth=6）
             client = MagicMock()
             result = await _bisect_content_risk(items, False, client, depth=6)
@@ -134,7 +134,7 @@ class TestBisectCore:
         async def fake_score_once(batch, is_english, client, **kwargs):
             return BatchResult(scored=[], status="content_risk")
 
-        with patch("app.services.deepseek_filter._score_batch_once", side_effect=fake_score_once):
+        with patch("app.services.llm_news_filter._score_batch_once", side_effect=fake_score_once):
             client = MagicMock()
             result = await _bisect_content_risk(items, False, client, depth=0)
 
@@ -162,7 +162,7 @@ class TestFilterBatchWithBisect:
             has_bad = items[bad_idx].title in user_msg
             call_seq.append(("bad" if has_bad else "clean", user_msg.count("URL:")))
             if has_bad:
-                return None, "content_risk", "content risk hit"
+                return None, "content_risk", "content risk hit", None
             # clean 批：为对应 batch 返回全部 8 分
             # 复原 batch 长度：读取 prompt 中 [1] [2] 的数量
             import re
@@ -171,23 +171,23 @@ class TestFilterBatchWithBisect:
                 {"id": i, "score": 8, "reason": "ok", "summary": "s", "tags": [], "relevant_tickers": []}
                 for i in range(1, n + 1)
             ], ensure_ascii=False)
-            return raw, "ok", ""
+            return raw, "ok", "", None
 
         mock_settings = MagicMock()
         mock_settings.SILICONFLOW_API_KEY = "k"
         mock_settings.SILICONFLOW_LLM_MODEL = "m"
         mock_settings.SILICONFLOW_API_URL = "http://x"
-        mock_settings.DEEPSEEK_BATCH_SIZE = 20
-        mock_settings.DEEPSEEK_MAX_RETRIES = 2
-        mock_settings.DEEPSEEK_SCORE_THRESHOLD = 5
-        mock_settings.DEEPSEEK_CONTENT_PREVIEW_CHARS = 800
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_TITLE = 0.5
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY = 0.6
-        mock_settings.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = True
-        mock_settings.DEEPSEEK_CONTENT_RISK_MAX_DEPTH = 6
+        mock_settings.LLM_BATCH_SIZE = 20
+        mock_settings.LLM_MAX_RETRIES = 2
+        mock_settings.LLM_SCORE_THRESHOLD = 5
+        mock_settings.LLM_CONTENT_PREVIEW_CHARS = 800
+        mock_settings.LLM_MIN_CHINESE_RATIO_TITLE = 0.5
+        mock_settings.LLM_MIN_CHINESE_RATIO_SUMMARY = 0.6
+        mock_settings.LLM_CONTENT_RISK_BISECT_ENABLED = True
+        mock_settings.LLM_CONTENT_RISK_MAX_DEPTH = 6
 
-        with patch("app.services.deepseek_filter.settings", mock_settings), \
-             patch("app.services.deepseek_filter._call_llm_once", side_effect=fake_call):
+        with patch("app.services.llm_news_filter.settings", mock_settings), \
+             patch("app.services.llm_news_filter._call_llm_once", side_effect=fake_call):
             client = MagicMock()
             result = await filter_batch_detailed(items, is_english=False, client=client)
 
@@ -200,22 +200,22 @@ class TestFilterBatchWithBisect:
         items = _make_items(4)
 
         async def fake_call(payload, headers, client):
-            return None, "content_risk", "hit"
+            return None, "content_risk", "hit", None
 
         mock_settings = MagicMock()
         mock_settings.SILICONFLOW_API_KEY = "k"
         mock_settings.SILICONFLOW_LLM_MODEL = "m"
         mock_settings.SILICONFLOW_API_URL = "http://x"
-        mock_settings.DEEPSEEK_MAX_RETRIES = 2
-        mock_settings.DEEPSEEK_SCORE_THRESHOLD = 5
-        mock_settings.DEEPSEEK_CONTENT_PREVIEW_CHARS = 800
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_TITLE = 0.5
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY = 0.6
-        mock_settings.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = False
-        mock_settings.DEEPSEEK_CONTENT_RISK_MAX_DEPTH = 6
+        mock_settings.LLM_MAX_RETRIES = 2
+        mock_settings.LLM_SCORE_THRESHOLD = 5
+        mock_settings.LLM_CONTENT_PREVIEW_CHARS = 800
+        mock_settings.LLM_MIN_CHINESE_RATIO_TITLE = 0.5
+        mock_settings.LLM_MIN_CHINESE_RATIO_SUMMARY = 0.6
+        mock_settings.LLM_CONTENT_RISK_BISECT_ENABLED = False
+        mock_settings.LLM_CONTENT_RISK_MAX_DEPTH = 6
 
-        with patch("app.services.deepseek_filter.settings", mock_settings), \
-             patch("app.services.deepseek_filter._call_llm_once", side_effect=fake_call):
+        with patch("app.services.llm_news_filter.settings", mock_settings), \
+             patch("app.services.llm_news_filter._call_llm_once", side_effect=fake_call):
             client = MagicMock()
             result = await filter_batch_detailed(items, is_english=False, client=client)
 
@@ -233,22 +233,22 @@ class TestFilterBatchWithBisect:
                 {"id": i, "score": 8, "reason": "ok", "summary": "s", "tags": [], "relevant_tickers": []}
                 for i in range(1, 4)
             ], ensure_ascii=False)
-            return raw, "ok", ""
+            return raw, "ok", "", None
 
         mock_settings = MagicMock()
         mock_settings.SILICONFLOW_API_KEY = "k"
         mock_settings.SILICONFLOW_LLM_MODEL = "m"
         mock_settings.SILICONFLOW_API_URL = "http://x"
-        mock_settings.DEEPSEEK_MAX_RETRIES = 2
-        mock_settings.DEEPSEEK_SCORE_THRESHOLD = 5
-        mock_settings.DEEPSEEK_CONTENT_PREVIEW_CHARS = 800
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_TITLE = 0.5
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY = 0.6
-        mock_settings.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = True
-        mock_settings.DEEPSEEK_CONTENT_RISK_MAX_DEPTH = 6
+        mock_settings.LLM_MAX_RETRIES = 2
+        mock_settings.LLM_SCORE_THRESHOLD = 5
+        mock_settings.LLM_CONTENT_PREVIEW_CHARS = 800
+        mock_settings.LLM_MIN_CHINESE_RATIO_TITLE = 0.5
+        mock_settings.LLM_MIN_CHINESE_RATIO_SUMMARY = 0.6
+        mock_settings.LLM_CONTENT_RISK_BISECT_ENABLED = True
+        mock_settings.LLM_CONTENT_RISK_MAX_DEPTH = 6
 
-        with patch("app.services.deepseek_filter.settings", mock_settings), \
-             patch("app.services.deepseek_filter._call_llm_once", side_effect=fake_call):
+        with patch("app.services.llm_news_filter.settings", mock_settings), \
+             patch("app.services.llm_news_filter._call_llm_once", side_effect=fake_call):
             client = MagicMock()
             result = await filter_batch_detailed(items, is_english=False, client=client)
 
@@ -270,7 +270,7 @@ class TestFilterNewsAccumulation:
 
         async def fake_filter_batch_detailed(batch, is_english, client, **kwargs):
             # 每个 batch 假装 dropped=1，剩余全部 scored
-            from app.services.deepseek_filter import ScoredNewsItem
+            from app.services.llm_news_filter import ScoredNewsItem
             scored = [
                 ScoredNewsItem(
                     raw=it, score=8, reason="", summary="", tags=[],
@@ -285,12 +285,12 @@ class TestFilterNewsAccumulation:
             )
 
         mock_settings = MagicMock()
-        mock_settings.DEEPSEEK_BATCH_SIZE = 3  # 6 条拆 2 batch
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_TITLE = 0.5
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY = 0.6
+        mock_settings.LLM_BATCH_SIZE = 3  # 6 条拆 2 batch
+        mock_settings.LLM_MIN_CHINESE_RATIO_TITLE = 0.5
+        mock_settings.LLM_MIN_CHINESE_RATIO_SUMMARY = 0.6
 
-        with patch("app.services.deepseek_filter.settings", mock_settings), \
-             patch("app.services.deepseek_filter.filter_batch_detailed",
+        with patch("app.services.llm_news_filter.settings", mock_settings), \
+             patch("app.services.llm_news_filter.filter_batch_detailed",
                    side_effect=fake_filter_batch_detailed):
             result = await filter_news(items)
 

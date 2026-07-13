@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from app.services.deepseek_filter import (
+from app.services.llm_news_filter import (
     BatchResult,
     FilterResult,
     _chinese_ratio,
@@ -313,7 +313,7 @@ class TestEnglishTranslationValidation:
 class TestBatchResultStatus:
     @pytest.mark.asyncio
     async def test_no_api_key(self):
-        with patch("app.services.deepseek_filter.settings") as ms:
+        with patch("app.services.llm_news_filter.settings") as ms:
             ms.SILICONFLOW_API_KEY = ""
             result = await filter_batch_detailed(_make_batch(3), is_english=False)
         assert result.status == "no_api_key"
@@ -333,15 +333,15 @@ class TestBatchResultStatus:
                 "Bad Request", request=error_response.request, response=error_response,
             )
         )
-        with patch("app.services.deepseek_filter.settings") as ms:
+        with patch("app.services.llm_news_filter.settings") as ms:
             ms.SILICONFLOW_API_KEY = "test-key"
             ms.SILICONFLOW_API_URL = "https://x"
             ms.SILICONFLOW_LLM_MODEL = "test"
-            ms.DEEPSEEK_MAX_RETRIES = 2
-            ms.DEEPSEEK_SCORE_THRESHOLD = 5
-            ms.DEEPSEEK_BATCH_SIZE = 20
+            ms.LLM_MAX_RETRIES = 2
+            ms.LLM_SCORE_THRESHOLD = 5
+            ms.LLM_BATCH_SIZE = 20
             # 关闭二分，验证 P0 的"不重试"语义
-            ms.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = False
+            ms.LLM_CONTENT_RISK_BISECT_ENABLED = False
             result = await filter_batch_detailed(batch, is_english=False, client=mock_client)
         assert result.status == "content_risk"
         assert result.scored == []
@@ -360,15 +360,15 @@ class TestBatchResultStatus:
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.post = AsyncMock(return_value=response)
         with (
-            patch("app.services.deepseek_filter.settings") as ms,
+            patch("app.services.llm_news_filter.settings") as ms,
             patch.object(type(response), "raise_for_status", lambda self: None),
         ):
             ms.SILICONFLOW_API_KEY = "test-key"
             ms.SILICONFLOW_API_URL = "https://x"
             ms.SILICONFLOW_LLM_MODEL = "test"
-            ms.DEEPSEEK_MAX_RETRIES = 2
-            ms.DEEPSEEK_SCORE_THRESHOLD = 5
-            ms.DEEPSEEK_BATCH_SIZE = 20
+            ms.LLM_MAX_RETRIES = 2
+            ms.LLM_SCORE_THRESHOLD = 5
+            ms.LLM_BATCH_SIZE = 20
             result = await filter_batch_detailed(batch, is_english=False, client=mock_client)
         assert result.status == "empty_after_filter"
         assert result.is_success is True   # empty_after_filter 不算失败
@@ -391,15 +391,15 @@ class TestBatchResultStatus:
             )
         )
         with (
-            patch("app.services.deepseek_filter.settings") as ms,
-            patch("app.services.deepseek_filter.asyncio.sleep", new=AsyncMock()),
+            patch("app.services.llm_news_filter.settings") as ms,
+            patch("app.services.llm_news_filter.asyncio.sleep", new=AsyncMock()),
         ):
             ms.SILICONFLOW_API_KEY = "test-key"
             ms.SILICONFLOW_API_URL = "https://x"
             ms.SILICONFLOW_LLM_MODEL = "test"
-            ms.DEEPSEEK_MAX_RETRIES = 2
-            ms.DEEPSEEK_SCORE_THRESHOLD = 5
-            ms.DEEPSEEK_BATCH_SIZE = 20
+            ms.LLM_MAX_RETRIES = 2
+            ms.LLM_SCORE_THRESHOLD = 5
+            ms.LLM_BATCH_SIZE = 20
             result = await filter_batch_detailed(batch, is_english=False, client=mock_client)
         assert result.status == "api_error"
         assert result.is_success is False
@@ -420,16 +420,16 @@ class TestFilterNewsHadErrors:
             request=httpx.Request("POST", "https://x"),
         )
         with (
-            patch("app.services.deepseek_filter.httpx.AsyncClient") as MockClient,
-            patch("app.services.deepseek_filter.settings") as ms,
-            patch("app.services.deepseek_filter.asyncio.sleep", new=AsyncMock()),
+            patch("app.services.llm_news_filter.httpx.AsyncClient") as MockClient,
+            patch("app.services.llm_news_filter.settings") as ms,
+            patch("app.services.llm_news_filter.asyncio.sleep", new=AsyncMock()),
         ):
             ms.SILICONFLOW_API_KEY = "test-key"
             ms.SILICONFLOW_API_URL = "https://x"
             ms.SILICONFLOW_LLM_MODEL = "test"
-            ms.DEEPSEEK_MAX_RETRIES = 2
-            ms.DEEPSEEK_SCORE_THRESHOLD = 5
-            ms.DEEPSEEK_BATCH_SIZE = 20
+            ms.LLM_MAX_RETRIES = 2
+            ms.LLM_SCORE_THRESHOLD = 5
+            ms.LLM_BATCH_SIZE = 20
             mock_instance = AsyncMock()
             mock_instance.post = AsyncMock(
                 side_effect=httpx.HTTPStatusError(
@@ -454,16 +454,16 @@ class TestFilterNewsHadErrors:
         response = _make_api_response(low_score_json)
         batch = _make_batch(3)
         with (
-            patch("app.services.deepseek_filter.httpx.AsyncClient") as MockClient,
-            patch("app.services.deepseek_filter.settings") as ms,
+            patch("app.services.llm_news_filter.httpx.AsyncClient") as MockClient,
+            patch("app.services.llm_news_filter.settings") as ms,
             patch.object(type(response), "raise_for_status", lambda self: None),
         ):
             ms.SILICONFLOW_API_KEY = "test-key"
             ms.SILICONFLOW_API_URL = "https://x"
             ms.SILICONFLOW_LLM_MODEL = "test"
-            ms.DEEPSEEK_MAX_RETRIES = 2
-            ms.DEEPSEEK_SCORE_THRESHOLD = 5
-            ms.DEEPSEEK_BATCH_SIZE = 20
+            ms.LLM_MAX_RETRIES = 2
+            ms.LLM_SCORE_THRESHOLD = 5
+            ms.LLM_BATCH_SIZE = 20
             mock_instance = AsyncMock()
             mock_instance.post = AsyncMock(return_value=response)
             mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
@@ -481,7 +481,7 @@ class TestFilterNewsHadErrors:
 
 class TestPromptLengthAndTime:
     def test_content_preview_extended(self):
-        from app.services.deepseek_filter import _build_user_prompt
+        from app.services.llm_news_filter import _build_user_prompt
         # 制造一条超长正文
         long_content = "股价上涨。" * 500   # 2500 字符
         item = RawNewsItem(
@@ -496,7 +496,7 @@ class TestPromptLengthAndTime:
         assert len(prompt) > 800
 
     def test_published_time_included(self):
-        from app.services.deepseek_filter import _build_user_prompt
+        from app.services.llm_news_filter import _build_user_prompt
         item = RawNewsItem(
             title="测试", content="内容",
             url="https://x", source="test",
@@ -507,7 +507,7 @@ class TestPromptLengthAndTime:
         assert "抓取时间:" in prompt
 
     def test_no_published_time_when_missing(self):
-        from app.services.deepseek_filter import _build_user_prompt
+        from app.services.llm_news_filter import _build_user_prompt
         item = RawNewsItem(
             title="测试", content="内容",
             url="https://x", source="test",
@@ -518,7 +518,7 @@ class TestPromptLengthAndTime:
         assert "抓取时间:" in prompt  # fetched_at 始终有
 
     def test_english_prompt_time_fields(self):
-        from app.services.deepseek_filter import _build_user_prompt
+        from app.services.llm_news_filter import _build_user_prompt
         item = RawNewsItem(
             title="Fed keeps rates", content="content",
             url="https://x", source="Reuters",

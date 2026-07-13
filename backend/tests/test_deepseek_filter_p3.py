@@ -12,7 +12,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.deepseek_filter import (
+from app.services.llm_news_filter import (
     BatchResult,
     FilterResult,
     RawNewsItem,
@@ -165,7 +165,7 @@ class TestTwoStageScoring:
                      "reason": f"理由{i}", "tags": [], "relevant_tickers": []}
                     for i in range(1, 4)
                 ], ensure_ascii=False)
-                return raw, "ok", ""
+                return raw, "ok", "", None
             elif "精通中英双语金融翻译" in system_msg:
                 # 阶段二：翻译
                 call_count["translate"] += 1
@@ -175,28 +175,28 @@ class TestTwoStageScoring:
                      "why_it_matters": f"推荐理由{i}"}
                     for i in range(1, 4)
                 ], ensure_ascii=False)
-                return raw, "ok", ""
-            return None, "api_error", "unknown prompt"
+                return raw, "ok", "", None
+            return None, "api_error", "unknown prompt", None
 
         mock_settings = MagicMock()
         mock_settings.SILICONFLOW_API_KEY = "k"
         mock_settings.SILICONFLOW_LLM_MODEL = "m"
         mock_settings.SILICONFLOW_API_URL = "http://mock"
-        mock_settings.DEEPSEEK_BATCH_SIZE = 20
-        mock_settings.DEEPSEEK_SCORE_THRESHOLD = 5
-        mock_settings.DEEPSEEK_MAX_RETRIES = 2
-        mock_settings.DEEPSEEK_CONTENT_PREVIEW_CHARS = 800
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_TITLE = 0.5
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY = 0.6
-        mock_settings.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = True
-        mock_settings.DEEPSEEK_CONTENT_RISK_MAX_DEPTH = 6
-        mock_settings.DEEPSEEK_TWO_STAGE_EN_ENABLED = True
-        mock_settings.DEEPSEEK_TRANSLATE_BATCH_SIZE = 20
+        mock_settings.LLM_BATCH_SIZE = 20
+        mock_settings.LLM_SCORE_THRESHOLD = 5
+        mock_settings.LLM_MAX_RETRIES = 2
+        mock_settings.LLM_CONTENT_PREVIEW_CHARS = 800
+        mock_settings.LLM_MIN_CHINESE_RATIO_TITLE = 0.5
+        mock_settings.LLM_MIN_CHINESE_RATIO_SUMMARY = 0.6
+        mock_settings.LLM_CONTENT_RISK_BISECT_ENABLED = True
+        mock_settings.LLM_CONTENT_RISK_MAX_DEPTH = 6
+        mock_settings.LLM_TWO_STAGE_EN_ENABLED = True
+        mock_settings.LLM_TRANSLATE_BATCH_SIZE = 20
 
         mock_client = MagicMock()
 
-        with patch("app.services.deepseek_filter.settings", mock_settings), \
-             patch("app.services.deepseek_filter._call_llm_once", side_effect=fake_call):
+        with patch("app.services.llm_news_filter.settings", mock_settings), \
+             patch("app.services.llm_news_filter._call_llm_once", side_effect=fake_call):
             result = await filter_batch_detailed(items, is_english=True, client=mock_client)
 
         assert call_count["score"] == 1
@@ -225,7 +225,7 @@ class TestTwoStageScoring:
                     {"id": 3, "score": 7, "is_highlight": False, "reason": "高", "tags": [], "relevant_tickers": []},
                     {"id": 4, "score": 2, "is_highlight": False, "reason": "低", "tags": [], "relevant_tickers": []},
                 ], ensure_ascii=False)
-                return raw, "ok", ""
+                return raw, "ok", "", None
             elif "精通中英双语金融翻译" in system_msg:
                 # 翻译阶段只收到通过阈值的条目
                 user_msg = payload["messages"][1]["content"]
@@ -236,28 +236,28 @@ class TestTwoStageScoring:
                     {"id": 1, "chinese_title": "标题一", "chinese_summary": "摘要一", "why_it_matters": "理由一"},
                     {"id": 2, "chinese_title": "标题二", "chinese_summary": "摘要二", "why_it_matters": "理由二"},
                 ], ensure_ascii=False)
-                return raw, "ok", ""
-            return None, "api_error", "unknown"
+                return raw, "ok", "", None
+            return None, "api_error", "unknown", None
 
         mock_settings = MagicMock()
         mock_settings.SILICONFLOW_API_KEY = "k"
         mock_settings.SILICONFLOW_LLM_MODEL = "m"
         mock_settings.SILICONFLOW_API_URL = "http://mock"
-        mock_settings.DEEPSEEK_BATCH_SIZE = 20
-        mock_settings.DEEPSEEK_SCORE_THRESHOLD = 5
-        mock_settings.DEEPSEEK_MAX_RETRIES = 2
-        mock_settings.DEEPSEEK_CONTENT_PREVIEW_CHARS = 800
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_TITLE = 0.5
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY = 0.6
-        mock_settings.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = True
-        mock_settings.DEEPSEEK_CONTENT_RISK_MAX_DEPTH = 6
-        mock_settings.DEEPSEEK_TWO_STAGE_EN_ENABLED = True
-        mock_settings.DEEPSEEK_TRANSLATE_BATCH_SIZE = 20
+        mock_settings.LLM_BATCH_SIZE = 20
+        mock_settings.LLM_SCORE_THRESHOLD = 5
+        mock_settings.LLM_MAX_RETRIES = 2
+        mock_settings.LLM_CONTENT_PREVIEW_CHARS = 800
+        mock_settings.LLM_MIN_CHINESE_RATIO_TITLE = 0.5
+        mock_settings.LLM_MIN_CHINESE_RATIO_SUMMARY = 0.6
+        mock_settings.LLM_CONTENT_RISK_BISECT_ENABLED = True
+        mock_settings.LLM_CONTENT_RISK_MAX_DEPTH = 6
+        mock_settings.LLM_TWO_STAGE_EN_ENABLED = True
+        mock_settings.LLM_TRANSLATE_BATCH_SIZE = 20
 
         mock_client = MagicMock()
 
-        with patch("app.services.deepseek_filter.settings", mock_settings), \
-             patch("app.services.deepseek_filter._call_llm_once", side_effect=fake_call):
+        with patch("app.services.llm_news_filter.settings", mock_settings), \
+             patch("app.services.llm_news_filter._call_llm_once", side_effect=fake_call):
             result = await filter_batch_detailed(items, is_english=True, client=mock_client)
 
         # 只有2条通过阈值 → 翻译阶段只翻译2条
@@ -280,30 +280,30 @@ class TestTwoStageScoring:
                     {"id": i, "score": 8, "is_highlight": False, "reason": "ok", "tags": [], "relevant_tickers": []}
                     for i in range(1, 3)
                 ], ensure_ascii=False)
-                return raw, "ok", ""
+                return raw, "ok", "", None
             elif "精通中英双语金融翻译" in system_msg:
-                return None, "api_error", "translate failed"
-            return None, "api_error", "unknown"
+                return None, "api_error", "translate failed", None
+            return None, "api_error", "unknown", None
 
         mock_settings = MagicMock()
         mock_settings.SILICONFLOW_API_KEY = "k"
         mock_settings.SILICONFLOW_LLM_MODEL = "m"
         mock_settings.SILICONFLOW_API_URL = "http://mock"
-        mock_settings.DEEPSEEK_BATCH_SIZE = 20
-        mock_settings.DEEPSEEK_SCORE_THRESHOLD = 5
-        mock_settings.DEEPSEEK_MAX_RETRIES = 2
-        mock_settings.DEEPSEEK_CONTENT_PREVIEW_CHARS = 800
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_TITLE = 0.5
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY = 0.6
-        mock_settings.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = True
-        mock_settings.DEEPSEEK_CONTENT_RISK_MAX_DEPTH = 6
-        mock_settings.DEEPSEEK_TWO_STAGE_EN_ENABLED = True
-        mock_settings.DEEPSEEK_TRANSLATE_BATCH_SIZE = 20
+        mock_settings.LLM_BATCH_SIZE = 20
+        mock_settings.LLM_SCORE_THRESHOLD = 5
+        mock_settings.LLM_MAX_RETRIES = 2
+        mock_settings.LLM_CONTENT_PREVIEW_CHARS = 800
+        mock_settings.LLM_MIN_CHINESE_RATIO_TITLE = 0.5
+        mock_settings.LLM_MIN_CHINESE_RATIO_SUMMARY = 0.6
+        mock_settings.LLM_CONTENT_RISK_BISECT_ENABLED = True
+        mock_settings.LLM_CONTENT_RISK_MAX_DEPTH = 6
+        mock_settings.LLM_TWO_STAGE_EN_ENABLED = True
+        mock_settings.LLM_TRANSLATE_BATCH_SIZE = 20
 
         mock_client = MagicMock()
 
-        with patch("app.services.deepseek_filter.settings", mock_settings), \
-             patch("app.services.deepseek_filter._call_llm_once", side_effect=fake_call):
+        with patch("app.services.llm_news_filter.settings", mock_settings), \
+             patch("app.services.llm_news_filter._call_llm_once", side_effect=fake_call):
             result = await filter_batch_detailed(items, is_english=True, client=mock_client)
 
         assert len(result.scored) == 2
@@ -330,27 +330,27 @@ class TestTwoStageScoring:
                 "chinese_title": "测试标题", "chinese_summary": "测试摘要",
                 "tags": [], "relevant_tickers": [], "why_it_matters": "理由",
             }], ensure_ascii=False)
-            return raw, "ok", ""
+            return raw, "ok", "", None
 
         mock_settings = MagicMock()
         mock_settings.SILICONFLOW_API_KEY = "k"
         mock_settings.SILICONFLOW_LLM_MODEL = "m"
         mock_settings.SILICONFLOW_API_URL = "http://mock"
-        mock_settings.DEEPSEEK_BATCH_SIZE = 20
-        mock_settings.DEEPSEEK_SCORE_THRESHOLD = 5
-        mock_settings.DEEPSEEK_MAX_RETRIES = 2
-        mock_settings.DEEPSEEK_CONTENT_PREVIEW_CHARS = 800
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_TITLE = 0.5
-        mock_settings.DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY = 0.6
-        mock_settings.DEEPSEEK_CONTENT_RISK_BISECT_ENABLED = True
-        mock_settings.DEEPSEEK_CONTENT_RISK_MAX_DEPTH = 6
-        mock_settings.DEEPSEEK_TWO_STAGE_EN_ENABLED = False  # 关闭两阶段
-        mock_settings.DEEPSEEK_TRANSLATE_BATCH_SIZE = 20
+        mock_settings.LLM_BATCH_SIZE = 20
+        mock_settings.LLM_SCORE_THRESHOLD = 5
+        mock_settings.LLM_MAX_RETRIES = 2
+        mock_settings.LLM_CONTENT_PREVIEW_CHARS = 800
+        mock_settings.LLM_MIN_CHINESE_RATIO_TITLE = 0.5
+        mock_settings.LLM_MIN_CHINESE_RATIO_SUMMARY = 0.6
+        mock_settings.LLM_CONTENT_RISK_BISECT_ENABLED = True
+        mock_settings.LLM_CONTENT_RISK_MAX_DEPTH = 6
+        mock_settings.LLM_TWO_STAGE_EN_ENABLED = False  # 关闭两阶段
+        mock_settings.LLM_TRANSLATE_BATCH_SIZE = 20
 
         mock_client = MagicMock()
 
-        with patch("app.services.deepseek_filter.settings", mock_settings), \
-             patch("app.services.deepseek_filter._call_llm_once", side_effect=fake_call):
+        with patch("app.services.llm_news_filter.settings", mock_settings), \
+             patch("app.services.llm_news_filter._call_llm_once", side_effect=fake_call):
             result = await filter_batch_detailed(items, is_english=True, client=mock_client)
 
         assert call_count["n"] == 1  # 只调1次（单阶段）
@@ -408,7 +408,7 @@ class TestOriginalOrderPreservation:
             return BatchResult(scored=scored, status="ok",
                                processed_ids=set(range(1, len(batch) + 1)))
 
-        with patch("app.services.deepseek_filter.filter_batch_detailed",
+        with patch("app.services.llm_news_filter.filter_batch_detailed",
                     side_effect=fake_filter_batch_detailed):
             result = await filter_news(items)
 
@@ -439,7 +439,7 @@ class TestOriginalOrderPreservation:
             return BatchResult(scored=scored, status="ok",
                                processed_ids=set(range(1, len(batch) + 1)))
 
-        with patch("app.services.deepseek_filter.filter_batch_detailed",
+        with patch("app.services.llm_news_filter.filter_batch_detailed",
                     side_effect=fake_filter_batch_detailed):
             result = await filter_news(items)
 
@@ -480,11 +480,11 @@ class TestConcurrentBatching:
             return BatchResult(scored=scored, status="ok",
                                processed_ids=set(range(1, len(batch) + 1)))
 
-        with patch("app.services.deepseek_filter.filter_batch_detailed",
+        with patch("app.services.llm_news_filter.filter_batch_detailed",
                     side_effect=fake_filter_batch_detailed), \
-             patch("app.services.deepseek_filter.settings") as mock_s:
-            mock_s.DEEPSEEK_BATCH_SIZE = 2
-            mock_s.DEEPSEEK_MAX_CONCURRENCY = 3
+             patch("app.services.llm_news_filter.settings") as mock_s:
+            mock_s.LLM_BATCH_SIZE = 2
+            mock_s.LLM_MAX_CONCURRENCY = 3
             t0 = _asyncio.get_event_loop().time()
             result = await filter_news(items)
             elapsed = _asyncio.get_event_loop().time() - t0
@@ -516,11 +516,11 @@ class TestConcurrentBatching:
             return BatchResult(scored=scored, status="ok",
                                processed_ids=set(range(1, len(batch) + 1)))
 
-        with patch("app.services.deepseek_filter.filter_batch_detailed",
+        with patch("app.services.llm_news_filter.filter_batch_detailed",
                     side_effect=fake_filter_batch_detailed), \
-             patch("app.services.deepseek_filter.settings") as mock_s:
-            mock_s.DEEPSEEK_BATCH_SIZE = 2
-            mock_s.DEEPSEEK_MAX_CONCURRENCY = 1
+             patch("app.services.llm_news_filter.settings") as mock_s:
+            mock_s.LLM_BATCH_SIZE = 2
+            mock_s.LLM_MAX_CONCURRENCY = 1
             await filter_news(items)
 
         # max_concurrency=1 → 同时最多 1 个 batch 在跑
@@ -548,11 +548,11 @@ class TestConcurrentBatching:
             return BatchResult(scored=scored, status="ok",
                                processed_ids=set(range(1, len(batch) + 1)))
 
-        with patch("app.services.deepseek_filter.filter_batch_detailed",
+        with patch("app.services.llm_news_filter.filter_batch_detailed",
                     side_effect=fake_filter_batch_detailed), \
-             patch("app.services.deepseek_filter.settings") as mock_s:
-            mock_s.DEEPSEEK_BATCH_SIZE = 2
-            mock_s.DEEPSEEK_MAX_CONCURRENCY = 3
+             patch("app.services.llm_news_filter.settings") as mock_s:
+            mock_s.LLM_BATCH_SIZE = 2
+            mock_s.LLM_MAX_CONCURRENCY = 3
             await filter_news(items)
 
         # 3 批 max_concurrency=3 → 全部同时跑

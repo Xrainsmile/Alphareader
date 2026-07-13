@@ -31,7 +31,7 @@ from app.database import async_session
 from app.models.analytics import PipelineRun
 from app.models.news import News
 from app.redis import get_redis
-from app.services.deepseek_filter import FilterResult, ScoredNewsItem, filter_news
+from app.services.llm_news_filter import FilterResult, ScoredNewsItem, filter_news
 from app.services.rss_fetcher import REDIS_DEDUP_KEY, _normalize_url, fetch_all_feeds
 from app.utils.deduplicator import NewsDeduplicator
 
@@ -348,7 +348,7 @@ async def run_pipeline() -> dict:
     noise_filtered = []
     noise_count = 0
     for si in scored_items:
-        if noise_tag in si.tags and si.score <= settings.DEEPSEEK_SCORE_THRESHOLD:
+        if noise_tag in si.tags and si.score <= settings.LLM_SCORE_THRESHOLD:
             noise_count += 1
             logger.debug(
                 "Noise filter: drop '%s' (score=%d, tags=%s)",
@@ -358,7 +358,7 @@ async def run_pipeline() -> dict:
         noise_filtered.append(si)
     if noise_count:
         logger.info("Noise filter: dropped %d items tagged '%s' with score <= %d",
-                     noise_count, noise_tag, settings.DEEPSEEK_SCORE_THRESHOLD)
+                     noise_count, noise_tag, settings.LLM_SCORE_THRESHOLD)
     scored_items = noise_filtered
 
     # 收集评分分布 & 各信源通过数
