@@ -34,14 +34,40 @@
   （镜像里的脚本可能是旧版，用 bind-mount 覆盖为最新）。
 - 历史 6733 条（最近 30 天 ai_score>=6）于 2026-07-08 回填，约 45-90 分钟。
 
-## 财联社（cls.cn）信源接口（易失，常改版）
+## 中文财经信源
 
-- 抓取代码在 `backend/app/services/rss_fetcher.py`，`FeedSource(name="财联社", signed_cls=True)`。
-- **当前可用接口**：`https://www.cls.cn/v1/roll/get_roll_list`（GET）。
-- **签名算法**（已第三次改版，逆向自 cls.cn 前端 JS）：`sign = MD5( SHA1( 按 key 升序拼接的 "k=v&k=v" 串 ) )`，
-  请求自动注入 `app=CailianpressWeb` / `os=web` / `sv=8.7.9`，签名覆盖全部 query 参数（不含 sign 自身）。
-- 若未来再 404/10012：直接逆向 cls.cn 前端 bundle（`/_next/static/chunks/pages/telegraph-*.js` 引用的请求层模块）核对 `_cls_sign` 与 `sv` 版本号，无需全网试错。
-- 历史端点：`nodeapi/updateTelegraphList` → `nodeapi/telegraphList` → `v1/roll/get_roll_list`（均已废弃前者）。
+### 富途新闻（futunn.com）— 当前活跃
+
+- 2026-07-13 替换财联社，因财联社电报流含大量 A 股个股异动/盘面快讯噪音。
+- 抓取代码：`backend/app/services/rss_fetcher.py`，`_parse_futu()` parser + `FeedSource(name="富途新闻")`。
+- **接口**：`https://news.futunn.com/news-site-api/main/get-flash-list?pageSize=30&lastTime=0`（GET，无需签名）。
+- **必须 Header**：`Referer: https://news.futunn.com/main/live`。
+- 返回结构：`data.data.news[]`，字段 `title/content/detailUrl/time(秒级时间戳)/relatedStocks`。
+- 部分快讯 title 为空，用 content 前 60 字做标题。
+- 财联社 parser/签名代码保留备用，仅移除 FeedSource 入口。
+
+### 财联社（cls.cn）— 已停用（2026-07-13）
+
+- 代码保留在 `rss_fetcher.py`（`_parse_cls` / `_cls_sign` / `_cls_build_params`）。
+- 接口：`https://www.cls.cn/v1/roll/get_roll_list`（GET，需动态签名）。
+- 签名算法：`sign = MD5( SHA1( 按 key 升序拼接的 "k=v&k=v" 串 ) )`，`app=CailianpressWeb` / `os=web` / `sv=8.7.9`。
+- 若未来恢复使用：核对 cls.cn 前端 bundle 的 `_cls_sign` 与 `sv` 版本号。
+
+## 推荐流削减配置（2026-07-13）
+
+- 入库闸门 `LLM_SCORE_THRESHOLD=5`（保留全量数据），展示闸门分离。
+- 后端 `list_news` 默认：`min_score=6` + `max_age_hours=24` + `highlight_only=False`。
+- 前端 `useNewsFilter` 默认：`minScore=6` + `maxAgeHours=24` + `onlyHighlight=false`。
+- 「🔥 只看重点」chip：`is_highlight=true` 子集（score≥8 + 强催化 + 量化数据 + 一周内）。
+- **已知问题**：8B 模型给科技类新闻系统性打分 5-6（无 ≥7），阈值 7 会导致科技类完全消失，故默认降至 6。
+- 数据分布（2026-07-13）：≥6+24h 全部 407 / 财经 314 / 科技 93；≥7 全部 81 / 财经 81 / 科技 0。
+
+## simhash_fingerprint 溢出修复（2026-07-13）
+
+- `Simhash.value` 返回无符号 64 位整数，PostgreSQL BIGINT 是有符号（max 2^63-1）。
+- 超 2^63 的值报 "value out of int64 range"，导致约 60% 新闻写入失败。
+- 修复：`pipeline.py` 持久化时 `sh.value if sh.value < 2**63 else sh.value - 2**64`；
+  `deduplicator.py` `_hamming()` 统一 `& 0xFFFFFFFFFFFFFFFF` mask 再比较。
 
 ## LLM 评分模块 llm_news_filter.py（2026-07-13 大改，P0-P4）
 

@@ -9,7 +9,17 @@
           <image v-else class="inspire-icon" src="/static/icons/done-all.svg" mode="aspectFit" />
         </view>
       </view>
-      <text class="subtitle">高频金融情报 · 信噪比优先</text>
+      <view class="subtitle-row">
+        <text class="subtitle">高频金融情报 · 信噪比优先</text>
+        <view class="info-trigger" @click="showScoreInfo = !showScoreInfo">
+          <text class="info-trigger-text">?</text>
+        </view>
+      </view>
+      <view v-if="showScoreInfo" class="info-panel" @click="showScoreInfo = false">
+        <view class="info-panel-item"><text class="info-panel-label">★★★</text><text class="info-panel-desc">综合 AI 评分、时效性与信源权威度排序，三星为高影响力</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">▲/▽</text><text class="info-panel-desc">情绪倾向：基于催化类型与预期差判定，非随机数</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">信源</text><text class="info-panel-desc">同一事件被多家媒体报道时显示信源数</text></view>
+      </view>
     </view>
 
     <!-- 分类 Tab：全部 / 财经 / 科技 -->
@@ -215,6 +225,9 @@ const {
 
 // ── Inspire Button ──
 const promptCopied = ref(false)
+
+// ── 评分说明面板 ──
+const showScoreInfo = ref(false)
 
 // ── 曝光追踪 ──
 let _impressionObserver = null
@@ -613,8 +626,57 @@ onReachBottom(() => {
 .subtitle {
   font-size: 24rpx;
   color: var(--color-text-muted);
-  margin-top: 6rpx;
   letter-spacing: 1rpx;
+}
+.subtitle-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 6rpx;
+}
+.info-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32rpx;
+  height: 32rpx;
+  border-radius: 50%;
+  background: rgba(26, 26, 46, 0.06);
+  border: 1rpx solid rgba(26, 26, 46, 0.1);
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.info-trigger-text {
+  font-size: 22rpx;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+.info-panel {
+  margin-top: 12rpx;
+  padding: 20rpx 24rpx;
+  background: var(--color-bg-card);
+  border-radius: 16rpx;
+  border: 1rpx solid var(--color-border);
+  cursor: pointer;
+}
+.info-panel-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  padding: 6rpx 0;
+}
+.info-panel-label {
+  font-size: 24rpx;
+  color: var(--color-brand);
+  font-weight: 700;
+  flex-shrink: 0;
+  min-width: 60rpx;
+}
+.info-panel-desc {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 
 /* ── Category Tabs ── */
@@ -1307,10 +1369,14 @@ onReachBottom(() => {
   border-left: 4rpx solid var(--color-warning);
   border-radius: 8rpx;
 }
-:deep(.why-icon) {
-  font-size: 22rpx;
-  line-height: 1.5;
+:deep(.why-icon-svg) {
   flex-shrink: 0;
+  width: 24rpx;
+  height: 24rpx;
+  margin-top: 4rpx;
+  -webkit-mask: url(/static/icons/bulb.svg) no-repeat center / contain;
+  mask: url(/static/icons/bulb.svg) no-repeat center / contain;
+  background-color: var(--color-warning);
 }
 :deep(.why-text) {
   font-size: 24rpx;
@@ -1355,13 +1421,11 @@ onReachBottom(() => {
   padding: 2rpx 12rpx;
   border-radius: 16rpx;
 }
-:deep(.gravity-icon) {
-  font-size: 20rpx;
-}
 :deep(.gravity-value) {
-  font-size: 20rpx;
-  font-weight: 600;
-  font-family: var(--font-numeric);
+  font-size: 22rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  line-height: 1.4;
 }
 :deep(.gravity-high) {
   background: rgba(255, 59, 48, 0.12);
@@ -1391,6 +1455,17 @@ onReachBottom(() => {
 /* ── Sentiment Badge ── */
 :deep(.sentiment-badge) { display:flex; align-items:center; gap:4rpx; padding:2rpx 12rpx; border-radius:16rpx; }
 :deep(.sentiment-icon)  { font-size:18rpx; }
+:deep(.sentiment-icon-svg) { flex-shrink:0; width:18rpx; height:18rpx; }
+:deep(.sentiment-icon-up) {
+  -webkit-mask: url(/static/icons/arrow-up.svg) no-repeat center / contain;
+  mask: url(/static/icons/arrow-up.svg) no-repeat center / contain;
+  background-color: var(--color-up);
+}
+:deep(.sentiment-icon-down) {
+  -webkit-mask: url(/static/icons/arrow-down.svg) no-repeat center / contain;
+  mask: url(/static/icons/arrow-down.svg) no-repeat center / contain;
+  background-color: var(--color-down);
+}
 :deep(.sentiment-value) { font-size:20rpx; font-weight:600; font-family:'SF Pro Display',-apple-system,sans-serif; }
 :deep(.sentiment-bull)      { background:rgba(255,59,48,0.12); }
 :deep(.sentiment-bull .sentiment-value),:deep(.sentiment-bull .sentiment-icon) { color:var(--color-up); }
@@ -1758,8 +1833,10 @@ onReachBottom(() => {
     padding: 6px 12px;
     border-radius: 6px;
   }
-  :deep(.why-icon) {
-    font-size: 12px;
+  :deep(.why-icon-svg) {
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
   }
   :deep(.why-text) {
     font-size: 13px;
@@ -1782,11 +1859,9 @@ onReachBottom(() => {
     padding: 1px 8px;
     border-radius: 10px;
   }
-  :deep(.gravity-icon) {
-    font-size: 11px;
-  }
   :deep(.gravity-value) {
-    font-size: 11px;
+    font-size: 13px;
+    letter-spacing: 0.5px;
   }
 
   /* ── Load More ── */
@@ -1800,6 +1875,15 @@ onReachBottom(() => {
   /* ── Sentiment Badge PC ── */
   :deep(.sentiment-badge) { gap:3px; padding:1px 8px; border-radius:10px; }
   :deep(.sentiment-icon),:deep(.sentiment-value) { font-size:11px; }
+  :deep(.sentiment-icon-svg) { width:11px; height:11px; }
+
+  /* ── Info Panel PC ── */
+  .subtitle-row { margin-top: 4px; gap: 6px; }
+  .info-trigger { width: 18px; height: 18px; }
+  .info-trigger-text { font-size: 12px; }
+  .info-panel { margin-top: 8px; padding: 12px 16px; border-radius: 10px; }
+  .info-panel-label { font-size: 13px; min-width: 36px; }
+  .info-panel-desc { font-size: 13px; }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1824,9 +1908,13 @@ onReachBottom(() => {
   background: rgba(255, 59, 48, 0.1);
   border-radius: 16rpx;
 }
-::deep(.source-count-icon) {
-  font-size: 20rpx;
-  line-height: 1.4;
+::deep(.source-count-icon-svg) {
+  flex-shrink: 0;
+  width: 20rpx;
+  height: 20rpx;
+  -webkit-mask: url(/static/icons/flame.svg) no-repeat center / contain;
+  mask: url(/static/icons/flame.svg) no-repeat center / contain;
+  background-color: var(--color-up);
 }
 ::deep(.source-count-text) {
   font-size: 20rpx;
@@ -1842,8 +1930,9 @@ onReachBottom(() => {
     padding: 1px 8px;
     border-radius: 10px;
   }
-  :deep(.source-count-icon) {
-    font-size: 11px;
+  :deep(.source-count-icon-svg) {
+    width: 11px;
+    height: 11px;
   }
   :deep(.source-count-text) {
     font-size: 11px;

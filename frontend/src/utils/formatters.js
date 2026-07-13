@@ -36,18 +36,19 @@ export function formatTime(iso) {
   return `${mm}-${dd}`
 }
 
-/** Hacker Gravity 值格式化 — 保留 1 位小数 */
-export function formatGravity(score) {
+/** Hacker Gravity 星级（3 级，替代精确数值）*/
+export function gravityStars(score) {
   if (score == null) return ''
-  return Number(score).toFixed(1)
+  if (score >= 1.0) return '★★★'
+  if (score >= 0.3) return '★★'
+  return '★'
 }
 
 /** Hacker Gravity 等级 class */
 export function gravityClass(score) {
   if (score >= 1.0) return 'gravity-high'
   if (score >= 0.3) return 'gravity-medium'
-  if (score >= 0.05) return 'gravity-normal'
-  return 'gravity-low'
+  return 'gravity-normal'
 }
 
 /** 情绪 class */

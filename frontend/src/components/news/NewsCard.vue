@@ -15,7 +15,7 @@
 
       <!-- 推荐理由（why_it_matters）：一句话告诉用户为什么该关注 -->
       <view v-if="item.why_it_matters" class="news-why">
-        <text class="why-icon">💡</text>
+        <view class="why-icon-svg"></view>
         <text class="why-text">{{ item.why_it_matters }}</text>
       </view>
 
@@ -38,7 +38,7 @@
         <template v-if="childrenCount > 0">
           <text class="meta-dot">·</text>
           <view class="source-count-badge">
-            <text class="source-count-icon">🔥</text>
+            <view class="source-count-icon-svg"></view>
             <text class="source-count-text">{{ childrenCount + 1 }} 信源</text>
           </view>
         </template>
@@ -46,8 +46,7 @@
         <template v-if="showGravity && item.ranking_score != null">
           <text class="meta-dot">·</text>
           <view class="gravity-badge" :class="gravityClass(computedGravity)">
-            <text class="gravity-icon">⚡</text>
-            <text class="gravity-value">{{ formatGravity(computedGravity) }}</text>
+            <text class="gravity-value">{{ gravityStars(computedGravity) }}</text>
           </view>
         </template>
         <!-- 搜索相关度 -->
@@ -62,7 +61,9 @@
         <template v-if="item.sentiment_score != null">
           <text class="meta-dot">·</text>
           <view class="sentiment-badge" :class="sentimentClass(item.sentiment_score)">
-            <text class="sentiment-icon">{{ sentimentIcon(item.sentiment_score) }}</text>
+            <view v-if="item.sentiment_score > 0" class="sentiment-icon-svg sentiment-icon-up"></view>
+            <view v-else-if="item.sentiment_score < 0" class="sentiment-icon-svg sentiment-icon-down"></view>
+            <text v-else class="sentiment-icon">—</text>
             <text class="sentiment-value">{{ item.sentiment_score > 0 ? '+' : '' }}{{ item.sentiment_score }}</text>
           </view>
         </template>
@@ -77,10 +78,9 @@ import {
   scoreClass,
   formatScore,
   formatTime,
-  formatGravity,
+  gravityStars,
   gravityClass,
   sentimentClass,
-  sentimentIcon,
   formatRelevance,
 } from '../../utils/formatters.js'
 
