@@ -311,11 +311,15 @@ def _build_conclusion(level, dims, trend_broken, vol_shock, breadth_deter, break
 
 async def _save(result: dict, metrics: dict) -> None:
     """upsert 到 market_adaptability。"""
+    from datetime import datetime as _dt
+    _td = result["trade_date"]
+    if isinstance(_td, str):
+        _td = _dt.strptime(_td, "%Y-%m-%d").date()
     async with async_session() as session:
         stmt = pg_insert(MarketAdaptability).values(
             strategy_id=result["strategy_id"],
             market=result["market"],
-            trade_date=result["trade_date"],
+            trade_date=_td,
             total_score=result["total_score"],
             level=result["level"],
             dimension_scores=result["dimensions"],

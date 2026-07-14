@@ -49,22 +49,26 @@ async def load_benchmark_index(market: str, target_date: date) -> pd.DataFrame:
         DataFrame[ trade_date, close, source ]  source ∈ {real, synthetic}
     """
     bench = BENCHMARK_INDEX.get(market, BENCHMARK_INDEX["CN"])
-    code = bench["primary"]
+    codes = [bench["primary"]] + list(bench.get("alternatives", []))
 
-    async with async_session() as session:
-        result = await session.execute(
-            select(IndexDaily.trade_date, IndexDaily.close, IndexDaily.source)
-            .where(IndexDaily.index_code == code)
-            .where(IndexDaily.trade_date <= target_date)
-            .order_by(IndexDaily.trade_date.asc())
-        )
-        rows = result.all()
+    df = None
+    for code in codes:
+        async with async_session() as session:
+            result = await session.execute(
+                select(IndexDaily.trade_date, IndexDaily.close, IndexDaily.source)
+                .where(IndexDaily.index_code == code)
+                .where(IndexDaily.trade_date <= target_date)
+                .order_by(IndexDaily.trade_date.asc())
+            )
+            rows = result.all()
+        if rows and len(rows) >= 250:
+            df = pd.DataFrame(
+                [(r.trade_date, float(r.close), r.source or "real") for r in rows],
+                columns=["trade_date", "close", "source"],
+            )
+            break
 
-    if rows and len(rows) >= 250:
-        df = pd.DataFrame(
-            [(r.trade_date, float(r.close), r.source or "real") for r in rows],
-            columns=["trade_date", "close", "source"],
-        )
+    if df is not None:
         return df
 
     # 真实指数不足 → 合成等权代理（基于全市场日收益率均值滚动累计）

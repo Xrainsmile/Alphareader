@@ -77,8 +77,54 @@ async def _upsert(rows: list[dict]) -> int:
     return len(rows)
 
 
+def _fetch_cn_tencent(code: str, name: str, market: str, start: date, end: date) -> list[dict]:
+    """腾讯财经采集 A 股指数（服务器对腾讯行情可达，优先于 akshare）。
+
+    API: http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh{code},day,{start},{end},400,qfq
+    返回: data.data.{tc_code}.qfqday = [[日期, 开盘, 收盘, 最高, 最低, 成交量], ...]
+    """
+    import json
+    import urllib.request
+
+    tc_code = f"sh{code}"
+    url = (
+        f"http://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        f"?param={tc_code},day,{start.strftime('%Y-%m-%d')},{end.strftime('%Y-%m-%d')},400,qfq"
+    )
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            text = resp.read().decode("utf-8")
+        data = json.loads(text)
+        stock_data = data.get("data", {}).get(tc_code, {})
+        kline = stock_data.get("day") or stock_data.get("qfqday")
+        if not kline:
+            return []
+        out = []
+        for item in kline:
+            if len(item) < 6:
+                continue
+            d = _parse_date(item[0])
+            if d is None:
+                continue
+            out.append({
+                "index_code": code, "index_name": name, "market": market,
+                "trade_date": d,
+                "open": _f(item[1]), "close": _f(item[2]),
+                "high": _f(item[3]), "low": _f(item[4]),
+                "volume": _f(item[5]), "amount": None,
+                "source": "tencent",
+            })
+        return out
+    except Exception as e:
+        logger.warning("腾讯采集指数 %s 失败: %s", code, e)
+        return []
+
+
 def _fetch_cn_akshare(code: str, name: str, market: str, start: date, end: date) -> list[dict]:
-    """akshare 采集 A 股指数。失败时返回 []。"""
+    """akshare 采集 A 股指数（腾讯不可达时的兜底）。失败时返回 []。"""
     try:
         import akshare as ak
     except Exception as e:
@@ -111,8 +157,49 @@ def _fetch_cn_akshare(code: str, name: str, market: str, start: date, end: date)
         return []
 
 
+def _fetch_us_tencent(tc_code: str, store_code: str, name: str, market: str, start: date, end: date) -> list[dict]:
+    """腾讯财经采集美股指数（yfinance 不可达时的兜底）。"""
+    import json
+    import urllib.request
+
+    url = (
+        f"http://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        f"?param={tc_code},day,{start.strftime('%Y-%m-%d')},{end.strftime('%Y-%m-%d')},400,qfq"
+    )
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            text = resp.read().decode("utf-8")
+        data = json.loads(text)
+        stock_data = data.get("data", {}).get(tc_code, {})
+        kline = stock_data.get("day") or stock_data.get("qfqday")
+        if not kline:
+            return []
+        out = []
+        for item in kline:
+            if len(item) < 6:
+                continue
+            d = _parse_date(item[0])
+            if d is None:
+                continue
+            out.append({
+                "index_code": store_code, "index_name": name, "market": market,
+                "trade_date": d,
+                "open": _f(item[1]), "close": _f(item[2]),
+                "high": _f(item[3]), "low": _f(item[4]),
+                "volume": _f(item[5]), "amount": None,
+                "source": "tencent",
+            })
+        return out
+    except Exception as e:
+        logger.warning("腾讯采集美股指数 %s 失败: %s", store_code, e)
+        return []
+
+
 def _fetch_us_yfinance(code: str, name: str, market: str, start: date, end: date) -> list[dict]:
-    """yfinance 采集美股指数。失败时返回 []（适配度服务将使用合成代理）。"""
+    """yfinance 采集美股指数。失败时回退腾讯（仅 ^IXIC 有可靠腾讯代码）。"""
     try:
         import yfinance as yf
     except Exception as e:
@@ -122,7 +209,7 @@ def _fetch_us_yfinance(code: str, name: str, market: str, start: date, end: date
         tk = yf.Ticker(code)
         hist = tk.history(start=start, end=end + timedelta(days=1), interval="1d", auto_adjust=False)
         if hist is None or hist.empty:
-            return []
+            raise ValueError("empty history")
         out = []
         for idx, r in hist.iterrows():
             d = idx.date()
@@ -136,7 +223,11 @@ def _fetch_us_yfinance(code: str, name: str, market: str, start: date, end: date
             })
         return out
     except Exception as e:
-        logger.warning("yfinance 采集指数 %s 失败（将使用合成代理）: %s", code, e)
+        logger.warning("yfinance 采集指数 %s 失败: %s", code, e)
+        # 美股仅 ^IXIC 有可靠腾讯代码可兜底
+        if code == "^IXIC":
+            logger.info("回退腾讯采集 %s", code)
+            return _fetch_us_tencent("usIXIC", "^IXIC", name, market, start, end)
         return []
 
 
@@ -179,7 +270,10 @@ async def fetch_indices(market: str | None = None) -> dict:
     for mk, code, name in targets:
         rows: list[dict] = []
         if mk == "CN":
-            rows = _fetch_cn_akshare(code, name, mk, start, end)
+            # 腾讯财经优先（服务器可达），akshare 兜底
+            rows = _fetch_cn_tencent(code, name, mk, start, end)
+            if not rows:
+                rows = _fetch_cn_akshare(code, name, mk, start, end)
         else:
             rows = _fetch_us_yfinance(code, name, mk, start, end)
         stored = await _upsert(rows)
