@@ -1,16 +1,18 @@
 """Alphareader — 美股数据获取模块（异步版，多源架构）。
 
 职责：
-  - 通过 **腾讯财经** 获取美股前复权日线行情（OHLCV）— 主力数据源
-  - 通过 **yfinance** 作为 fallback（仅海外服务器可用）
+  - 通过 **新浪财经** 获取美股前复权日线行情（OHLCV）— 主力数据源（服务器可达、完整历史）
+  - 通过 **腾讯财经** 作为 fallback（带交易所后缀 .OQ/.N）
+  - 通过 **yfinance** 作为最后 fallback（仅海外服务器可用）
   - 数据自洽性校验（写入 DB 前自动检查）
   - 持久化到 PostgreSQL（stock_daily_quote 表，market='US'）
   - 智能缓存：当天已有数据则跳过下载
 
 数据源优先级：
-  1. 腾讯财经 API — 主力源（国内 CDN，需要带交易所后缀 .OQ/.N）
-  2. yfinance — fallback（国内服务器无法访问 Yahoo Finance）
-  3. 新浪财经 — 最后一天实时行情抽样验证
+  1. 新浪财经 US_MinKService — 主力源（服务器可达，个股/指数完整历史）
+  2. 腾讯财经 API — fallback（国内 CDN，需带交易所后缀 .OQ/.N；注意美股指数仅返最新 1 天）
+  3. yfinance — 最后 fallback（国内服务器无法访问 Yahoo Finance）
+  4. 新浪财经 hq.sinajs — 最后一天实时行情抽样验证
 
 内存优化：
   - 分批拉取 + 分批写入 DB（与 A 股 data_fetcher 相同策略）
@@ -803,6 +805,82 @@ def _try_tencent_kline(tc_code: str, ticker: str, days: int) -> pd.DataFrame | N
 
 
 # ============================================================
+# 2.5 新浪财经 — 主力数据源（美股个股日线，服务器可达）
+# ============================================================
+
+def _parse_sina_date(v) -> date | None:
+    """解析新浪日期字符串 YYYY-MM-DD。"""
+    if not v:
+        return None
+    try:
+        return datetime.strptime(str(v), "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _sync_fetch_sina_us_kline(ticker: str, days: int = 320) -> pd.DataFrame | None:
+    """通过新浪财经 US_MinKService 获取单只美股前复权日线（主数据源）。
+
+    接口: https://stock.finance.sina.com.cn/usstock/api/json.php/US_MinKService.getDailyK?symbol={sym}
+    返回: [{"d":"2026-07-13","o":开盘,"h":最高,"l":最低,"c":收盘,"v":成交量,"a":成交额}, ...]
+    新浪返回该标的完整历史（个股可达 1984 起），本函数仅保留最近 days 天以控内存。
+
+    ticker 含连字符时转为点号（BRK-B → BRK.B，新浪格式）。
+    """
+    sina_sym = ticker.replace("-", ".")
+    url = (
+        "https://stock.finance.sina.com.cn/usstock/api/json.php/"
+        f"US_MinKService.getDailyK?symbol={sina_sym}"
+    )
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://finance.sina.com.cn",
+        })
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            text = resp.read().decode("utf-8")
+        data = json.loads(text)
+        if not isinstance(data, list) or not data:
+            return None
+
+        rows = []
+        for item in data:
+            d = _parse_sina_date(item.get("d"))
+            if d is None:
+                continue
+            try:
+                raw_a = item.get("a")
+                amount = float(raw_a) if raw_a not in (None, "", "0", 0) else None
+                rows.append({
+                    "trade_date": d,
+                    "open": float(item["o"]),
+                    "close": float(item["c"]),
+                    "high": float(item["h"]),
+                    "low": float(item["l"]),
+                    "volume": float(item["v"]),
+                    "amount": amount,
+                    "ts_code": ticker,
+                })
+            except (ValueError, TypeError, KeyError):
+                continue
+
+        if not rows:
+            return None
+
+        df = pd.DataFrame(rows)
+        df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+        df = df.sort_values("trade_date")
+        if days and len(df) > days:
+            df = df.tail(days).reset_index(drop=True)
+        df["change"] = df["close"].diff()
+        df["pct_change"] = df["close"].pct_change() * 100
+        return df
+    except Exception as e:
+        logger.debug("新浪美股个股 %s 失败: %s", ticker, e)
+        return None
+
+
+# ============================================================
 # 3. yfinance — Fallback 数据源
 # ============================================================
 
@@ -1366,7 +1444,9 @@ async def get_all_us_stock_data(force_refresh: bool = False) -> pd.DataFrame:
             logger.info("腾讯美股K线进度: %d/%d (%.1f%%), 成功=%d, 失败=%d",
                          idx, total, idx / total * 100, tencent_ok, len(tencent_fail_tickers))
 
-        df = await asyncio.to_thread(_sync_fetch_tencent_us_kline, ticker, 320)
+        df = await asyncio.to_thread(_sync_fetch_sina_us_kline, ticker, 320)
+        if df is None or len(df) < 10:
+            df = await asyncio.to_thread(_sync_fetch_tencent_us_kline, ticker, 320)
         if df is not None and len(df) >= 10:
             df["name"] = names.get(ticker, "")
             batch_dfs.append(df)
@@ -1512,7 +1592,9 @@ async def incremental_update_us_quotes(days: int = 10) -> int:
     BATCH_WRITE = 500
 
     for idx, ticker in enumerate(codes, 1):
-        df = await asyncio.to_thread(_sync_fetch_tencent_us_kline, ticker, days + 5)
+        df = await asyncio.to_thread(_sync_fetch_sina_us_kline, ticker, days + 5)
+        if df is None or len(df) < 1:
+            df = await asyncio.to_thread(_sync_fetch_tencent_us_kline, ticker, days + 5)
         if df is not None and len(df) >= 1:
             df["name"] = names.get(ticker, "")
             batch_dfs.append(df)

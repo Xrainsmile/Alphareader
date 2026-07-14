@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.database import async_session
@@ -40,6 +40,27 @@ logger = logging.getLogger("alphareader.vcp_suitability")
 # 等级排序（用于降级运算）：favorable > neutral > cautious
 _LEVEL_RANK = {LEVEL_CAUTIOUS: 0, LEVEL_NEUTRAL: 1, LEVEL_FAVORABLE: 2}
 _LEVEL_LABEL = {LEVEL_FAVORABLE: "适合关注", LEVEL_NEUTRAL: "中性观察", LEVEL_CAUTIOUS: "谨慎参与"}
+
+
+async def _resolve_market_date(market: str, requested: date) -> date:
+    """回退到该市场实际已有数据的最新交易日。
+
+    解决跨时区 T+1 时差：美股最新收盘往往晚于 A 股一个交易日，
+    若直接用 date.today() 作为 target，breadth/breakout/activity 等
+    精确匹配当日的查询会因该市场无数据而返回 None（误报"数据不足"）。
+    返回该市场 trade_date <= requested 的最大日期；无数据则原样返回。
+    """
+    from app.models.stock import StockDailyQuote
+
+    async with async_session() as s:
+        mx = (
+            await s.execute(
+                select(func.max(StockDailyQuote.trade_date))
+                .where(StockDailyQuote.market == market)
+                .where(StockDailyQuote.trade_date <= requested)
+            )
+        ).scalar()
+    return mx or requested
 
 
 def _down_one(level: str) -> str:
@@ -165,6 +186,8 @@ async def compute_vcp_adaptability(
 
     Returns: 可直接序列化为 API 响应的 dict。
     """
+    # 跨时区 T+1：回退到该市场实际已有数据的最新交易日
+    target_date = await _resolve_market_date(market, target_date)
     metrics = await compute_market_metrics(market, target_date)
     derived = metrics["benchmark_derived"]
 
@@ -348,6 +371,9 @@ async def get_vcp_adaptability(market: str, target_date: date | None = None, sav
     """读取已计算结果；若不存在则计算（并落库）。"""
     if target_date is None:
         target_date = date.today()
+    # 跨时区 T+1：回退到该市场实际已有数据的最新交易日（与 compute 保持一致，
+    # 避免缓存键用 today 而落库键用实际日期导致反复重算）
+    target_date = await _resolve_market_date(market, target_date)
 
     async with async_session() as session:
         row = await session.execute(

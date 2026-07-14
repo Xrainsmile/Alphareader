@@ -331,7 +331,7 @@ async def _us_quotes_job():
     """美股行情增量更新 — 每天 05:30（北京时间）触发。
 
     对应美东 16:30 盘后，确保当天收盘数据可用。
-    数据源：腾讯财经（主力）+ yfinance（fallback）+ 交叉验证。
+    数据源：新浪财经 US_MinKService（主力）+ 腾讯财经（fallback）+ yfinance（最后 fallback）+ 交叉验证。
     """
     try:
         from app.services.us_data_fetcher import incremental_update_us_quotes, get_all_us_stock_data, has_us_today_data
