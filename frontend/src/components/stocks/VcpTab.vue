@@ -124,7 +124,7 @@
 import { ref, computed, onMounted } from 'vue'
 import IndustryConceptFilter from './IndustryConceptFilter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { fetchVCPWatchlist, fetchVCPFilters, batchCheckCatalyst } from '@/utils/api'
+import { fetchVCPWatchlist, fetchVCPFilters, batchCheckCatalyst, peekVCPWatchlist, peekVCPFilters, peekCatalyst } from '@/utils/api'
 
 const props = defineProps({
   market: { type: String, default: 'CN' },
@@ -173,6 +173,12 @@ const onFilterChange = ({ industries, concepts }) => {
 }
 
 const loadFilters = async () => {
+  const hit = peekVCPFilters(props.market)
+  if (hit) {
+    industryOptions.value = hit.industries || []
+    conceptOptions.value = hit.concepts || []
+    return
+  }
   try {
     const data = await fetchVCPFilters(props.market)
     industryOptions.value = data.industries || []
@@ -182,23 +188,38 @@ const loadFilters = async () => {
   }
 }
 
+// 催化剂状态：命中缓存则零转圈填充，否则发请求（失败不影响主功能）
+const loadCatalyst = async (codes) => {
+  if (!codes.length) return
+  const hit = peekCatalyst(codes)
+  if (hit) {
+    catalystMap.value = hit.items || {}
+    return
+  }
+  try {
+    const catData = await batchCheckCatalyst(codes)
+    catalystMap.value = catData.items || {}
+  } catch (e) {
+    console.warn('加载催化剂状态失败（不影响主功能）:', e)
+  }
+}
+
 const loadData = async () => {
+  // 命中白名单缓存：同步填充，完全不进 loading 分支（零转圈）
+  const listHit = peekVCPWatchlist(props.market)
+  if (listHit) {
+    vcpList.value = listHit.items || []
+    vcpDate.value = listHit.date || ''
+    await loadCatalyst(vcpList.value.map(i => i.ts_code).filter(Boolean))
+    return
+  }
+
   vcpLoading.value = true
   try {
     const data = await fetchVCPWatchlist({ market: props.market })
     vcpList.value = data.items || []
     vcpDate.value = data.date || ''
-
-    // 批量获取催化剂状态
-    const codes = vcpList.value.map(i => i.ts_code).filter(Boolean)
-    if (codes.length > 0) {
-      try {
-        const catData = await batchCheckCatalyst(codes)
-        catalystMap.value = catData.items || {}
-      } catch (e) {
-        console.warn('加载催化剂状态失败（不影响主功能）:', e)
-      }
-    }
+    await loadCatalyst(vcpList.value.map(i => i.ts_code).filter(Boolean))
   } catch (e) {
     console.error('加载 VCP 白名单失败:', e)
     uni.showToast({ title: '加载失败', icon: 'none' })

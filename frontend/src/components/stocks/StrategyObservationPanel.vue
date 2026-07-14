@@ -145,7 +145,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { fetchStrategyOverview, fetchStrategyStockSignal } from '@/utils/api'
+import { fetchStrategyOverview, fetchStrategyStockSignal, peekStrategyOverview } from '@/utils/api'
 
 const props = defineProps({
   market: { type: String, default: 'CN' },
@@ -201,6 +201,15 @@ function onReturn() {
 }
 
 async function loadOverview() {
+  // 命中缓存（策略画像 + 市场适配）：同步填充，完全不进 loading 分支（零转圈）
+  const hit = peekStrategyOverview(props.market, strategyId.value)
+  if (hit) {
+    overview.value = hit
+    comingSoon.value = !!hit.coming_soon
+    loading.value = false
+    return
+  }
+
   loading.value = true
   overview.value = null
   comingSoon.value = false

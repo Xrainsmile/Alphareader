@@ -2,6 +2,8 @@
  * API 配置与请求封装
  */
 
+import { cacheGet, cachePeek, CACHE_TTL } from './requestCache'
+
 // 后端 API 基础地址 — 根据环境自动切换
 // 生产环境用空字符串（相对路径，由 Nginx 反代到后端）
 // 开发环境用 localhost:8000
@@ -181,11 +183,19 @@ export function searchStocks(params = {}) {
  * 获取 VCP 策略白名单
  */
 export function fetchVCPWatchlist(params = {}) {
-  const query = Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== '')
-    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-    .join('&')
-  return request(`/api/v1/stocks/vcp_watchlist${query ? '?' + query : ''}`)
+  const market = params.market || 'CN'
+  const key = `vcp_watchlist:${market}`
+  return cacheGet(key, CACHE_TTL.SHORT, () => {
+    const query = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== '')
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+      .join('&')
+    return request(`/api/v1/stocks/vcp_watchlist${query ? '?' + query : ''}`)
+  })
+}
+
+export function peekVCPWatchlist(market = 'CN') {
+  return cachePeek(`vcp_watchlist:${market}`, CACHE_TTL.SHORT)
 }
 
 /**
@@ -193,7 +203,12 @@ export function fetchVCPWatchlist(params = {}) {
  * @param {string} market 市场：CN=A股, US=美股
  */
 export function fetchVCPFilters(market = 'CN') {
-  return request(`/api/v1/stocks/vcp_watchlist/filters?market=${market}`)
+  const key = `vcp_filters:${market}`
+  return cacheGet(key, CACHE_TTL.LONG, () => request(`/api/v1/stocks/vcp_watchlist/filters?market=${market}`))
+}
+
+export function peekVCPFilters(market = 'CN') {
+  return cachePeek(`vcp_filters:${market}`, CACHE_TTL.LONG)
 }
 
 /**
@@ -257,9 +272,16 @@ export function fetchStrategyList(market = 'CN') {
  * @param {Object} params - {market, strategyId, date}
  */
 export function fetchStrategyOverview({ market = 'CN', strategyId = 'vcp', date } = {}) {
-  const q = [`market=${market}`, `strategy_id=${strategyId}`]
-  if (date) q.push(`date=${encodeURIComponent(date)}`)
-  return request(`/api/v1/strategy/overview?${q.join('&')}`)
+  const key = `strategy_overview:${market}:${strategyId}`
+  return cacheGet(key, CACHE_TTL.SHORT, () => {
+    const q = [`market=${market}`, `strategy_id=${strategyId}`]
+    if (date) q.push(`date=${encodeURIComponent(date)}`)
+    return request(`/api/v1/strategy/overview?${q.join('&')}`)
+  })
+}
+
+export function peekStrategyOverview(market = 'CN', strategyId = 'vcp') {
+  return cachePeek(`strategy_overview:${market}:${strategyId}`, CACHE_TTL.SHORT)
 }
 
 /**
@@ -310,7 +332,13 @@ export function fetchCatalystStocks(params = {}) {
  */
 export function batchCheckCatalyst(tsCodes) {
   if (!tsCodes || tsCodes.length === 0) return Promise.resolve({ date: null, items: {} })
-  return request(`/api/v1/catalyst/batch_check?ts_codes=${encodeURIComponent(tsCodes.join(','))}`)
+  const key = `catalyst:${tsCodes.slice().sort().join(',')}`
+  return cacheGet(key, CACHE_TTL.SHORT, () => request(`/api/v1/catalyst/batch_check?ts_codes=${encodeURIComponent(tsCodes.join(','))}`))
+}
+
+export function peekCatalyst(tsCodes) {
+  if (!tsCodes || tsCodes.length === 0) return undefined
+  return cachePeek(`catalyst:${tsCodes.slice().sort().join(',')}`, CACHE_TTL.SHORT)
 }
 
 // ── Sandbox API（模拟仓）──

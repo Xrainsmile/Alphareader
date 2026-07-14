@@ -13,7 +13,22 @@
 - 部署：`cd /home/Alphareader && git pull && docker compose -f docker-compose.yml up -d --build`（约 3 分钟）。
 - **Dockerfile apt 源已改腾讯云内网镜像** `mirrors.tencentyun.com`（python:3.12-slim deb822），build 从 ~26min→~3min（builder+runtime 两处）。
 - `web` 服务不暴露端口，只经 Nginx 反代；验证用 `docker exec alpha-web curl -s http://localhost:8000/...` 或 `curl http://localhost/api/v1/...`。
+- **构建缓存坑**：改完代码若 `docker compose build web` 后容器内仍是旧逻辑，须 `docker compose build --no-cache web` + `up -d --force-recreate web`（普通 build 可能因层缓存不重 COPY；且服务器必须 `git pull` 拿到最新提交，否则跑的是旧工作树代码）。验证新代码生效：`docker exec alpha-web grep -n '关键字' /app/app/...`。
+- **Nginx 行为**：HTTP 请求会被 301 重定向到 HTTPS（`Location: https://localhost/...`），所以容器外验证要走 `https://`（curl -k）或容器内 `localhost:8000`。
+- **API 鉴权**：策略等路由经 `require_api_key`（header `X-API-Key` 或 query `api_key`，值=环境变量 `NEWS_API_KEY`）。取到值：`docker exec alpha-web printenv NEWS_API_KEY`。NEWS_API_KEY 为空时跳过鉴权（仅开发环境）。
 - Alembic：上线任何 schema 变更前**必先** `docker compose run --rm -v /home/Alphareader/backend:/app web alembic upgrade head`（bind-mount 挂 `/app`，非 `/workspace`），否则 pipeline 写库报 unknown column。
+
+## VCP 投资策略页改版（阶段一+二，2026-07-14）
+- 已部署：`2df6106`（阶段一+二功能：策略观察面板 + VCP 五项真实适配度）+ `2498d85`（修复：指数源改腾讯优先 + `_save` trade_date 字符串→date + 基准 alternatives 回退）。
+- **指数数据源**：
+  - CN：腾讯财经优先（`web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh{code},day,...,400,qfq`，解析用 `day` 键），akshare 被墙兜底。沪深300/中证1000 已实测 ~281 条真实数据。
+  - **US：新浪财经 `US_MinKService.getDailyK`（`stock.finance.sina.com.cn/usstock/api/json.php/US_MinKService.getDailyK?symbol=.{code}`），完整历史（指数 2004 起、个股 AAPL 1984 起）**，服务器可达，作为美股主源。映射 `^GSPC→.INX`、`^IXIC→.IXIC`（入库 index_code 统一用 yfinance 代码对齐 VCP）。yfinance(429)/腾讯(仅1天) 作兜底。**注意腾讯美股 fqkline 仅返最新 1 天**，不可用于历史。Eastmoney/Stooq/Nasdaq API 在服务器均不可达（HTTP 000 / JS 验证 / symbol not exists）。
+  - **美股个股行情（`us_data_fetcher.py` → `stock_daily_quote` market='US'）**：`US_MinKService.getDailyK?symbol={ticker}`（`BRK-B→BRK.B`）作为**主源**，腾讯 `.OQ/.N`（个股可用 320 天，仅指数 1 天）兜底、yfinance 最后兜底。2026-07-14 全量刷新：S&P500 内置 503 只、160660 条、2025-07-14~2026-07-13，Sina 主源成功率 ~100%（499/503）。个股字段 o/h/l/c/v/a 齐全，VCP 的 breadth/turnover/breakout 所需列均有。
+- **VCP 五项**（PRD 6.3）：大盘趋势25 / 市场宽度20 / 波动环境20 / 突破有效性25 / 交易活跃度10；三档 70-100 适合 / 45-69 中性 / 0-44 谨慎。否决降级规则见 `vcp_suitability.py`。
+- **API**：`/api/v1/strategy/{list,overview,adaptability,stock_signal}` + `POST /compute`。`get_vcp_adaptability` 读缓存；强制重算用 `compute_vcp_adaptability(market, date, save=True)`（upsert 覆盖）。
+- **调度器**（scheduler.py）：CN/US 指数采集 `15:50/05:50` + VCP 适配度 `16:10/06:10`（收盘后日终）。
+- **已知**：① CN 适配度 5 维均有真实数据（breadth/turnover/breakout 来自 `stock_daily_quote`，最新日期即当日）。② **US 现五维全真实、无 DATA_DELAY**（2026-07-14 验证：favorable 83，大盘趋势25/市场宽度20/波动环境20/突破18/活跃度0~7）。此前 US 三项"数据不足"+`DATA_DELAY` 的**双重根因**：(a) VCP `target_date=today` 与美股实际最新交易日（T+1 时差）精确不匹配 → breadth/breakout/activity 精确匹配查询返回 None；(b) US 个股行情陈旧（仅到 07-10）。已通过两处修复闭环：新增 `_resolve_market_date`（`compute`/`get` 入口按市场回退到该市场已有数据的最新交易日）+ 美股个股接入新浪主源并全量刷新到 07-13。③ `market_adaptability` 表曾因测试 shell 转义产生脏行（`market=''`、`market='CN\'`），已清理；`get_vcp_adaptability` 读缓存，强制重算用 `compute_vcp_adaptability(market, date, save=True)`。④ **测试坑**：ssh 命令外面包本地双引号时，`$M`/`$K` 会被本地 shell 提前展开成空串，导致 overview 收到 `market=` 空值；须用 `\$M`/`\$K` 让远程 shell 展开。⑤ 容器内跑脚本须 `PYTHONPATH=/app`（否则 `python script.py` 因 sys.path[0]=脚本目录而找不到 `app` 包）；`docker exec -d` 的日志在容器内 `/tmp`，宿主机查不到。
+- **前端**：`frontend/src/components/stocks/StrategyObservationPanel.vue` 策略观察面板；`stocks/index.vue` 右侧栏；策略 id 已归一化（美股 `us_` 前缀剥离）。**2026-07-14 加前端请求缓存**：`frontend/src/utils/requestCache.js`（模块级 Map + TTL + 并发去重 + `cachePeek` 同步读），`api.js` 的 `fetchVCPWatchlist`/`fetchVCPFilters`/`fetchStrategyOverview`/`batchCheckCatalyst` 已套缓存并导出 peek；`VcpTab.vue` 与 `StrategyObservationPanel.vue` 在命中缓存时**同步填充、不进 loading 分支**（零转圈）。TTL：白名单/概览/催化剂 `SHORT=5min`，筛选项 `LONG=30min`。根因：左侧 VcpTab 用 `v-if` 销毁重建 + 右侧面板 `watch([market,strategyId])` 在切回 VCP 时重拉，而这些数据日终算一次、盘中不变。
 
 ## 回填脚本
 - `backfill_why.py`（历史 why_it_matters）：`docker compose run --rm -v /home/Alphareader/backend/scripts:/app/scripts web python scripts/backfill_why.py`。
