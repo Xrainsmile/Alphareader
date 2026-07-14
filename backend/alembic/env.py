@@ -26,6 +26,7 @@ from app.models.screener import ScreenerRun, WatchlistDaily, TrendScreenerRun, T
 from app.models.catalyst import NewsCatalystStock  # noqa: F401
 from app.models.news_digest import NewsDigest  # noqa: F401
 from app.models.daily_briefing import DailyBriefing  # noqa: F401
+from app.models.market import IndexDaily, MarketAdaptability  # noqa: F401
 
 # ── Alembic Config ──
 config = context.config

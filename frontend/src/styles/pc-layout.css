@@ -34,13 +34,13 @@
 /* ── ≥1200px：+ 右看板 ── */
 @media screen and (min-width: 1200px) {
   .container {
-    max-width: 640px;
+    max-width: 720px;
   }
   .pc-right-panel {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    width: 240px;
+    width: 340px;
     flex-shrink: 0;
     padding: 24px 16px;
     position: sticky;

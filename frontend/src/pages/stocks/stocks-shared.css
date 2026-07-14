@@ -732,3 +732,112 @@
   .value-status-badge { padding: 2px 10px; border-radius: 6px; }
   .value-status-text { font-size: 12px; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   策略观察面板（StrategyObservationPanel）— 桌面端右看板
+   仅在 ≥1200px 显示，故统一使用 px 单位
+   ═══════════════════════════════════════════════════════════ */
+.sop { display: flex; flex-direction: column; gap: 14px; font-size: 13px; }
+
+.sop-block {
+  background: var(--color-bg-card);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--color-border-light);
+}
+.sop-block-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 10px;
+  padding-left: 8px;
+  border-left: 3px solid var(--color-brand);
+}
+
+/* 策略画像 */
+.sop-profile-name { font-size: 16px; font-weight: 800; color: var(--color-text-primary); }
+.sop-profile-type { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
+.sop-row { display: flex; gap: 8px; margin-top: 8px; align-items: flex-start; }
+.sop-k { font-size: 12px; color: var(--color-text-muted); flex-shrink: 0; width: 56px; }
+.sop-v { font-size: 12px; color: var(--color-text-body); line-height: 1.5; flex: 1; }
+.sop-core { margin-top: 10px; }
+.sop-core-title { font-size: 12px; font-weight: 700; color: var(--color-text-secondary); }
+.sop-core-item { font-size: 12px; color: var(--color-text-body); line-height: 1.6; margin-top: 2px; }
+
+/* 市场适配 */
+.sop-adapt-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.sop-level { font-size: 16px; font-weight: 800; padding: 3px 10px; border-radius: 8px; }
+.sop-level-favorable { color: #fff; background: var(--color-up); }
+.sop-level-neutral { color: #fff; background: var(--color-warning); }
+.sop-level-cautious { color: #fff; background: var(--color-down); }
+.sop-score { font-size: 18px; font-weight: 800; font-family: var(--font-numeric); color: var(--color-text-primary); }
+.sop-score-max { font-size: 12px; color: var(--color-text-placeholder); font-weight: 500; }
+
+.sop-dim {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border-light);
+  cursor: pointer;
+}
+.sop-dim:last-of-type { border-bottom: none; }
+.sop-dim-row { display: flex; justify-content: space-between; align-items: center; }
+.sop-dim-name { font-size: 13px; color: var(--color-text-secondary); font-weight: 600; }
+.sop-dim-score { font-size: 13px; font-family: var(--font-numeric); color: var(--color-text-primary); font-weight: 700; }
+.sop-dim-status { font-size: 11px; margin-left: 8px; }
+.sop-dim-detail { font-size: 12px; color: var(--color-text-muted); line-height: 1.5; margin-top: 4px; }
+
+/* 维度状态色 */
+.sop-st-strong { color: var(--color-up); }
+.sop-st-partial { color: var(--color-info); }
+.sop-st-neutral { color: var(--color-text-muted); }
+.sop-st-weak { color: var(--color-warning); }
+.sop-st-bearish { color: var(--color-down); }
+.sop-st-shock { color: var(--color-down); font-weight: 700; }
+.sop-st-insufficient { color: var(--color-warning); }
+.sop-st-unavailable { color: var(--color-text-placeholder); }
+
+.sop-conclusion { font-size: 12px; color: var(--color-text-body); line-height: 1.6; margin-top: 10px; background: var(--color-bg-secondary); padding: 8px 10px; border-radius: 8px; }
+.sop-delay { font-size: 11px; color: var(--color-warning); margin-top: 8px; }
+
+/* 筛选摘要 */
+.sop-sum-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sop-sum-cell { background: var(--color-bg-secondary); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+.sop-sum-num { font-size: 20px; font-weight: 800; font-family: var(--font-numeric); color: var(--color-text-primary); }
+.sop-sum-lab { font-size: 11px; color: var(--color-text-muted); margin-top: 2px; }
+.sop-date { font-size: 11px; color: var(--color-text-placeholder); margin-top: 10px; display: block; }
+
+/* 风险提示 */
+.sop-risk { font-size: 12px; color: var(--color-warning); line-height: 1.5; margin-top: 6px; }
+
+/* 免责声明 */
+.sop-disclaimer { font-size: 11px; color: var(--color-text-placeholder); line-height: 1.5; text-align: center; padding: 4px 0; }
+
+/* 即将上线 / 空状态 */
+.sop-coming { font-size: 13px; color: var(--color-text-muted); line-height: 1.6; margin-top: 8px; }
+.sop-empty { font-size: 13px; color: var(--color-text-muted); text-align: center; padding: 20px 0; }
+
+/* 个股信号视图 */
+.sop-stock-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.sop-stock-name { display: flex; flex-direction: column; }
+.sop-stock-title { font-size: 16px; font-weight: 800; color: var(--color-text-primary); }
+.sop-stock-code { font-size: 12px; color: var(--color-text-muted); font-family: var(--font-mono); }
+.sop-back { font-size: 12px; color: var(--color-brand); cursor: pointer; padding: 4px 8px; border-radius: 6px; background: var(--color-bg-secondary); }
+
+.sop-maturity { display: inline-block; font-size: 14px; font-weight: 800; padding: 4px 12px; border-radius: 8px; margin-bottom: 10px; }
+.sop-maturity-confirm { color: #fff; background: var(--color-up); }
+.sop-maturity-near { color: #fff; background: var(--color-warning); }
+.sop-maturity-watch { color: var(--color-text-primary); background: var(--color-bg-secondary); }
+.sop-maturity-fail { color: var(--color-down); background: var(--color-bg-secondary); }
+
+.sop-sig-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--color-border-light); }
+.sop-sig-k { font-size: 13px; color: var(--color-text-muted); }
+.sop-sig-v { font-size: 13px; font-weight: 700; color: var(--color-text-primary); }
+.sop-sig-sub { font-size: 11px; color: var(--color-text-muted); padding: 2px 0 4px; }
+.sop-up { color: var(--color-up); }
+.sop-down { color: var(--color-down); }
+.sop-muted { color: var(--color-text-muted); }
+
+.sop-risk-box { margin-top: 12px; background: var(--color-bg-secondary); border-radius: 8px; padding: 10px; }
+.sop-risk-title { font-size: 12px; font-weight: 700; color: var(--color-text-secondary); }
+.sop-risk-item { font-size: 12px; color: var(--color-warning); line-height: 1.5; margin-top: 4px; }
+

@@ -30,7 +30,7 @@
     <!-- RS Rating Tab — 前端暂时隐藏，后端定时计算服务继续运行 -->
 
     <!-- VCP 策略 Tab -->
-    <VcpTab v-if="activeTab === 'vcp'" ref="vcpRef" />
+    <VcpTab v-if="activeTab === 'vcp'" ref="vcpRef" @stock-select="onStockSelect" />
 
     <!-- 右侧趋势策略 Tab -->
     <TrendTab v-if="activeTab === 'trend'" ref="trendRef" />
@@ -48,7 +48,7 @@
          美股 Tabs（VCP/趋势复用 A 股组件 + market="US"）
          ═══════════════════════════════════════════════════════ -->
 
-    <VcpTab v-if="activeTab === 'us_vcp'" ref="usVcpRef" market="US" />
+    <VcpTab v-if="activeTab === 'us_vcp'" ref="usVcpRef" market="US" @stock-select="onStockSelect" />
 
     <TrendTab v-if="activeTab === 'us_trend'" ref="usTrendRef" market="US" />
 
@@ -73,18 +73,14 @@
     />
     </view><!-- /container -->
 
-    <!-- 右看板：策略速览 -->
+    <!-- 右看板：策略观察面板（替代原「策略速览」，消除重复导航） -->
     <view class="pc-right-panel">
-      <view class="right-section">
-        <text class="right-section-title">策略速览</text>
-        <view v-for="s in strategyLinks" :key="s.key" class="right-news-item" @click="onStrategyClick(s.key)">
-          <text class="right-news-rank">{{ s.icon }}</text>
-          <view class="right-news-body">
-            <text class="right-news-title">{{ s.label }}</text>
-            <text class="right-news-meta">{{ s.desc }}</text>
-          </view>
-        </view>
-      </view>
+      <StrategyObservationPanel
+        :market="activeMarket"
+        :strategy-id="activeTab"
+        :selected-stock="selectedStock"
+        @return-overview="selectedStock = null"
+      />
     </view>
   </view><!-- /page-layout -->
 </template>
@@ -98,12 +94,20 @@ import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import PcSidebar from '@/components/common/PcSidebar.vue'
 import VcpTab from '@/components/stocks/VcpTab.vue'
+import StrategyObservationPanel from '@/components/stocks/StrategyObservationPanel.vue'
 import TrendTab from '@/components/stocks/TrendTab.vue'
 import CatalystTab from '@/components/stocks/CatalystTab.vue'
 import ValueTab from '@/components/stocks/ValueTab.vue'
 import SandboxTab from '@/components/stocks/SandboxTab.vue'
 import UsStockPlaceholder from '@/components/stocks/UsStockPlaceholder.vue'
 import { verifySandboxAccess } from '@/utils/api'
+
+// ── 由 VCP 候选列表上抛的选中个股（右侧面板展示其信号）──
+const selectedStock = ref(null)
+
+const onStockSelect = (payload) => {
+  selectedStock.value = payload  // { ts_code, name }
+}
 
 // ── 一级导航：市场切换 ──
 const activeMarket = ref('CN')
@@ -123,6 +127,7 @@ const onMarketSwitch = (market) => {
   if (activeMarket.value === market) return
   activeMarket.value = market
   activeTab.value = market === 'CN' ? 'vcp' : 'us_vcp'
+  selectedStock.value = null
 }
 
 // ── A 股 Tab 事件 ──
@@ -165,6 +170,7 @@ const strategyLinks = computed(() => {
 function onStrategyClick(key) {
   if (key === 'sandbox') { switchToSandbox(); return }
   activeTab.value = key
+  selectedStock.value = null
 }
 
 // ── 模拟仓密码验证 ──

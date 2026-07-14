@@ -429,6 +429,41 @@ async def _catalyst_job():
         raise
 
 
+async def _index_fetch_job(market: str):
+    """指数日行情采集 — 行情更新后触发，写入 index_daily。
+
+    失败不阻断：适配度服务在指数缺失时自动改用合成代理。
+    """
+    try:
+        logger.info("指数采集任务触发（market=%s）at %s", market,
+                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        from app.services.index_fetcher import fetch_indices
+        summary = await fetch_indices(market)
+        logger.info("指数采集(%s)完成: %s", market, summary)
+        return summary
+    except Exception as e:
+        logger.exception("指数采集(%s)失败: %s", market, e)
+        await send_alert("🔴 Index Fetch Job Failed", f"market={market} {type(e).__name__}: {e}")
+        raise
+
+
+async def _vcp_suitability_job(market: str):
+    """VCP 市场适配度日终计算 — 写入 market_adaptability。"""
+    try:
+        logger.info("VCP 适配度计算触发（market=%s）at %s", market,
+                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        from app.services.vcp_suitability import compute_vcp_adaptability
+        from datetime import date as _date
+        result = await compute_vcp_adaptability(market, _date.today(), save=True)
+        logger.info("VCP 适配度(%s)完成: level=%s score=%s",
+                    market, result["level"], result["total_score"])
+        return result
+    except Exception as e:
+        logger.exception("VCP 适配度计算(%s)失败: %s", market, e)
+        await send_alert("🔴 VCP Suitability Job Failed", f"market={market} {type(e).__name__}: {e}")
+        raise
+
+
 async def start_scheduler():
     """注册 Cron 定时任务并启动调度器。
 
@@ -687,6 +722,70 @@ async def start_scheduler():
         ),
         id="us_trend_screener_daily",
         name=f"US Trend Screener (Daily 05:45 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # ── 指数日行情采集（A 股收盘后 15:50 / 美股盘后 05:50）──
+    scheduler.add_job(
+        _index_fetch_job,
+        args=["CN"],
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="15",
+            minute="50",
+            timezone=settings.TIMEZONE,
+        ),
+        id="index_fetch_cn",
+        name=f"Index Fetch CN (Mon-Fri 15:50 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    scheduler.add_job(
+        _index_fetch_job,
+        args=["US"],
+        trigger=CronTrigger(
+            hour="5",
+            minute="50",
+            timezone=settings.TIMEZONE,
+        ),
+        id="index_fetch_us",
+        name=f"Index Fetch US (Daily 05:50 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # ── VCP 市场适配度日终计算（A 股 16:10 / 美股 06:10，行情与指数采集之后）──
+    scheduler.add_job(
+        _vcp_suitability_job,
+        args=["CN"],
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="16",
+            minute="10",
+            timezone=settings.TIMEZONE,
+        ),
+        id="vcp_suitability_cn",
+        name=f"VCP Suitability CN (Mon-Fri 16:10 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    scheduler.add_job(
+        _vcp_suitability_job,
+        args=["US"],
+        trigger=CronTrigger(
+            hour="6",
+            minute="10",
+            timezone=settings.TIMEZONE,
+        ),
+        id="vcp_suitability_us",
+        name=f"VCP Suitability US (Daily 06:10 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,

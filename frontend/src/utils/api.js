@@ -242,6 +242,54 @@ export function tickerLookup(code) {
   return request(`/api/v1/stocks/ticker_lookup?code=${encodeURIComponent(code)}`)
 }
 
+// ── 策略页（投资策略改版：策略观察面板 / 市场适配度 / 个股信号）──
+
+/**
+ * 策略列表（含启用 / 即将上线状态）
+ * @param {string} market CN=A股, US=美股
+ */
+export function fetchStrategyList(market = 'CN') {
+  return request(`/api/v1/strategy/list?market=${market}`)
+}
+
+/**
+ * 策略概览：画像 + 市场适配 + 筛选摘要 + 风险提示
+ * @param {Object} params - {market, strategyId, date}
+ */
+export function fetchStrategyOverview({ market = 'CN', strategyId = 'vcp', date } = {}) {
+  const q = [`market=${market}`, `strategy_id=${strategyId}`]
+  if (date) q.push(`date=${encodeURIComponent(date)}`)
+  return request(`/api/v1/strategy/overview?${q.join('&')}`)
+}
+
+/**
+ * 市场适配度明细（用于展开五项指标解释）
+ */
+export function fetchStrategyAdaptability({ market = 'CN', strategyId = 'vcp', date } = {}) {
+  const q = [`market=${market}`, `strategy_id=${strategyId}`]
+  if (date) q.push(`date=${encodeURIComponent(date)}`)
+  return request(`/api/v1/strategy/adaptability?${q.join('&')}`)
+}
+
+/**
+ * 个股信号详情（VCP 信号成熟度 / 波动收缩 / 成交量收缩 / 中期趋势 / 枢轴位距离 / 突破确认 / 风险）
+ * @param {Object} params - {market, strategyId, tsCode, date}
+ */
+export function fetchStrategyStockSignal({ market = 'CN', strategyId = 'vcp', tsCode, date } = {}) {
+  const q = [`market=${market}`, `strategy_id=${strategyId}`, `ts_code=${encodeURIComponent(tsCode)}`]
+  if (date) q.push(`date=${encodeURIComponent(date)}`)
+  return request(`/api/v1/strategy/stock_signal?${q.join('&')}`)
+}
+
+/**
+ * 手动触发指数采集 + VCP 适配度计算（日终任务也可调用）
+ */
+export function triggerStrategyCompute({ market = 'CN', date } = {}) {
+  const q = [`market=${market}`]
+  if (date) q.push(`date=${encodeURIComponent(date)}`)
+  return request(`/api/v1/strategy/compute?${q.join('&')}`, { method: 'POST' })
+}
+
 // ── Catalyst API（催化剂标的）──
 
 /**

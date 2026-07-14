@@ -13,6 +13,7 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.sandbox import router as sandbox_router
 from app.api.v1.sepa import router as sepa_router
 from app.api.v1.stocks import router as stocks_router
+from app.api.v1.strategy import router as strategy_router
 from app.auth import require_api_key
 
 v1_router = APIRouter(prefix="/api/v1")
@@ -28,6 +29,7 @@ _protected.include_router(reports_router)
 _protected.include_router(digests_router)
 _protected.include_router(briefings_router)
 _protected.include_router(stocks_router)
+_protected.include_router(strategy_router)
 _protected.include_router(sandbox_router)
 _protected.include_router(sepa_router)
 _protected.include_router(analytics_router)

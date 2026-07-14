@@ -35,7 +35,7 @@
         :key="item.ts_code"
         class="vcp-row"
         :class="{ 'stock-row-alt': idx % 2 === 1 }"
-        @click="expandedIdx = expandedIdx === idx ? -1 : idx"
+        @click="onRowClick(item, idx)"
       >
         <!-- 主行第一行：核心指标 -->
         <view class="vcp-row-main">
@@ -129,6 +129,12 @@ import { fetchVCPWatchlist, fetchVCPFilters, batchCheckCatalyst } from '@/utils/
 const props = defineProps({
   market: { type: String, default: 'CN' },
 })
+const emit = defineEmits(['stock-select'])
+
+const onRowClick = (item, idx) => {
+  expandedIdx.value = expandedIdx.value === idx ? -1 : idx
+  emit('stock-select', { ts_code: item.ts_code, name: item.name })
+}
 
 const vcpList = ref([])
 const vcpDate = ref('')
