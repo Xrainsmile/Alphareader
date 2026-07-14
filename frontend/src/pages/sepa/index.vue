@@ -1,5 +1,8 @@
 <template>
-  <view class="sepa-container">
+  <view class="page-layout">
+    <PcSidebar active="sepa" />
+    <view class="container">
+      <view class="sepa-container">
     <view class="sepa-market-switch">
       <view v-for="m in markets" :key="m.market" class="sepa-market-tab" :class="{ active: market === m.market }" @click="switchMarket(m.market)">
         {{ m.label }}<text class="sepa-market-cur">{{ m.symbol }}</text>
@@ -44,7 +47,23 @@
     <SandboxPasswordModal
       :visible="showPwd" :password="pwdValue" :error="pwdError"
       @update:visible="showPwd = $event" @update:password="pwdValue = $event" @confirm="onPwdConfirm" />
-  </view>
+      </view><!-- /sepa-container -->
+    </view><!-- /container -->
+
+    <!-- 右看板：账户速览 -->
+    <view class="pc-right-panel">
+      <view class="right-section">
+        <text class="right-section-title">账户速览</text>
+        <view v-if="account" class="right-account">
+          <view class="right-account-row"><text class="k">总权益</text><text class="v">{{ sym }}{{ fmt(account.total_equity) }}</text></view>
+          <view class="right-account-row"><text class="k">当日盈亏</text><text class="v" :class="pnlClass(account.total_pnl_pct)">{{ fmtPct(account.total_pnl_pct) }}</text></view>
+          <view class="right-account-row"><text class="k">持仓市值</text><text class="v">{{ sym }}{{ fmt(account.market_value) }}</text></view>
+          <view class="right-account-row"><text class="k">现金</text><text class="v">{{ sym }}{{ fmt(account.cash) }}</text></view>
+        </view>
+        <view v-else class="right-empty"><text class="right-empty-text">加载中...</text></view>
+      </view>
+    </view>
+  </view><!-- /page-layout -->
 </template>
 
 <script setup>
@@ -58,6 +77,7 @@ import SepaJournalPanel from '@/components/sepa/SepaJournalPanel.vue'
 import SepaKpiPanel from '@/components/sepa/SepaKpiPanel.vue'
 import SepaGatePanel from '@/components/sepa/SepaGatePanel.vue'
 import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
+import PcSidebar from '@/components/common/PcSidebar.vue'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import { fetchSepaMarkets, fetchSepaAccount, verifySandboxAccess } from '@/utils/api'
 

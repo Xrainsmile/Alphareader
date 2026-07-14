@@ -1,0 +1,106 @@
+/* ═══════════════════════════════════════════════════════════
+   PC 三栏布局 Shell（News / Stocks / Reports / SEPA 共用）
+   移动端：单列；≥768px：左导航 + 内容；≥1200px：+ 右看板
+   ═══════════════════════════════════════════════════════════ */
+
+.page-layout {
+  display: block;
+}
+
+.container {
+  min-height: 100vh;
+  background: var(--color-bg);
+  padding: 0 24rpx;
+}
+
+.pc-right-panel {
+  display: none;
+}
+
+/* ── ≥768px：左导航 + 内容 ── */
+@media screen and (min-width: 768px) {
+  .page-layout {
+    display: flex;
+    align-items: flex-start;
+  }
+  .container {
+    flex: 1;
+    max-width: 700px;
+    margin: 0;
+    padding: 0 24px;
+  }
+}
+
+/* ── ≥1200px：+ 右看板 ── */
+@media screen and (min-width: 1200px) {
+  .container {
+    max-width: 640px;
+  }
+  .pc-right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 240px;
+    flex-shrink: 0;
+    padding: 24px 16px;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    max-height: 100vh;
+    overflow-y: auto;
+  }
+  .right-section { margin-bottom: 20px; }
+  .right-section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin-bottom: 12px;
+  }
+  .right-news-item {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--color-border-light);
+    cursor: pointer;
+  }
+  .right-news-item:hover { background: var(--color-bg-hover); }
+  .right-news-rank {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--color-brand);
+    flex-shrink: 0;
+    line-height: 1.4;
+  }
+  .right-news-body { flex: 1; min-width: 0; }
+  .right-news-title {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .right-news-meta {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+  }
+  .right-empty { padding: 20px 0; text-align: center; }
+  .right-empty-text { font-size: 13px; color: var(--color-text-muted); }
+
+  /* 右看板：账户速览（SEPA） */
+  .right-account { display: flex; flex-direction: column; gap: 10px; }
+  .right-account-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+  }
+  .right-account-row .k { color: var(--color-text-muted); }
+  .right-account-row .v {
+    font-weight: 700;
+    font-family: var(--font-numeric);
+    color: var(--color-text-primary);
+  }
+}

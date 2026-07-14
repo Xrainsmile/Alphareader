@@ -1,5 +1,7 @@
 <template>
-  <view class="stocks-container">
+  <view class="page-layout">
+    <PcSidebar active="stocks" />
+    <view class="container">
     <!-- ═══ 一级导航：市场切换（A股 / 美股）═══ -->
     <MarketSwitcher
       :active-market="activeMarket"
@@ -69,16 +71,32 @@
       @update:password="pwdValue = $event"
       @confirm="onPwdConfirm"
     />
-  </view>
+    </view><!-- /container -->
+
+    <!-- 右看板：策略速览 -->
+    <view class="pc-right-panel">
+      <view class="right-section">
+        <text class="right-section-title">策略速览</text>
+        <view v-for="s in strategyLinks" :key="s.key" class="right-news-item" @click="onStrategyClick(s.key)">
+          <text class="right-news-rank">{{ s.icon }}</text>
+          <view class="right-news-body">
+            <text class="right-news-title">{{ s.label }}</text>
+            <text class="right-news-meta">{{ s.desc }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view><!-- /page-layout -->
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import './stocks-shared.css'
 import MarketSwitcher from '@/components/stocks/MarketSwitcher.vue'
 import StocksTabBar from '@/components/stocks/StocksTabBar.vue'
 import SandboxPasswordModal from '@/components/stocks/SandboxPasswordModal.vue'
 import SiteFooter from '@/components/common/SiteFooter.vue'
+import PcSidebar from '@/components/common/PcSidebar.vue'
 import VcpTab from '@/components/stocks/VcpTab.vue'
 import TrendTab from '@/components/stocks/TrendTab.vue'
 import CatalystTab from '@/components/stocks/CatalystTab.vue'
@@ -126,6 +144,28 @@ const usCatalystFeatures = [
   { icon: '📰', text: '基于 Finnhub Market News + RSS 英文源' },
   { icon: '💡', text: '产业链映射（供应链受益方分析）' },
 ]
+
+// ── 右看板：策略速览 ──
+const strategyLinks = computed(() => {
+  if (activeMarket.value === 'CN') {
+    return [
+      { key: 'vcp', icon: '📐', label: 'VCP 收缩', desc: '波动率收缩蓄势' },
+      { key: 'trend', icon: '📈', label: '右侧趋势', desc: '突破回踩确认' },
+      { key: 'catalyst', icon: '⚡', label: '催化剂', desc: '事件驱动机会' },
+      { key: 'value', icon: '💎', label: '价投', desc: '低估价值挖掘' },
+      { key: 'sandbox', icon: '🧪', label: '模拟仓', desc: '组合与回测' },
+    ]
+  }
+  return [
+    { key: 'us_vcp', icon: '📐', label: 'VCP (US)', desc: '美股波动率收缩' },
+    { key: 'us_trend', icon: '📈', label: '趋势 (US)', desc: '美股右侧趋势' },
+  ]
+})
+
+function onStrategyClick(key) {
+  if (key === 'sandbox') { switchToSandbox(); return }
+  activeTab.value = key
+}
 
 // ── 模拟仓密码验证 ──
 const sbUnlocked = ref(false)

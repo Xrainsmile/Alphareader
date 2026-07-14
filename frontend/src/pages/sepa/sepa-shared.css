@@ -5,8 +5,6 @@
    ════════════════════════════════════════════════════════════ */
 
 .sepa-container {
-  min-height: 100vh;
-  background: var(--color-bg);
   padding-bottom: 40rpx;
 }
 
@@ -43,7 +41,7 @@
 
 /* ── 账户总览卡 ── */
 .sepa-account-card {
-  margin: 20rpx 24rpx;
+  margin: 20rpx 0;
   background: var(--color-bg-card);
   border-radius: 20rpx;
   padding: 28rpx;
@@ -84,7 +82,7 @@
 
 /* 熔断警告条 */
 .sepa-breaker-banner {
-  margin: 0 24rpx 12rpx;
+  margin: 0 0 12rpx;
   background: var(--color-bg-danger-light);
   border: 1rpx solid var(--color-up);
   border-radius: 14rpx;
@@ -106,7 +104,7 @@
   display: flex;
   overflow-x: auto;
   background: var(--color-bg-card);
-  margin: 0 24rpx 16rpx;
+  margin: 0 0 16rpx;
   border-radius: 16rpx;
   padding: 8rpx;
   box-shadow: var(--shadow-sm);
@@ -130,7 +128,7 @@
 
 /* ── 通用卡片 ── */
 .sepa-card {
-  margin: 0 24rpx 16rpx;
+  margin: 0 0 16rpx;
   background: var(--color-bg-card);
   border-radius: 16rpx;
   padding: 24rpx;
@@ -474,7 +472,6 @@
 
 /* ── PC 适配 ── */
 @media (min-width: 750px) {
-  .sepa-container { max-width: 720px; margin: 0 auto; }
   .sepa-equity { font-size: 34px; }
   .sepa-kpi-ring { font-size: 48px; }
 }

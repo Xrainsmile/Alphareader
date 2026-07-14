@@ -4,8 +4,6 @@
 
 .stocks-container {
   min-height: 100vh;
-  background: var(--color-bg);
-  padding: 0 24rpx;
 }
 
 /* ── Header ── */
@@ -601,12 +599,6 @@
    PC / Tablet 适配 (≥768px)
    ═══════════════════════════════════════════════════════════ */
 @media screen and (min-width: 768px) {
-  .stocks-container {
-    max-width: 860px;
-    margin: 0 auto;
-    padding: 0 24px;
-  }
-
   .stocks-header { padding: 24px 0 12px; }
   .stocks-title { font-size: 26px; letter-spacing: 0.5px; }
   .stocks-subtitle { font-size: 13px; margin-top: 4px; }

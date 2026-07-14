@@ -1,5 +1,7 @@
 <template>
-  <view class="reports-container">
+  <view class="page-layout">
+    <PcSidebar active="reports" />
+    <view class="container">
     <!-- Header -->
     <view class="reports-header">
       <text class="reports-title">Reports</text>
@@ -212,7 +214,22 @@
 
     <!-- Footer -->
     <SiteFooter />
-  </view>
+    </view><!-- /container -->
+
+    <!-- 右看板：栏目导航 -->
+    <view class="pc-right-panel">
+      <view class="right-section">
+        <text class="right-section-title">栏目导航</text>
+        <view v-for="t in rightTabs" :key="t.key" class="right-news-item" @click="switchTab(t.key)">
+          <text class="right-news-rank">{{ t.icon }}</text>
+          <view class="right-news-body">
+            <text class="right-news-title">{{ t.label }}</text>
+            <text class="right-news-meta">{{ t.desc }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view><!-- /page-layout -->
 </template>
 
 <script setup>
@@ -223,10 +240,18 @@ import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
 import { rawReports } from '@/data/reports'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import PcSidebar from '@/components/common/PcSidebar.vue'
 import { listTagStyle, formatDate, reportStatusLabel, sentimentEmoji } from '@/utils/formatters'
 
 // ── Tab State ──
 const activeTab = ref('briefing')
+
+// ── 右看板：栏目导航 ──
+const rightTabs = [
+  { key: 'digest', icon: '📰', label: '新闻概览', desc: '每日新闻时间轴' },
+  { key: 'briefing', icon: '📊', label: '每日研报', desc: 'AI 市场分析' },
+  { key: 'reports', icon: '📝', label: '复盘', desc: '历史复盘报告' },
+]
 
 // ── Tab indicator position (3 tabs) ──
 const tabIndicatorLeft = computed(() => {
@@ -444,8 +469,6 @@ onMounted(() => {
 <style scoped>
 .reports-container {
   min-height: 100vh;
-  background: var(--color-bg-card);
-  padding: 0 32rpx;
 }
 
 /* ── Header ── */
@@ -894,11 +917,6 @@ onMounted(() => {
    PC / Tablet 适配 (≥768px)
    ═══════════════════════════════════════════════════════════ */
 @media screen and (min-width: 768px) {
-  .reports-container {
-    max-width: 728px;
-    margin: 0 auto;
-    padding: 0 24px;
-  }
   .reports-header {
     padding: 28px 0 12px;
   }
@@ -1103,8 +1121,5 @@ onMounted(() => {
 }
 
 @media screen and (min-width: 1200px) {
-  .reports-container {
-    max-width: 800px;
-  }
 }
 </style>
