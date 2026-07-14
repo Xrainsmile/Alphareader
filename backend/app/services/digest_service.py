@@ -17,7 +17,6 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, time, timedelta
 
-import httpx
 import pytz
 from sqlalchemy import select, and_
 
@@ -25,6 +24,7 @@ from app.config import settings
 from app.database import async_session
 from app.models.news import News
 from app.models.news_digest import NewsDigest
+from app.services.llm_client import stream_chat
 
 logger = logging.getLogger("alphareader.digest")
 
@@ -138,86 +138,17 @@ def _build_digest_prompt(news_list: list[dict], period_label: str, target_date: 
 async def _call_deepseek_digest(user_prompt: str) -> str:
     """调用 DeepSeek API 生成新闻总结（streaming 模式），返回 Markdown 文本。
 
-    使用 streaming 模式逐块接收响应，避免长回复时 DeepSeek API
-    因空闲超时导致 ReadError / ConnectError 断连。
+    使用 llm_client.stream_chat 统一封装的流式调用，避免长回复空闲超时。
     """
-    if not settings.DEEPSEEK_API_KEY or settings.DEEPSEEK_API_KEY.startswith("sk-your"):
-        logger.warning("DeepSeek API key not configured, returning empty digest")
-        return ""
-
-    payload = {
-        "model": settings.DEEPSEEK_MODEL,
-        "messages": [
+    return await stream_chat(
+        [
             {"role": "system", "content": DIGEST_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.3,
-        "max_tokens": 1500,
-        "stream": True,
-    }
-
-    headers = {
-        "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    max_retries = max(settings.LLM_MAX_RETRIES, 3)  # 至少重试 3 次
-
-    import json as _json
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=120.0)) as client:
-        for attempt in range(1, max_retries + 1):
-            try:
-                chunks: list[str] = []
-                async with client.stream(
-                    "POST",
-                    settings.DEEPSEEK_API_URL,
-                    json=payload,
-                    headers=headers,
-                ) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
-                        line = line.strip()
-                        if not line or not line.startswith("data:"):
-                            continue
-                        data_str = line[len("data:"):].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            data = _json.loads(data_str)
-                            delta = data["choices"][0].get("delta", {})
-                            if "content" in delta and delta["content"]:
-                                chunks.append(delta["content"])
-                        except (_json.JSONDecodeError, KeyError, IndexError):
-                            continue
-
-                content = "".join(chunks)
-                if content:
-                    logger.info("Digest generated (stream): %d chars", len(content))
-                    return content.strip()
-                else:
-                    logger.warning("Digest stream returned empty content (attempt %d/%d)", attempt, max_retries)
-
-            except httpx.HTTPStatusError as e:
-                body = e.response.text[:500] if e.response else "N/A"
-                logger.error(
-                    "Digest DeepSeek API HTTP %s (attempt %d/%d): %s | body: %s",
-                    e.response.status_code if e.response else "?",
-                    attempt, max_retries, repr(e), body,
-                )
-            except Exception as e:
-                logger.error(
-                    "Digest DeepSeek API error (attempt %d/%d): %r",
-                    attempt, max_retries, e,
-                )
-
-            if attempt < max_retries:
-                import asyncio
-                await asyncio.sleep(3 * attempt)
-            else:
-                return ""
-
-    return ""
+        temperature=0.3,
+        max_tokens=1500,
+        log_tag="Digest",
+    )
 
 
 async def generate_digest(period_label: str, target_date: date | None = None) -> dict:

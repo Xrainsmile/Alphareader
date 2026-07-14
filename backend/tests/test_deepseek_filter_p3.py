@@ -179,9 +179,9 @@ class TestTwoStageScoring:
             return None, "api_error", "unknown prompt", None
 
         mock_settings = MagicMock()
-        mock_settings.SILICONFLOW_API_KEY = "k"
-        mock_settings.SILICONFLOW_LLM_MODEL = "m"
-        mock_settings.SILICONFLOW_API_URL = "http://mock"
+        mock_settings.LLM_API_KEY = "k"
+        mock_settings.LLM_MODEL = "m"
+        mock_settings.LLM_API_URL = "http://mock"
         mock_settings.LLM_BATCH_SIZE = 20
         mock_settings.LLM_SCORE_THRESHOLD = 5
         mock_settings.LLM_MAX_RETRIES = 2
@@ -240,9 +240,9 @@ class TestTwoStageScoring:
             return None, "api_error", "unknown", None
 
         mock_settings = MagicMock()
-        mock_settings.SILICONFLOW_API_KEY = "k"
-        mock_settings.SILICONFLOW_LLM_MODEL = "m"
-        mock_settings.SILICONFLOW_API_URL = "http://mock"
+        mock_settings.LLM_API_KEY = "k"
+        mock_settings.LLM_MODEL = "m"
+        mock_settings.LLM_API_URL = "http://mock"
         mock_settings.LLM_BATCH_SIZE = 20
         mock_settings.LLM_SCORE_THRESHOLD = 5
         mock_settings.LLM_MAX_RETRIES = 2
@@ -286,9 +286,9 @@ class TestTwoStageScoring:
             return None, "api_error", "unknown", None
 
         mock_settings = MagicMock()
-        mock_settings.SILICONFLOW_API_KEY = "k"
-        mock_settings.SILICONFLOW_LLM_MODEL = "m"
-        mock_settings.SILICONFLOW_API_URL = "http://mock"
+        mock_settings.LLM_API_KEY = "k"
+        mock_settings.LLM_MODEL = "m"
+        mock_settings.LLM_API_URL = "http://mock"
         mock_settings.LLM_BATCH_SIZE = 20
         mock_settings.LLM_SCORE_THRESHOLD = 5
         mock_settings.LLM_MAX_RETRIES = 2
@@ -333,9 +333,9 @@ class TestTwoStageScoring:
             return raw, "ok", "", None
 
         mock_settings = MagicMock()
-        mock_settings.SILICONFLOW_API_KEY = "k"
-        mock_settings.SILICONFLOW_LLM_MODEL = "m"
-        mock_settings.SILICONFLOW_API_URL = "http://mock"
+        mock_settings.LLM_API_KEY = "k"
+        mock_settings.LLM_MODEL = "m"
+        mock_settings.LLM_API_URL = "http://mock"
         mock_settings.LLM_BATCH_SIZE = 20
         mock_settings.LLM_SCORE_THRESHOLD = 5
         mock_settings.LLM_MAX_RETRIES = 2

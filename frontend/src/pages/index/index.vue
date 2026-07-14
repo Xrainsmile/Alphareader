@@ -1895,7 +1895,8 @@ onReachBottom(() => {
     padding: 24px 16px;
     position: sticky;
     top: 0;
-    height: 100vh;
+    align-self: flex-start;
+    max-height: 100vh;
     overflow-y: auto;
   }
   .right-section { margin-bottom: 20px; }

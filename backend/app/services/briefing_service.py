@@ -21,7 +21,6 @@ import re
 import time
 from datetime import date, datetime, timedelta
 
-import httpx
 import pytz
 from sqlalchemy import select, and_
 
@@ -32,6 +31,7 @@ from app.models.news import News
 from app.models.news_digest import NewsDigest
 from app.models.screener import WatchlistDaily, TrendWatchlistDaily
 from app.models.stock import StockDailyQuote, StockRSRating
+from app.services.llm_client import stream_chat
 
 logger = logging.getLogger("alphareader.briefing")
 
@@ -355,88 +355,40 @@ def _build_catalyst_prompt(
 
 
 async def _call_deepseek_catalyst(user_prompt: str) -> dict | None:
-    """调用 DeepSeek 做新闻-股票关联判断，返回解析后的 dict。"""
-    if not settings.DEEPSEEK_API_KEY or settings.DEEPSEEK_API_KEY.startswith("sk-your"):
-        logger.warning("DeepSeek API key not configured")
-        return None
+    """调用 DeepSeek 做新闻-股票关联判断，返回解析后的 dict。
 
-    payload = {
-        "model": settings.DEEPSEEK_MODEL,
-        "messages": [
+    流式调用由 llm_client.stream_chat 统一封装（含重试）；本函数负责 JSON 提取与校验。
+    """
+    raw = await stream_chat(
+        [
             {"role": "system", "content": CATALYST_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.2,
-        "max_tokens": 1500,
-        "stream": True,
-    }
+        temperature=0.2,
+        max_tokens=1500,
+        log_tag="Catalyst",
+    )
 
-    headers = {
-        "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json",
-    }
+    if not raw:
+        return None
 
-    max_retries = max(settings.LLM_MAX_RETRIES, 3)
+    # 提取 JSON（LLM 可能包裹在 ```json ... ``` 中）
+    json_match = re.search(r'\{[\s\S]*\}', raw)
+    if not json_match:
+        logger.warning("No JSON found in catalyst response: %s", raw[:300])
+        return None
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=120.0)) as client:
-        for attempt in range(1, max_retries + 1):
-            try:
-                chunks: list[str] = []
-                async with client.stream(
-                    "POST",
-                    settings.DEEPSEEK_API_URL,
-                    json=payload,
-                    headers=headers,
-                ) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
-                        line = line.strip()
-                        if not line or not line.startswith("data:"):
-                            continue
-                        data_str = line[len("data:"):].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            data = _json.loads(data_str)
-                            delta = data["choices"][0].get("delta", {})
-                            if "content" in delta and delta["content"]:
-                                chunks.append(delta["content"])
-                        except (_json.JSONDecodeError, KeyError, IndexError):
-                            continue
+    try:
+        result = _json.loads(json_match.group())
+    except _json.JSONDecodeError as e:
+        logger.error("Catalyst JSON parse error: %s", e)
+        return None
 
-                raw = "".join(chunks).strip()
-                if not raw:
-                    logger.warning("Catalyst LLM returned empty (attempt %d/%d)", attempt, max_retries)
-                    continue
-
-                # 提取 JSON（LLM 可能包裹在 ```json ... ``` 中）
-                json_match = re.search(r'\{[\s\S]*\}', raw)
-                if not json_match:
-                    logger.warning("No JSON found in catalyst response: %s", raw[:300])
-                    continue
-
-                result = _json.loads(json_match.group())
-                logger.info("Catalyst analysis complete: S=%d, A=%d, X=%d",
-                            len(result.get("tiers", {}).get("S", [])),
-                            len(result.get("tiers", {}).get("A", [])),
-                            len(result.get("tiers", {}).get("X", [])))
-                return result
-
-            except httpx.HTTPStatusError as e:
-                body = e.response.text[:500] if e.response else "N/A"
-                logger.error("Catalyst HTTP %s (attempt %d/%d): %s",
-                             e.response.status_code if e.response else "?",
-                             attempt, max_retries, body)
-            except _json.JSONDecodeError as e:
-                logger.error("Catalyst JSON parse error (attempt %d/%d): %s", attempt, max_retries, e)
-            except Exception as e:
-                logger.error("Catalyst error (attempt %d/%d): %r", attempt, max_retries, e)
-
-            if attempt < max_retries:
-                import asyncio
-                await asyncio.sleep(3 * attempt)
-
-    return None
+    logger.info("Catalyst analysis complete: S=%d, A=%d, X=%d",
+                len(result.get("tiers", {}).get("S", [])),
+                len(result.get("tiers", {}).get("A", [])),
+                len(result.get("tiers", {}).get("X", [])))
+    return result
 
 
 def _normalize_tier_codes(catalyst: dict, pool_map: dict[str, dict]) -> dict:

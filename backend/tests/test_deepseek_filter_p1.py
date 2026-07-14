@@ -174,9 +174,9 @@ class TestFilterBatchWithBisect:
             return raw, "ok", "", None
 
         mock_settings = MagicMock()
-        mock_settings.SILICONFLOW_API_KEY = "k"
-        mock_settings.SILICONFLOW_LLM_MODEL = "m"
-        mock_settings.SILICONFLOW_API_URL = "http://x"
+        mock_settings.LLM_API_KEY = "k"
+        mock_settings.LLM_MODEL = "m"
+        mock_settings.LLM_API_URL = "http://x"
         mock_settings.LLM_BATCH_SIZE = 20
         mock_settings.LLM_MAX_RETRIES = 2
         mock_settings.LLM_SCORE_THRESHOLD = 5
@@ -203,9 +203,9 @@ class TestFilterBatchWithBisect:
             return None, "content_risk", "hit", None
 
         mock_settings = MagicMock()
-        mock_settings.SILICONFLOW_API_KEY = "k"
-        mock_settings.SILICONFLOW_LLM_MODEL = "m"
-        mock_settings.SILICONFLOW_API_URL = "http://x"
+        mock_settings.LLM_API_KEY = "k"
+        mock_settings.LLM_MODEL = "m"
+        mock_settings.LLM_API_URL = "http://x"
         mock_settings.LLM_MAX_RETRIES = 2
         mock_settings.LLM_SCORE_THRESHOLD = 5
         mock_settings.LLM_CONTENT_PREVIEW_CHARS = 800
@@ -236,9 +236,9 @@ class TestFilterBatchWithBisect:
             return raw, "ok", "", None
 
         mock_settings = MagicMock()
-        mock_settings.SILICONFLOW_API_KEY = "k"
-        mock_settings.SILICONFLOW_LLM_MODEL = "m"
-        mock_settings.SILICONFLOW_API_URL = "http://x"
+        mock_settings.LLM_API_KEY = "k"
+        mock_settings.LLM_MODEL = "m"
+        mock_settings.LLM_API_URL = "http://x"
         mock_settings.LLM_MAX_RETRIES = 2
         mock_settings.LLM_SCORE_THRESHOLD = 5
         mock_settings.LLM_CONTENT_PREVIEW_CHARS = 800

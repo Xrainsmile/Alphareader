@@ -73,7 +73,7 @@ TICKER_MAPPING_PROMPT = """\
 async def _map_entities_to_tickers(entities: list[str]) -> dict[str, str | None]:
     """调用 LLM 将公司名/实体名批量映射为 A 股 ts_code。
 
-    使用 SiliconFlow 免费模型（Qwen3-8B），成本极低。
+    使用 DeepSeek-V4-flash（OpenAI 兼容），结构化 JSON 输出可靠。
     """
     if not entities:
         return {}
@@ -95,15 +95,15 @@ async def _map_entities_to_tickers(entities: list[str]) -> dict[str, str | None]
 
 async def _call_ticker_mapping_llm(entities: list[str]) -> dict[str, str | None]:
     """单次 LLM 调用，映射一批公司名。"""
-    if not settings.SILICONFLOW_API_KEY:
-        logger.warning("SiliconFlow API key not configured, skipping ticker mapping")
+    if not settings.LLM_API_KEY:
+        logger.warning("LLM API key not configured, skipping ticker mapping")
         return {}
 
     entity_list = "\n".join(f"- {e}" for e in entities)
     user_prompt = TICKER_MAPPING_PROMPT + entity_list
 
     payload = {
-        "model": settings.SILICONFLOW_LLM_MODEL,
+        "model": settings.LLM_MODEL,
         "messages": [
             {"role": "user", "content": user_prompt},
         ],
@@ -112,7 +112,7 @@ async def _call_ticker_mapping_llm(entities: list[str]) -> dict[str, str | None]
     }
 
     headers = {
-        "Authorization": f"Bearer {settings.SILICONFLOW_API_KEY}",
+        "Authorization": f"Bearer {settings.LLM_API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -120,7 +120,7 @@ async def _call_ticker_mapping_llm(entities: list[str]) -> dict[str, str | None]
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=60.0)) as client:
                 resp = await client.post(
-                    settings.SILICONFLOW_API_URL,
+                    settings.LLM_API_URL,
                     json=payload,
                     headers=headers,
                 )

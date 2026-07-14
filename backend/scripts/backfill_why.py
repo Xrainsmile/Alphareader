@@ -1,7 +1,7 @@
 """回填历史新闻的 why_it_matters（推荐理由）。
 
 背景：早期版本的 pipeline 没有把评分 reason 落库，因此存量新闻的
-why_it_matters 列为 NULL。本脚本用 SiliconFlow 对高价值历史新闻重新生成
+why_it_matters 列为 NULL。本脚本用 DeepSeek 对高价值历史新闻重新生成
 一句话"推荐理由"，补齐该字段（新新闻在跑批时会自动生成，无需回填）。
 
 仅处理 why_it_matters IS NULL 且 ai_score >= MIN_SCORE 的行，分批并发调用，
@@ -50,23 +50,22 @@ def _build_user_prompt(row) -> str:
 
 
 async def _generate_why(client, settings, row) -> str | None:
-    """调用 SiliconFlow 生成单条 why_it_matters，失败返回 None。"""
+    """调用 DeepSeek 生成单条 why_it_matters，失败返回 None。"""
     payload = {
-        "model": settings.SILICONFLOW_LLM_MODEL,
+        "model": settings.LLM_MODEL,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _build_user_prompt(row)},
         ],
         "temperature": 0.2,
         "max_tokens": 128,
-        "enable_thinking": False,
     }
     headers = {
-        "Authorization": f"Bearer {settings.SILICONFLOW_API_KEY}",
+        "Authorization": f"Bearer {settings.LLM_API_KEY}",
         "Content-Type": "application/json",
     }
     try:
-        resp = await client.post(settings.SILICONFLOW_API_URL, json=payload, headers=headers, timeout=30.0)
+        resp = await client.post(settings.LLM_API_URL, json=payload, headers=headers, timeout=30.0)
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         data = json.loads(content)
@@ -81,8 +80,8 @@ async def backfill() -> None:
     from app.config import settings
     import httpx
 
-    if not settings.SILICONFLOW_API_KEY:
-        logger.error("SILICONFLOW_API_KEY 未配置，无法回填")
+    if not settings.LLM_API_KEY:
+        logger.error("LLM_API_KEY 未配置，无法回填")
         return
 
     # 1) 取出待回填行

@@ -314,7 +314,7 @@ class TestBatchResultStatus:
     @pytest.mark.asyncio
     async def test_no_api_key(self):
         with patch("app.services.llm_news_filter.settings") as ms:
-            ms.SILICONFLOW_API_KEY = ""
+            ms.LLM_API_KEY = ""
             result = await filter_batch_detailed(_make_batch(3), is_english=False)
         assert result.status == "no_api_key"
         assert result.scored == []
@@ -334,9 +334,9 @@ class TestBatchResultStatus:
             )
         )
         with patch("app.services.llm_news_filter.settings") as ms:
-            ms.SILICONFLOW_API_KEY = "test-key"
-            ms.SILICONFLOW_API_URL = "https://x"
-            ms.SILICONFLOW_LLM_MODEL = "test"
+            ms.LLM_API_KEY = "test-key"
+            ms.LLM_API_URL = "https://x"
+            ms.LLM_MODEL = "test"
             ms.LLM_MAX_RETRIES = 2
             ms.LLM_SCORE_THRESHOLD = 5
             ms.LLM_BATCH_SIZE = 20
@@ -363,9 +363,9 @@ class TestBatchResultStatus:
             patch("app.services.llm_news_filter.settings") as ms,
             patch.object(type(response), "raise_for_status", lambda self: None),
         ):
-            ms.SILICONFLOW_API_KEY = "test-key"
-            ms.SILICONFLOW_API_URL = "https://x"
-            ms.SILICONFLOW_LLM_MODEL = "test"
+            ms.LLM_API_KEY = "test-key"
+            ms.LLM_API_URL = "https://x"
+            ms.LLM_MODEL = "test"
             ms.LLM_MAX_RETRIES = 2
             ms.LLM_SCORE_THRESHOLD = 5
             ms.LLM_BATCH_SIZE = 20
@@ -394,9 +394,9 @@ class TestBatchResultStatus:
             patch("app.services.llm_news_filter.settings") as ms,
             patch("app.services.llm_news_filter.asyncio.sleep", new=AsyncMock()),
         ):
-            ms.SILICONFLOW_API_KEY = "test-key"
-            ms.SILICONFLOW_API_URL = "https://x"
-            ms.SILICONFLOW_LLM_MODEL = "test"
+            ms.LLM_API_KEY = "test-key"
+            ms.LLM_API_URL = "https://x"
+            ms.LLM_MODEL = "test"
             ms.LLM_MAX_RETRIES = 2
             ms.LLM_SCORE_THRESHOLD = 5
             ms.LLM_BATCH_SIZE = 20
@@ -424,9 +424,9 @@ class TestFilterNewsHadErrors:
             patch("app.services.llm_news_filter.settings") as ms,
             patch("app.services.llm_news_filter.asyncio.sleep", new=AsyncMock()),
         ):
-            ms.SILICONFLOW_API_KEY = "test-key"
-            ms.SILICONFLOW_API_URL = "https://x"
-            ms.SILICONFLOW_LLM_MODEL = "test"
+            ms.LLM_API_KEY = "test-key"
+            ms.LLM_API_URL = "https://x"
+            ms.LLM_MODEL = "test"
             ms.LLM_MAX_RETRIES = 2
             ms.LLM_SCORE_THRESHOLD = 5
             ms.LLM_BATCH_SIZE = 20
@@ -458,9 +458,9 @@ class TestFilterNewsHadErrors:
             patch("app.services.llm_news_filter.settings") as ms,
             patch.object(type(response), "raise_for_status", lambda self: None),
         ):
-            ms.SILICONFLOW_API_KEY = "test-key"
-            ms.SILICONFLOW_API_URL = "https://x"
-            ms.SILICONFLOW_LLM_MODEL = "test"
+            ms.LLM_API_KEY = "test-key"
+            ms.LLM_API_URL = "https://x"
+            ms.LLM_MODEL = "test"
             ms.LLM_MAX_RETRIES = 2
             ms.LLM_SCORE_THRESHOLD = 5
             ms.LLM_BATCH_SIZE = 20

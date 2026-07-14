@@ -399,14 +399,14 @@ class TestTickerMappingLLM:
         from app.services.catalyst_aggregator import _map_entities_to_tickers
         from app.config import settings
 
-        original = settings.SILICONFLOW_API_KEY
-        settings.SILICONFLOW_API_KEY = api_key
+        original = settings.LLM_API_KEY
+        settings.LLM_API_KEY = api_key
         try:
             result = await _map_entities_to_tickers(["宁德时代", "比亚迪"])
             if expected_empty:
                 assert result == {}
         finally:
-            settings.SILICONFLOW_API_KEY = original
+            settings.LLM_API_KEY = original
 
     async def test_empty_entities(self):
         from app.services.catalyst_aggregator import _map_entities_to_tickers
@@ -418,8 +418,8 @@ class TestTickerMappingLLM:
         from app.services.catalyst_aggregator import _call_ticker_mapping_llm
         from app.config import settings
 
-        original_key = settings.SILICONFLOW_API_KEY
-        settings.SILICONFLOW_API_KEY = "test-key"
+        original_key = settings.LLM_API_KEY
+        settings.LLM_API_KEY = "test-key"
 
         mock_response_data = {
             "choices": [{
@@ -449,15 +449,15 @@ class TestTickerMappingLLM:
             assert result["比亚迪"] == "002594.SZ"
             assert result["某非上市"] is None
         finally:
-            settings.SILICONFLOW_API_KEY = original_key
+            settings.LLM_API_KEY = original_key
 
     async def test_pure_digits_auto_suffix(self):
         """LLM 返回纯 6 位数字代码时，自动补全后缀。"""
         from app.services.catalyst_aggregator import _call_ticker_mapping_llm
         from app.config import settings
 
-        original_key = settings.SILICONFLOW_API_KEY
-        settings.SILICONFLOW_API_KEY = "test-key"
+        original_key = settings.LLM_API_KEY
+        settings.LLM_API_KEY = "test-key"
 
         mock_response_data = {
             "choices": [{
@@ -486,15 +486,15 @@ class TestTickerMappingLLM:
             assert result["茅台"] == "600519.SH"  # 6开头 → SH
             assert result["宁德"] == "300750.SZ"  # 3开头 → SZ
         finally:
-            settings.SILICONFLOW_API_KEY = original_key
+            settings.LLM_API_KEY = original_key
 
     async def test_llm_returns_with_think_tags(self):
         """LLM 返回的 JSON 被 <think> 标签包裹时仍能正确解析。"""
         from app.services.catalyst_aggregator import _call_ticker_mapping_llm
         from app.config import settings
 
-        original_key = settings.SILICONFLOW_API_KEY
-        settings.SILICONFLOW_API_KEY = "test-key"
+        original_key = settings.LLM_API_KEY
+        settings.LLM_API_KEY = "test-key"
 
         mock_response_data = {
             "choices": [{
@@ -522,7 +522,7 @@ class TestTickerMappingLLM:
 
             assert result["宁德时代"] == "300750.SZ"
         finally:
-            settings.SILICONFLOW_API_KEY = original_key
+            settings.LLM_API_KEY = original_key
 
 
 # ═══════════════════════════════════════════════════════════

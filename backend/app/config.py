@@ -63,19 +63,28 @@ class Settings(BaseSettings):
     ZHIPU_API_KEY: str = Field("", repr=False)                          # 智谱 API Key (https://open.bigmodel.cn)
     ZHIPU_EMBEDDING_MODEL: str = "embedding-3"                      # Embedding 模型：embedding-3（可自定义维度）或 embedding-2（固定1024维）
 
-    # ── 硅基流动 SiliconFlow（免费 Embedding + 免费 LLM 评分）──
+    # ── 硅基流动 SiliconFlow（仅用于 Embedding 去重）──
+    # 评分/分析已迁移至 DeepSeek（见下方 LLM_* 配置），此处仅保留 Embedding 配置。
     SILICONFLOW_API_KEY: str = Field("", repr=False)                    # SiliconFlow API Key (https://cloud.siliconflow.cn)
-    SILICONFLOW_EMBEDDING_MODEL: str = "BAAI/bge-m3"               # 免费模型：BAAI/bge-m3(1024维) / BAAI/bge-large-zh-v1.5(1024维)
-    SILICONFLOW_LLM_MODEL: str = "Qwen/Qwen3-8B"                  # 免费 LLM 模型（用于评分/情绪分析）
-    SILICONFLOW_API_URL: str = "https://api.siliconflow.cn/v1/chat/completions"  # SiliconFlow Chat API
+    SILICONFLOW_EMBEDDING_MODEL: str = "BAAI/bge-m3"               # Embedding 模型：BAAI/bge-m3(1024维) / BAAI/bge-large-zh-v1.5(1024维)
+    # 以下两项为旧评分模型配置，评分已迁移到 LLM_MODEL / LLM_API_URL（DeepSeek），保留仅为向后兼容
+    SILICONFLOW_LLM_MODEL: str = "Qwen/Qwen3-8B"                  # [已废弃] 旧评分模型，评分现用 LLM_MODEL
+    SILICONFLOW_API_URL: str = "https://api.siliconflow.cn/v1/chat/completions"  # [已废弃] 旧评分 Chat API，现用 LLM_API_URL
 
-    # ── DeepSeek AI（摘要专用，评分已迁移至 SiliconFlow）──
-    DEEPSEEK_API_KEY: str = Field("", repr=False)                       # API 密钥
-    DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # API 地址
-    DEEPSEEK_MODEL: str = "deepseek-chat"                           # 模型名称（仅 digest 使用）
+    # ── DeepSeek AI（摘要/研报专用，流式调用）──
+    # deepseek-chat / deepseek-reasoner 将于 2026/07/24 弃用，默认升级为 v4-flash
+    DEEPSEEK_API_KEY: str = Field("", repr=False)                       # API 密钥（同时供评分复用，见 LLM_API_KEY）
+    DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # API 地址（OpenAI 兼容）
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"                        # 摘要/研报模型（digest / briefing 使用）
 
-    # ── LLM 评分/翻译（SiliconFlow Qwen3-8B）──
-    # P4-B: 配置项从 DEEPSEEK_* 重命名为 LLM_*，AliasChoices 保持 .env 向后兼容
+    # ── LLM 评分/翻译/分析/公司名映射（DeepSeek-V4-flash）──
+    # 评分等高频结构化任务用 v4-flash（便宜），摘要等长文本用 DEEPSEEK_MODEL。
+    # LLM_API_KEY 通过 AliasChoices 复用 DEEPSEEK_API_KEY：只配一个 DeepSeek key 即可同时驱动评分与摘要。
+    LLM_API_KEY: str = Field("", repr=False, validation_alias=AliasChoices("LLM_API_KEY", "DEEPSEEK_API_KEY"))  # 评分/分析用 key（默认复用 DeepSeek key）
+    LLM_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # 评分/分析 API 地址（OpenAI 兼容）
+    LLM_MODEL: str = "deepseek-v4-flash"                            # 评分/分析模型（结构化 JSON 输出）
+
+    # ── LLM 评分参数（AliasChoices 兼容旧 DEEPSEEK_* 环境变量名）──
     LLM_BATCH_SIZE: int = Field(20, validation_alias=AliasChoices("LLM_BATCH_SIZE", "DEEPSEEK_BATCH_SIZE"))                        # 每批评分条数
     LLM_SCORE_THRESHOLD: int = Field(5, validation_alias=AliasChoices("LLM_SCORE_THRESHOLD", "DEEPSEEK_SCORE_THRESHOLD"))          # 入库分数阈值（≥5 才存储）
     LLM_MAX_RETRIES: int = Field(2, validation_alias=AliasChoices("LLM_MAX_RETRIES", "DEEPSEEK_MAX_RETRIES"))                       # API 失败最大重试次数

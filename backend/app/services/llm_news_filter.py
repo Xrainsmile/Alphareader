@@ -3,8 +3,8 @@
 职责：调用 LLM API 对新闻进行批量评分和翻译。
 
 模型选择（通过 config 切换）：
-  - 评分/翻译：SiliconFlow Qwen3-8B（免费）
-  - 摘要（digest_service）：DeepSeek-V3（付费，但调用量极小）
+  - 评分/翻译：DeepSeek-V4-flash（OpenAI 兼容，context caching 自动命中）
+  - 摘要（digest_service）：DeepSeek-V4-flash（流式，调用量极小）
 
 核心逻辑：
   1. 将新闻按语言分为中文组和英文组（字符占比优先、langdetect 兜底）
@@ -731,7 +731,7 @@ async def _call_llm_once(
     retry_after: 429 时从 Retry-After 头解析的秒数，None 表示无明确指示。
     """
     try:
-        resp = await client.post(settings.SILICONFLOW_API_URL, json=payload, headers=headers)
+        resp = await client.post(settings.LLM_API_URL, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
     except httpx.HTTPStatusError as e:
@@ -787,17 +787,16 @@ async def _score_batch_once(
     user_prompt = _build_user_prompt(batch, is_english)
 
     payload: dict[str, object] = {
-        "model": settings.SILICONFLOW_LLM_MODEL,
+        "model": settings.LLM_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.1,
         "max_tokens": 4096,
-        "enable_thinking": False,
     }
     headers: dict[str, str] = {
-        "Authorization": f"Bearer {settings.SILICONFLOW_API_KEY}",
+        "Authorization": f"Bearer {settings.LLM_API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -1046,17 +1045,16 @@ async def _translate_batch_once(
 
     user_prompt = _build_user_prompt(batch, is_english=True)
     payload: dict[str, object] = {
-        "model": settings.SILICONFLOW_LLM_MODEL,
+        "model": settings.LLM_MODEL,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT_EN_TRANSLATE},
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.1,
         "max_tokens": 4096,
-        "enable_thinking": False,
     }
     headers: dict[str, str] = {
-        "Authorization": f"Bearer {settings.SILICONFLOW_API_KEY}",
+        "Authorization": f"Bearer {settings.LLM_API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -1205,7 +1203,7 @@ async def filter_batch_detailed(
             processed_ids=set(range(1, len(batch) + 1)),
         )
 
-    if not settings.SILICONFLOW_API_KEY:
+    if not settings.LLM_API_KEY:
         logger.warning("LLM API key not configured, skipping AI scoring")
         return BatchResult(scored=[], status="no_api_key")
 
@@ -1347,7 +1345,7 @@ async def filter_news(items: list[RawNewsItem]) -> FilterResult:
 
     logger.info(
         "LLM scoring model=%s provider=siliconflow, Language split: %d Chinese, %d English items",
-        settings.SILICONFLOW_LLM_MODEL, len(cn_items), len(en_items),
+        settings.LLM_MODEL, len(cn_items), len(en_items),
     )
 
     # 预分批：每条记录 (batch, is_english)

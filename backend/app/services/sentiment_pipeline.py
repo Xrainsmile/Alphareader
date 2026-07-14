@@ -158,21 +158,20 @@ async def analyze_sentiment_and_surprise_with_llm(
     - 返回 dict，键：entity, sentiment_score, surprise_factor, catalyst_type, reasoning
     - 调用失败或解析失败均抛出异常，由上层 process_incoming_news 的 try/except 兜底
     """
-    if not settings.SILICONFLOW_API_KEY:
-        raise RuntimeError("SiliconFlow API key 未配置")
+    if not settings.LLM_API_KEY:
+        raise RuntimeError("LLM API key 未配置")
 
     payload = {
-        "model": settings.SILICONFLOW_LLM_MODEL,
+        "model": settings.LLM_MODEL,
         "messages": [
             {"role": "system", "content": SENTIMENT_SYSTEM_PROMPT},
             {"role": "user",   "content": news_text},  # news_text 已由 _build_news_text_for_llm 套入模板
         ],
         "temperature": 0.1,
         "max_tokens": 256,
-        "enable_thinking": False,
     }
     headers = {
-        "Authorization": f"Bearer {settings.SILICONFLOW_API_KEY}",
+        "Authorization": f"Bearer {settings.LLM_API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -180,7 +179,7 @@ async def analyze_sentiment_and_surprise_with_llm(
         for attempt in range(1, settings.LLM_MAX_RETRIES + 1):
             try:
                 resp = await client.post(
-                    settings.SILICONFLOW_API_URL,
+                    settings.LLM_API_URL,
                     json=payload,
                     headers=headers,
                 )
@@ -204,12 +203,12 @@ async def analyze_sentiment_and_surprise_with_llm(
                     delay += random.uniform(0, 1.0)
                     await asyncio.sleep(delay)
                     continue
-                raise RuntimeError(f"SiliconFlow HTTP {status_code}") from e
+                raise RuntimeError(f"LLM API HTTP {status_code}") from e
             except (httpx.TimeoutException, httpx.ConnectError) as e:
                 if attempt < settings.LLM_MAX_RETRIES:
                     await asyncio.sleep(min(30.0, 2.0 ** attempt) + random.uniform(0, 1.0))
                     continue
-                raise TimeoutError(f"SiliconFlow 请求超时/连接失败: {e}") from e
+                raise TimeoutError(f"LLM 请求超时/连接失败: {e}") from e
 
             # ── 解析响应 ──
             raw_content: str = resp.json()["choices"][0]["message"]["content"]
@@ -227,7 +226,7 @@ async def analyze_sentiment_and_surprise_with_llm(
             return result
 
     # 理论上不会到达这里（循环内必然 return 或 raise），保险起见
-    raise RuntimeError("SiliconFlow API 所有重试均失败")
+    raise RuntimeError("LLM API 所有重试均失败")
 
 
 async def save_to_db(
