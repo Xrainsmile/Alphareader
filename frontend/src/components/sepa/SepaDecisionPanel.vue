@@ -4,10 +4,19 @@
       <view class="sepa-section-title">📝 买入决策助手 <text class="sepa-section-sub">下单前强制走完检查清单</text></view>
 
       <view class="sepa-row2">
-        <view class="sepa-field"><text class="sepa-field-label">标的代码 *</text>
-          <input class="sepa-input" :value="form.symbol" placeholder="须在股池且已入池" @input="onSymbol" /></view>
+        <view class="sepa-field sepa-combo-field"><text class="sepa-field-label">标的代码 *</text>
+          <view class="sepa-combo">
+            <input class="sepa-input" :value="form.symbol" placeholder="从股池选择或输入" @input="onSymbol" @focus="onComboFocus" @blur="onComboBlur" />
+            <view class="sepa-combo-list" v-if="comboOpen && filteredSymbols.length">
+              <view class="sepa-combo-item" v-for="w in filteredSymbols" :key="w.symbol" @click="pickSymbol(w)">
+                <text class="sepa-combo-name">{{ w.name || '—' }}</text>
+                <text class="sepa-combo-code">{{ w.symbol }}</text>
+              </view>
+            </view>
+          </view>
+        </view>
         <view class="sepa-field"><text class="sepa-field-label">名称</text>
-          <input class="sepa-input" :value="form.name" placeholder="可选" @input="form.name = $event.detail.value" /></view>
+          <input class="sepa-input" :value="form.name" placeholder="选代码后自动带出" @input="form.name = $event.detail.value" /></view>
       </view>
 
       <view class="sepa-row2">
@@ -18,8 +27,8 @@
       </view>
 
       <view class="sepa-row2">
-        <view class="sepa-field"><text class="sepa-field-label">止损价 *（必填，无止损不可下单）</text>
-          <input class="sepa-input" type="digit" :value="form.stop_price" placeholder="默认建议 -7%" @input="onNum('stop_price', $event)" /></view>
+        <view class="sepa-field"><text class="sepa-field-label">止损跌幅 % *（如 -7，必填）</text>
+          <input class="sepa-input" type="text" :value="form.stop_pct" placeholder="如 -7" @input="onStopPct" /></view>
         <view class="sepa-field"><text class="sepa-field-label">枢轴价 Pivot</text>
           <input class="sepa-input" type="digit" :value="form.pivot_price" placeholder="留空取股池" @input="onNum('pivot_price', $event)" /></view>
       </view>
@@ -78,14 +87,14 @@
 
     <view class="sepa-card" v-else>
       <view class="sepa-btn sepa-btn-brand" @click="runCheck">运行买点检查</view>
-      <view class="sepa-section-sub" style="text-align:center;margin-top:12rpx;">填写买入价/股数/止损价后，先检查再下单</view>
+      <view class="sepa-section-sub" style="text-align:center;margin-top:12rpx;">填写买入价/股数/止损跌幅后，先检查再下单</view>
     </view>
   </view>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
-import { checkSepaBuy, openSepaTrade } from '@/utils/api'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { checkSepaBuy, openSepaTrade, fetchSepaWatchlist } from '@/utils/api'
 
 const props = defineProps({
   market: { type: String, required: true },
@@ -96,17 +105,65 @@ const emit = defineEmits(['need-unlock', 'changed'])
 
 const sym = props.currencySymbol
 const check = ref(null)
+const watchlist = ref([])
+const comboOpen = ref(false)
+let blurTimer = null
+
 const emptyForm = () => ({
-  symbol: '', name: '', entry_price: '', shares: '', stop_price: '', pivot_price: '',
+  symbol: '', name: '', entry_price: '', shares: '', stop_pct: '-7', pivot_price: '',
   vcp_confirmed: false, entry_reason: '', force_risky: false,
 })
 const form = reactive(emptyForm())
 
 const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString())
 
+// ── 标的代码可搜索下拉 ──
+const filteredSymbols = computed(() => {
+  const q = (form.symbol || '').trim().toUpperCase()
+  const pool = watchlist.value
+  if (!q) return pool.slice(0, 30)
+  return pool.filter(w =>
+    w.symbol.toUpperCase().includes(q) || (w.name || '').toUpperCase().includes(q)
+  ).slice(0, 30)
+})
+
+const loadWatchlist = async () => {
+  try {
+    const r = await fetchSepaWatchlist(props.market)
+    watchlist.value = r.items || []
+  } catch (_) {}
+}
+
+const onComboFocus = () => {
+  if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
+  comboOpen.value = true
+}
+const onComboBlur = () => {
+  blurTimer = setTimeout(() => { comboOpen.value = false }, 180)
+}
+const pickSymbol = (w) => {
+  form.symbol = w.symbol
+  form.name = w.name || ''
+  comboOpen.value = false
+  check.value = null
+}
+
 const onSymbol = (e) => { form.symbol = e.detail.value.toUpperCase(); check.value = null }
 const onNum = (k, e) => { form[k] = e.detail.value; check.value = null }
+const onStopPct = (e) => {
+  let v = e.detail.value.replace(/[^\d.\-]/g, '')
+  form.stop_pct = v
+  check.value = null
+}
 const onVcp = (e) => { form.vcp_confirmed = e.detail.value; check.value = null }
+
+// 跌幅（负数，如 -7）→ 绝对止损价
+const stopPrice = () => {
+  const ep = Number(form.entry_price)
+  const sp = Number(form.stop_pct)
+  if (!ep || !sp || sp >= 0) return null
+  return Math.round(ep * (1 + sp / 100) * 10000) / 10000
+}
 
 const clIcon = (it) => {
   if (it.pass) return 'ok'
@@ -126,7 +183,8 @@ const canSubmit = computed(() => {
 const validBasics = () => {
   if (!form.symbol) { uni.showToast({ title: '请填写代码', icon: 'none' }); return false }
   if (!form.entry_price || !form.shares) { uni.showToast({ title: '请填买入价与股数', icon: 'none' }); return false }
-  if (!form.stop_price) { uni.showToast({ title: '必须填止损价', icon: 'none' }); return false }
+  const sp = Number(form.stop_pct)
+  if (!form.stop_pct || isNaN(sp) || sp >= 0) { uni.showToast({ title: '止损跌幅须为负数', icon: 'none' }); return false }
   return true
 }
 
@@ -136,7 +194,7 @@ const runCheck = async () => {
     check.value = await checkSepaBuy({
       market: props.market, symbol: form.symbol,
       entry_price: Number(form.entry_price), shares: Number(form.shares),
-      stop_price: form.stop_price ? Number(form.stop_price) : null,
+      stop_price: stopPrice(),
       pivot_price: form.pivot_price ? Number(form.pivot_price) : null,
       vcp_confirmed: form.vcp_confirmed,
     })
@@ -153,7 +211,7 @@ const submit = async () => {
     await openSepaTrade({
       market: props.market, symbol: form.symbol, name: form.name,
       entry_date: today, entry_price: Number(form.entry_price), shares: Number(form.shares),
-      stop_price: Number(form.stop_price),
+      stop_price: stopPrice(),
       pivot_price: form.pivot_price ? Number(form.pivot_price) : null,
       vcp_confirmed: form.vcp_confirmed, entry_reason: form.entry_reason || null,
       force_risky: form.force_risky,
@@ -167,5 +225,6 @@ const submit = async () => {
   }
 }
 
-watch(() => props.market, () => { Object.assign(form, emptyForm()); check.value = null })
+watch(() => props.market, () => { Object.assign(form, emptyForm()); check.value = null; loadWatchlist() })
+onMounted(loadWatchlist)
 </script>

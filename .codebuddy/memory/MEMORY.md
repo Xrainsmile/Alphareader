@@ -9,6 +9,7 @@
 - 首次加载用 `onMounted`，`onShow` 仅返回时刷新；minify 后无法 grep 验证产物。
 
 ## 部署（Lighthouse 43.136.86.36, ubuntu, /home/Alphareader）
+- **服务划分（易踩坑）**：`web`(alpha-web)=后端 FastAPI，只 build `./backend`；`frontend`(alpha-frontend)=uni-app H5 构建 + Nginx，build `./frontend`（对外 80/443）。**改前端(vue/css/js) 必须 `--build frontend`；只 `--build web` 不会更新前端产物！** 改后端才 `--build web`。全量改动直接 `up -d --build`（不带服务名）重建全部最稳。验证前端产物：`docker exec alpha-frontend grep -ro 'sepa-input[^}]*' /usr/share/nginx/html/assets`（rpx 会编译成 rem，如 76rpx→2.375rem）。
 - 部署：`cd /home/Alphareader && git pull && docker compose -f docker-compose.yml up -d --build`（约 3min）。Dockerfile apt 源已改腾讯云内网 `mirrors.tencentyun.com`（builder+runtime 两处），build 26min→3min。
 - `web` 不暴露端口，只经 Nginx 反代；验证用 `docker exec alpha-web curl -s http://localhost:8000/...` 或宿主 `curl -k https://localhost/api/v1/...`（HTTP 会 301→HTTPS）。
 - **构建缓存坑**：改代码后容器内仍旧逻辑 → `docker compose build --no-cache web` + `up -d --force-recreate web`；且服务器必须先 `git pull`。验证：`docker exec alpha-web grep -n '关键字' /app/app/...`。

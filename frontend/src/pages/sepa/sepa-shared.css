@@ -183,10 +183,61 @@
   line-height: 1.5;
   font-size: 28rpx;
   overflow: visible;
+}
+.sepa-input .uni-input-input,
+.sepa-input .uni-input-wrapper {
   color: var(--color-text-primary);
+}
+/* placeholder 调灰（原继承 primary 太黑） */
+.sepa-input .uni-input-placeholder,
+.sepa-input::placeholder,
+.sepa-input input::placeholder {
+  color: var(--color-text-placeholder);
 }
 .sepa-input.is-error {
   border-color: var(--color-up);
+}
+
+/* 标的代码可搜索下拉 */
+.sepa-combo-field { position: relative; }
+.sepa-combo { position: relative; }
+.sepa-combo-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin-top: 4rpx;
+  max-height: 480rpx;
+  overflow-y: auto;
+  background: var(--color-bg-card, #fff);
+  border: 1rpx solid var(--color-border);
+  border-radius: 12rpx;
+  box-shadow: 0 8rpx 24rpx rgba(0,0,0,0.12);
+}
+.sepa-combo-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 20rpx;
+  border-bottom: 1rpx solid var(--color-border-light);
+}
+.sepa-combo-item:last-child { border-bottom: none; }
+.sepa-combo-item:active { background: var(--color-bg-neutral-light); }
+.sepa-combo-name {
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sepa-combo-code {
+  font-size: 24rpx;
+  color: var(--color-text-placeholder);
+  font-family: var(--font-mono, monospace);
+  margin-left: 16rpx;
+  flex-shrink: 0;
 }
 .sepa-row2 {
   display: flex;
