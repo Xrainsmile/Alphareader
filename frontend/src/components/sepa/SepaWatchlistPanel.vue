@@ -4,6 +4,7 @@
     <view class="sepa-card">
       <view class="sepa-btn-row">
         <view class="sepa-btn sepa-btn-brand sepa-btn-sm" style="flex:1" @click="openForm()">+ 添加标的</view>
+        <view class="sepa-btn sepa-btn-ghost sepa-btn-sm" style="flex:1" @click="openBatch">批量导入</view>
         <view class="sepa-btn sepa-btn-ghost sepa-btn-sm" style="flex:1" @click="load">刷新</view>
       </view>
       <view class="sepa-filter-bar" style="margin-top:16rpx;margin-bottom:0;">
@@ -107,12 +108,41 @@
         </view>
       </view>
     </view>
+
+    <!-- 批量导入弹层 -->
+    <view v-if="showBatch" class="pwd-overlay" @click.self="showBatch = false">
+      <view class="sepa-form-modal">
+        <view class="sepa-section-title">批量导入 · {{ marketLabel }}</view>
+        <view class="sepa-field-label" style="margin:4rpx 0 10rpx;line-height:1.5;">
+          每行/逗号/空格分隔一个代码。示例：{{ batchPlaceholder }}
+        </view>
+        <textarea
+          class="sepa-input sepa-batch-textarea"
+          :value="batchText"
+          :placeholder="batchPlaceholder"
+          :disabled="batching"
+          @input="batchText = $event.detail.value"
+        />
+        <view class="sepa-field-label" style="margin-top:8rpx;">
+          识别到 <text style="color:var(--color-brand);font-weight:700;">{{ parsedCodes.length }}</text> 个代码，将自动拉取指标并判定 8 条模板
+        </view>
+        <view class="sepa-btn-row" style="margin-top:16rpx;">
+          <view class="sepa-btn sepa-btn-ghost" style="flex:1" @click="showBatch = false">取消</view>
+          <view
+            class="sepa-btn sepa-btn-primary"
+            style="flex:1"
+            :style="{ opacity: (!parsedCodes.length || batching) ? 0.5 : 1 }"
+            @click="submitBatch"
+          >{{ batching ? '导入中…' : `导入 ${parsedCodes.length} 个` }}</view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
-import { fetchSepaWatchlist, addSepaWatchlist, updateSepaWatchlist, deleteSepaWatchlist, autofillSepaMetrics } from '@/utils/api'
+import { ref, reactive, computed, watch } from 'vue'
+import { fetchSepaWatchlist, addSepaWatchlist, updateSepaWatchlist, deleteSepaWatchlist, autofillSepaMetrics, batchAddSepaWatchlist } from '@/utils/api'
 
 const props = defineProps({
   market: { type: String, required: true },
@@ -128,6 +158,28 @@ const statusFilter = ref('')
 const showForm = ref(false)
 const editing = ref(null)
 const autofilling = ref(false)
+
+// 批量导入
+const showBatch = ref(false)
+const batchText = ref('')
+const batching = ref(false)
+const marketLabel = computed(() => ({ CN: 'A股', HK: '港股', US: '美股' }[props.market] || props.market))
+const batchPlaceholder = computed(() => ({
+  CN: '300750, 600519\n000001',
+  HK: '00700, 09988\n03690',
+  US: 'NVDA, AAPL\nMSFT',
+}[props.market] || 'NVDA, AAPL'))
+const parsedCodes = computed(() => {
+  const set = new Set()
+  const out = []
+  for (const raw of String(batchText.value).split(/[\s,，;；、]+/)) {
+    const s = raw.trim().toUpperCase()
+    if (!s || s.length > 16 || set.has(s)) continue
+    set.add(s)
+    out.push(s)
+  }
+  return out
+})
 
 const emptyForm = () => ({
   symbol: '', name: '', price: '', rs: '', ma50: '', ma150: '', ma200: '',
@@ -170,6 +222,40 @@ const doAutofill = async () => {
     uni.showToast({ title: e.message || '获取失败', icon: 'none' })
   } finally {
     autofilling.value = false
+  }
+}
+
+const openBatch = () => {
+  if (!props.unlocked) { emit('need-unlock'); return }
+  batchText.value = ''
+  showBatch.value = true
+}
+
+const submitBatch = async () => {
+  if (!props.unlocked) { emit('need-unlock'); return }
+  const symbols = parsedCodes.value
+  if (!symbols.length || batching.value) return
+  batching.value = true
+  try {
+    const r = await batchAddSepaWatchlist({ market: props.market, symbols })
+    const nAdd = (r.added || []).length
+    const nSkip = (r.skipped || []).length
+    const nFail = (r.failed || []).length
+    showBatch.value = false
+    await load()
+    emit('changed')
+    const parts = [`成功 ${nAdd}`]
+    if (nSkip) parts.push(`已存在 ${nSkip}`)
+    if (nFail) parts.push(`失败 ${nFail}`)
+    uni.showModal({
+      title: '批量导入完成',
+      content: parts.join(' · ') + (nFail ? `\n失败代码：${(r.failed || []).map(f => f.symbol).join('、')}` : ''),
+      showCancel: false,
+    })
+  } catch (e) {
+    uni.showToast({ title: e.message || '导入失败', icon: 'none' })
+  } finally {
+    batching.value = false
   }
 }
 
@@ -232,7 +318,7 @@ const remove = (w) => {
   })
 }
 
-watch(() => props.market, () => { statusFilter.value = ''; load() })
+watch(() => props.market, () => { statusFilter.value = ''; showBatch.value = false; load() })
 defineExpose({ load })
 load()
 </script>
@@ -250,6 +336,12 @@ load()
   border-radius: 20rpx; padding: 32rpx;
 }
 .sepa-form-scroll { max-height: 60vh; }
+.sepa-batch-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  height: 240rpx;
+  min-height: 240rpx;
+}
 @media (min-width: 750px) {
   .sepa-form-modal { width: 460px; padding: 24px; }
 }

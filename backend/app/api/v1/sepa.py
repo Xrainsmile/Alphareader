@@ -103,6 +103,13 @@ class WatchlistCreate(BaseModel):
     fundamental_note: str | None = None
 
 
+class WatchlistBatchCreate(BaseModel):
+    """批量导入股池标的（按代码，自动拉指标 + 判 8 条模板）。"""
+    market: str
+    symbols: list[str] = Field(..., min_length=1, max_length=100)
+    autofill: bool = True
+
+
 class WatchlistUpdate(BaseModel):
     name: str | None = Field(None, max_length=64)
     price: float | None = None
@@ -503,6 +510,84 @@ async def add_watchlist(
     await db.commit()
     await db.refresh(w)
     return _serialize_watch(w)
+
+
+@router.post("/admin/watchlist/batch")
+async def add_watchlist_batch(
+    body: WatchlistBatchCreate, _=Depends(_require_admin), db: AsyncSession = Depends(get_db)
+):
+    """批量导入股池标的（按代码）。
+
+    逐个代码：去重 → 可选自动拉指标（现价/MA/RS/52周高低）→ 判 8 条模板 → 入库。
+    返回 added / skipped（已存在）/ failed 汇总。单个失败不影响其余。
+    """
+    _check_market(body.market)
+
+    # 规整 + 批内去重（统一大写，与决策面板一致）
+    seen: set[str] = set()
+    codes: list[str] = []
+    for raw in body.symbols:
+        s = (raw or "").strip().upper()
+        if not s or s in seen:
+            continue
+        if len(s) > 16:
+            continue
+        seen.add(s)
+        codes.append(s)
+    if not codes:
+        raise HTTPException(status_code=400, detail="未提供有效代码")
+
+    # 该市场已有代码（去重）
+    existing_res = await db.execute(
+        select(SepaWatchlistItem.symbol).where(SepaWatchlistItem.market == body.market)
+    )
+    existing = {row[0].upper() for row in existing_res.all()}
+
+    added: list[dict] = []
+    skipped: list[str] = []
+    failed: list[dict] = []
+
+    for code in codes:
+        if code in existing:
+            skipped.append(code)
+            continue
+        try:
+            metrics: dict = {}
+            if body.autofill:
+                try:
+                    metrics = await svc.fetch_sepa_indicators(body.market, code, db)
+                except Exception as e:  # 指标获取失败不阻断入库（留待手动补录）
+                    logger.warning("批量导入 %s/%s 指标获取失败: %s", body.market, code, e)
+                    metrics = {}
+            w = SepaWatchlistItem(
+                market=body.market, symbol=code, name=metrics.get("name") or "",
+                price=metrics.get("price"), ma50=metrics.get("ma50"),
+                ma150=metrics.get("ma150"), ma200=metrics.get("ma200"),
+                ma200_rising=bool(metrics.get("ma200_rising")),
+                high52w=metrics.get("high52w"), low52w=metrics.get("low52w"),
+                rs=metrics.get("rs"),
+            )
+            _apply_template(w)
+            db.add(w)
+            await db.commit()
+            await db.refresh(w)
+            existing.add(code)
+            added.append({"symbol": code, "name": w.name, "status": w.status})
+        except Exception as e:
+            await db.rollback()
+            logger.warning("批量导入 %s/%s 入库失败: %s", body.market, code, e)
+            failed.append({"symbol": code, "error": str(e)[:120]})
+
+    logger.info(
+        "SEPA batch import: market=%s total=%d added=%d skipped=%d failed=%d",
+        body.market, len(codes), len(added), len(skipped), len(failed),
+    )
+    return {
+        "total": len(codes),
+        "added": added,
+        "skipped": skipped,
+        "failed": failed,
+    }
 
 
 @router.put("/admin/watchlist/{item_id}")

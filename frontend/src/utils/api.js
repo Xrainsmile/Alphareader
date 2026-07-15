@@ -459,6 +459,10 @@ export function fetchSepaWatchlistItem(id) {
 export function addSepaWatchlist(data) {
   return request('/api/v1/sepa/admin/watchlist', { method: 'POST', data, headers: _sepaAuthHeader() })
 }
+// 批量导入股池（按代码，自动拉指标 + 判8条）
+export function batchAddSepaWatchlist(data) {
+  return request('/api/v1/sepa/admin/watchlist/batch', { method: 'POST', data, headers: _sepaAuthHeader() })
+}
 export function updateSepaWatchlist(id, data) {
   return request(`/api/v1/sepa/admin/watchlist/${id}`, { method: 'PUT', data, headers: _sepaAuthHeader() })
 }

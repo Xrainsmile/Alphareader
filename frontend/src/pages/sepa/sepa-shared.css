@@ -168,16 +168,21 @@
   padding: 16rpx 20rpx;
   font-size: 28rpx;
   line-height: 1.5;
-  min-height: 44rpx;
+  /* uni-input 默认 height:1.4em+overflow:hidden 会把文字上下裁切，必须显式放开 */
+  height: auto;
+  min-height: 76rpx;
+  overflow: visible;
   color: var(--color-text-primary);
 }
-/* H5 端 uni-input 内层真实 input 文字被裁切修复 */
+/* H5 端 uni-input 内层真实 input / placeholder 文字被裁切修复 */
 .sepa-input .uni-input-input,
-.sepa-input .uni-input-wrapper {
+.sepa-input .uni-input-wrapper,
+.sepa-input .uni-input-placeholder {
   height: auto;
-  min-height: 44rpx;
+  min-height: 42rpx;
   line-height: 1.5;
   font-size: 28rpx;
+  overflow: visible;
   color: var(--color-text-primary);
 }
 .sepa-input.is-error {
