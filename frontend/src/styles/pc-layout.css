@@ -31,17 +31,19 @@
   }
 }
 
-/* ── ≥1200px：+ 右看板 ── */
+/* ── ≥1200px：+ 右看板；三列比例 左导航:中间:右侧 = 2:14:4（与 News 一致）── */
 @media screen and (min-width: 1200px) {
   .container {
-    max-width: 720px;
+    flex: 14 1 0;
+    max-width: none;
+    min-width: 0;
   }
   .pc-right-panel {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    width: 340px;
-    flex-shrink: 0;
+    flex: 4 1 0;
+    min-width: 0;
     padding: 24px 16px;
     position: sticky;
     top: 0;

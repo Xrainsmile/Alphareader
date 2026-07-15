@@ -70,4 +70,13 @@ function navTo(url) {
   .pc-nav-text { font-size: 14px; color: var(--color-text-secondary); font-weight: 500; }
   .pc-nav-active .pc-nav-text { color: var(--color-brand); font-weight: 700; }
 }
+
+/* ── ≥1200px：三列比例中左导航占 2（左导航:中间:右侧 = 2:14:4）── */
+@media screen and (min-width: 1200px) {
+  .pc-sidebar {
+    width: auto;
+    flex: 2 1 0;
+    min-width: 0;
+  }
+}
 </style>
