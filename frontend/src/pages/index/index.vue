@@ -1886,12 +1886,18 @@ onReachBottom(() => {
    大屏 (≥1200px)
    ═══════════════════════════════════════════════════════════ */
 @media screen and (min-width: 1200px) {
+  /* 三列比例 左导航:中间内容:右侧TOP5 = 2:14:4 */
+  .pc-sidebar {
+    width: auto;
+    flex: 2 1 0;
+    min-width: 0;
+  }
   .pc-right-panel {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    width: 240px;
-    flex-shrink: 0;
+    flex: 4 1 0;
+    min-width: 0;
     padding: 24px 16px;
     position: sticky;
     top: 0;
@@ -1910,7 +1916,9 @@ onReachBottom(() => {
   .right-empty { padding: 20px 0; text-align: center; }
   .right-empty-text { font-size: 13px; color: var(--color-text-muted); }
   .container {
-    max-width: 640px;
+    flex: 14 1 0;
+    max-width: none;
+    min-width: 0;
   }
   :deep(.news-summary) {
     -webkit-line-clamp: 4;

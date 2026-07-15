@@ -103,6 +103,12 @@ echo ""
 echo "▶ [6/7] Starting all services..."
 docker compose -f docker-compose.yml up -d --build
 
+# Clean up dangling images & build cache to prevent disk bloat
+# (each `up --build` leaves a ~900MB dangling layer + build cache)
+echo "▶ Pruning dangling images & build cache..."
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f >/dev/null 2>&1 || true
+
 # ── Step 7: Verify ──
 echo ""
 echo "▶ [7/7] Verifying deployment..."
@@ -138,3 +144,9 @@ echo ""
 echo "▶ Setting up SSL auto-renewal..."
 (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet && cd ${PROJECT_DIR} && docker compose -f docker-compose.yml restart frontend") | sort -u | crontab -
 echo "✅ Certbot renewal cron added (daily 3:00 AM)"
+
+# ── Setup weekly Docker cleanup cron ──
+echo ""
+echo "▶ Setting up weekly Docker cleanup..."
+(crontab -l 2>/dev/null; echo "0 4 * * 0 docker image prune -f && docker builder prune -f") | sort -u | crontab -
+echo "✅ Docker cleanup cron added (weekly Sunday 4:00 AM)"
