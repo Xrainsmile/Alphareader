@@ -197,7 +197,7 @@
             </template>
           </view>
 
-          <view class="vcp-analysis" v-else-if="vcpLoading === item.ts_code">
+          <view class="vcp-analysis" v-else-if="vcpAnalyzing === item.ts_code">
             <text class="vcp-ana-reason">VCP 分析中…</text>
           </view>
         </view>
@@ -333,30 +333,30 @@ const rankClass = (idx) => idx < 3 ? 'rank-top' : idx < 10 ? 'rank-high' : ''
 
 // ── VCP 形态识别（展开行内实时分析，人在环上）──
 const vcpAnalysis = ref({})   // ts_code -> 分析结果
-const vcpLoading = ref('')    // 正在分析的 ts_code
+  const vcpAnalyzing = ref('')    // 正在分析的 ts_code
 
-const loadVcp = async (item) => {
-  const code = item.ts_code
-  if (!code || vcpLoading.value === code) return
-  // 快路径：优先用 watchlist 已带回的 vcp_auto（批量回填结果，含判定+K线），零延迟渲染
-  if (item.vcp_auto && typeof item.vcp_auto === 'object' && 'vcp_detected' in item.vcp_auto) {
-    vcpAnalysis.value[code] = item.vcp_auto
-    return
-  }
-  if (vcpAnalysis.value[code]) return
-  vcpLoading.value = code
-  try {
-    const r = await fetchVcpAnalyze({ market: props.market, symbol: code })
-    vcpAnalysis.value[code] = r
-  } catch (e) {
-    vcpAnalysis.value[code] = {
-      data_available: true, vcp_detected: false,
-      reason: 'VCP 分析失败：' + (e.message || '网络错误'),
+  const loadVcp = async (item) => {
+    const code = item.ts_code
+    if (!code || vcpAnalyzing.value === code) return
+    // 快路径：优先用 watchlist 已带回的 vcp_auto（批量回填结果，含判定+K线），零延迟渲染
+    if (item.vcp_auto && typeof item.vcp_auto === 'object' && 'vcp_detected' in item.vcp_auto) {
+      vcpAnalysis.value[code] = item.vcp_auto
+      return
     }
-  } finally {
-    if (vcpLoading.value === code) vcpLoading.value = ''
+    if (vcpAnalysis.value[code]) return
+    vcpAnalyzing.value = code
+    try {
+      const r = await fetchVcpAnalyze({ market: props.market, symbol: code })
+      vcpAnalysis.value[code] = r
+    } catch (e) {
+      vcpAnalysis.value[code] = {
+        data_available: true, vcp_detected: false,
+        reason: 'VCP 分析失败：' + (e.message || '网络错误'),
+      }
+    } finally {
+      if (vcpAnalyzing.value === code) vcpAnalyzing.value = ''
+    }
   }
-}
 
 // 把后端 bars + swing_points + segments 转成 SVG 坐标（蜡烛 + 量能 + 标注）
 const vcpChartOf = (code) => {
