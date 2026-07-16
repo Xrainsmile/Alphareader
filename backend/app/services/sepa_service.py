@@ -543,3 +543,112 @@ async def compute_kpi(db: AsyncSession, market: str, period: str = "all") -> dic
         "passed": passed,
         "verdict": verdict,
     }
+
+
+# ════════════════════════════════════════════════════════════
+# VCP 形态自动识别（批量回填到 vcp_auto 列）
+# ════════════════════════════════════════════════════════════
+async def _fetch_vcp_bars(db: AsyncSession, market: str, code: str) -> list[dict]:
+    """从 stock_daily_quote 取近 N 日 OHLCV（升序），供 VCP 算法使用。
+
+    与 sepa.py 的 /vcp/analyze 复用相同口径；仅返回结构化的 bars（不含前端标注）。
+    """
+    from app.services.vcp_detector import LOOKBACK_DAYS
+
+    limit = LOOKBACK_DAYS + 30
+    rows = await db.execute(
+        sa_text("""
+            SELECT trade_date, open, high, low, close, volume
+            FROM stock_daily_quote
+            WHERE ts_code = :code AND market = :market
+            ORDER BY trade_date DESC
+            LIMIT :limit
+        """),
+        {"code": code, "market": market, "limit": limit},
+    )
+    recs = rows.all()
+    if not recs:
+        return []
+    bars = [{
+        "date": (r[0].isoformat() if hasattr(r[0], "isoformat") else str(r[0])),
+        "open": float(r[1]) if r[1] is not None else 0.0,
+        "high": float(r[2]) if r[2] is not None else 0.0,
+        "low": float(r[3]) if r[3] is not None else 0.0,
+        "close": float(r[4]) if r[4] is not None else 0.0,
+        "volume": float(r[5]) if r[5] is not None else 0.0,
+    } for r in recs]
+    bars.reverse()  # 转升序（oldest→newest）
+    return bars
+
+
+async def refresh_vcp_watchlist(market: str | None = None, force: bool = False) -> dict:
+    """批量回填 VCP 算法识别结果到 SepaWatchlistItem.vcp_auto。
+
+    遍历股池标的，查 stock_daily_quote → detect_vcp → 写 vcp_auto（剔除原始 bars）。
+    与人工 vcp_confirmed 决策字段相互独立、互不覆盖。
+      - force=False：跳过已有 vcp_auto 的标的（增量补齐）
+      - force=True：全量重算
+
+    Returns:
+        {total, analyzed, skipped, detected, failed, detected_by_market}
+    """
+    from app.database import async_session
+    from app.services.vcp_detector import detect_vcp
+
+    total = analyzed = detected = failed = skipped = 0
+    detected_by_market: dict[str, int] = {}
+
+    async with async_session() as db:
+        stmt = select(SepaWatchlistItem)
+        if market:
+            stmt = stmt.where(SepaWatchlistItem.market == market)
+        res = await db.execute(stmt)
+        items = list(res.scalars().all())
+
+        for w in items:
+            total += 1
+            if not force and w.vcp_auto is not None:
+                skipped += 1
+                continue
+
+            code = w.symbol.strip().upper()
+            mkt = w.market
+            if mkt == "HK":
+                code = code.zfill(5)
+
+            try:
+                bars = await _fetch_vcp_bars(db, mkt, code)
+                if not bars:
+                    payload = {
+                        "vcp_detected": False, "data_available": False,
+                        "reason": "该标的无历史日K线数据（HK 需先补录历史行情）",
+                    }
+                else:
+                    payload = detect_vcp(bars, pivot_override=w.pivot_price)
+                    # 持久化原始 K 线，支撑前端快路径零延迟渲染 K 线缩略图
+                    payload["bars"] = bars
+                w.vcp_auto = payload
+                analyzed += 1
+                if payload.get("vcp_detected"):
+                    detected += 1
+                    detected_by_market[mkt] = detected_by_market.get(mkt, 0) + 1
+            except Exception as e:  # 单条失败不阻断整体
+                logger.warning("VCP 回填失败 %s/%s: %s", w.market, w.symbol, e)
+                failed += 1
+                w.vcp_auto = {"vcp_detected": False, "data_available": False,
+                              "reason": f"分析失败: {e}"}
+
+        await db.commit()
+
+    logger.info(
+        "VCP 批量回填完成: total=%d analyzed=%d skipped=%d detected=%d failed=%d",
+        total, analyzed, skipped, detected, failed,
+    )
+    return {
+        "total": total,
+        "analyzed": analyzed,
+        "skipped": skipped,
+        "detected": detected,
+        "failed": failed,
+        "detected_by_market": detected_by_market,
+    }

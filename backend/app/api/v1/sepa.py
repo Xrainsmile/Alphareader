@@ -33,7 +33,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -48,6 +48,7 @@ from app.models.sepa import (
     SepaWatchlistItem,
 )
 from app.services import sepa_service as svc
+from app.services.vcp_detector import detect_vcp, LOOKBACK_DAYS
 
 logger = logging.getLogger("alphareader.sepa")
 
@@ -125,6 +126,12 @@ class WatchlistUpdate(BaseModel):
     fundamental_note: str | None = None
 
 
+class RefreshVcpRequest(BaseModel):
+    """批量回填 VCP 算法结果到 vcp_auto 列。"""
+    market: str | None = Field(None, description="仅回填该市场（CN/HK/US），留空则全市场")
+    force: bool = Field(False, description="True=全量重算；False=跳过已有 vcp_auto 的标的")
+
+
 class CheckRequest(BaseModel):
     """买点检查清单 + 风险预演（不下单）。"""
     market: str
@@ -185,6 +192,7 @@ def _serialize_watch(w: SepaWatchlistItem) -> dict:
         "template_detail": w.template_detail,
         "vcp_stage": w.vcp_stage,
         "pivot_price": w.pivot_price,
+        "vcp_auto": w.vcp_auto,
         "fundamental_note": w.fundamental_note,
         "status": w.status,
         "updated_at": w.updated_at.isoformat() if w.updated_at else None,
@@ -309,6 +317,62 @@ async def autofill_indicators(
     """填代码自动带出指标：现价/MA/RS/52周高低（按市场，能取多少算多少）。"""
     _check_market(market)
     return await svc.fetch_sepa_indicators(market, symbol.strip(), db)
+
+
+@router.get("/vcp/analyze")
+async def analyze_vcp(
+    market: str = Query(...),
+    symbol: str = Query(..., min_length=1, max_length=16),
+    pivot_price: float | None = Query(None, description="可选：人工/系统指定枢轴价，仅用于 near_pivot 计算与展示"),
+    db: AsyncSession = Depends(get_db),
+):
+    """VCP 形态自动识别（纯数据算法，人在环上）。
+
+    从 stock_daily_quote 取近 90+ 日 OHLCV，运行 VCP 检测算法，
+    返回结构判定 + 收缩段明细 + 转折点（供前端标注）。不写库，
+    供决策面板实时调用；最终是否确认仍由用户拨 vcp_confirmed 开关。
+    """
+    _check_market(market)
+    code = symbol.strip().upper()
+    if market == "HK":
+        code = code.zfill(5)
+
+    limit = LOOKBACK_DAYS + 30
+    rows = await db.execute(
+        sa_text("""
+            SELECT trade_date, open, high, low, close, volume
+            FROM stock_daily_quote
+            WHERE ts_code = :code AND market = :market
+            ORDER BY trade_date DESC
+            LIMIT :limit
+        """),
+        {"code": code, "market": market, "limit": limit},
+    )
+    recs = rows.all()
+    if not recs:
+        return {
+            "market": market, "symbol": symbol, "vcp_detected": False,
+            "data_available": False,
+            "reason": "该标的无历史日K线数据（HK 需先补录历史行情）",
+            "swing_points": [], "segments": [], "bars": [],
+        }
+
+    bars = [{
+        "date": (r[0].isoformat() if hasattr(r[0], "isoformat") else str(r[0])),
+        "open": float(r[1]) if r[1] is not None else 0.0,
+        "high": float(r[2]) if r[2] is not None else 0.0,
+        "low": float(r[3]) if r[3] is not None else 0.0,
+        "close": float(r[4]) if r[4] is not None else 0.0,
+        "volume": float(r[5]) if r[5] is not None else 0.0,
+    } for r in recs]
+    bars.reverse()  # 转升序（oldest→newest）
+
+    res = detect_vcp(bars, pivot_override=pivot_price)
+    res["market"] = market
+    res["symbol"] = symbol
+    res["data_available"] = True
+    res["bars"] = bars  # 回传 OHLCV 供前端绘制 K 线缩略图（含 swing/segment 标注）
+    return res
 
 
 @router.get("/watchlist/{item_id}")
@@ -618,6 +682,18 @@ async def delete_watchlist(
     await db.delete(w)
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/admin/refresh-vcp")
+async def refresh_vcp(body: RefreshVcpRequest, _=Depends(_require_admin)):
+    """批量回填 VCP 算法识别结果到 vcp_auto 列（不写库行情，仅读 stock_daily_quote）。
+
+    与人工 vcp_confirmed 决策相互独立。股池标的较多时可能耗时数秒~数十秒。
+    """
+    if body.market:
+        _check_market(body.market)
+    summary = await svc.refresh_vcp_watchlist(market=body.market, force=body.force)
+    return {"ok": True, **summary}
 
 
 @router.post("/admin/trades")

@@ -30,6 +30,14 @@
 - **状态**：CN/US 五维现均真实、无 DATA_DELAY。此前 US "数据不足" 双根因已闭环——(a) 新增 `_resolve_market_date` 在 compute/get 入口按市场回退到已有数据的最新交易日（解决 T+1 时差精确匹配失败）；(b) US 个股接新浪主源并全量刷新。
 - **前端缓存**（2026-07-14）：`frontend/src/utils/requestCache.js`（模块级 Map + TTL + 并发去重 + `cachePeek` 同步读）；`api.js` 的 `fetchVCPWatchlist`/`fetchVCPFilters`/`fetchStrategyOverview`/`batchCheckCatalyst` 套缓存并导出 peek；`VcpTab.vue`/`StrategyObservationPanel.vue` 命中缓存时同步填充、不进 loading（零转圈）。TTL：白名单/概览/催化剂 5min，筛选项 30min。根因：VcpTab `v-if` 重建 + 面板 `watch` 切回重拉，而数据日终算一次盘中不变。
 
+## SEPA VCP 形态自动识别（纯数据算法，2026-07-15 起）
+- **算法** `backend/app/services/vcp_detector.py`：ZigZag 拐点 → 最高 swing high 为枢轴 → 配对收缩段 → 五项硬指标（收缩次数/振幅递减/末段振幅/量能递减）。**"高点递减"仅信息字段、非硬门槛**（末次回升逼近枢轴会略高）。阈值初值宽松、待回测收紧（严值注释在文件内）。纯 OHLCV、DB 无关、可回测；`detect_vcp(bars, params?, pivot_override?)` 返回结构化结果。
+- **接口** `GET /sepa/vcp/analyze`（公开 API Key）：`market,symbol,pivot_price?` → 查 `stock_daily_quote` → 实时算，不写库。现回传 `bars`(OHLCV) 供前端 K 线缩略图；人在环上由 `vcp_confirmed`（CheckRequest/TradeOpen 请求体）兜底。**坑**：曾漏 `sa_text` 导入致运行时 NameError，已在 `sepa.py` 补 `from sqlalchemy import ..., text as sa_text`。
+- **HK 历史日K** `backend/app/services/hk_data_fetcher.py`：腾讯 `hkfqkline`(主)+新浪兜底 → upsert `stock_daily_quote(market='HK', ts_code=5位零填充)`；`refresh_hk_quotes()` 抓 SEPA 股池 HK 标的（幂等）；调度器 `_hk_quotes_job` 每交易日 16:30 北京时间。回补 `scripts/backfill_hk_kline.py --codes 00700,09988`。
+- **回测** `scripts/backtest_vcp.py`：滑动窗口统计命中后 5/10/20/60 日收益 vs 随机基准，`--sensitivity` 扫阈值。
+- **前端 P3（2026-07-16 已落地）**：`VcpTab.vue` 展开行内渲染 VCP 判定卡片（收缩次数 / 振幅递减 / 量能递减 / 高点递减* / 距枢轴 / 枢轴价 + 收缩段明细）+ K 线缩略图 SVG（蜡烛+量能柱+摆动高点(红)/低点(绿)标注+枢轴橙虚线+收缩段紫色阴影带，复用 SandboxTab 的 SVG 模式，仅 H5 渲染）。`api.js` 加 `fetchVcpAnalyze`；展开行触发 `loadVcp` 并按 ts_code 缓存结果。**改前端须 `--build frontend`**（非 `web`）。
+- **P4 `vcp_auto` 批量回填（2026-07-16 已落地）**：`SepaWatchlistItem` 加 `vcp_auto` JSON 列（迁移 `t2u3v4w5x6y7`，head 已验证唯一）；服务 `sepa_service.refresh_vcp_watchlist(market?, force?)` 遍历股池 → 查 `stock_daily_quote` → `detect_vcp`（剔除原始 bars）→ 写 `vcp_auto`，与人工 `vcp_confirmed` 字段独立互不覆盖；`force=False` 增量跳过已有值。触发面：①`POST /sepa/admin/refresh-vcp`(body `{market?,force?}`) ②调度 `_vcp_refresh_job` CN 16:50 / US 06:50 日终 ③`scripts/refresh_vcp.py`（`--market`/`--force`）。`/sepa/watchlist` 已回传 `vcp_auto`。**前端暂未消费**（仍用 P3 实时 analyze），后续可加"优先读 vcp_auto、缺失再实时分析"快路径。
+
 ## LLM 评分模块 `backend/app/services/llm_news_filter.py`
 - **评分/分析/公司名映射 = DeepSeek-V4-flash**（2026-07-13 从 Qwen3-8B 切换）。旧 `deepseek_filter.py` 为 re-export shim。配置：`LLM_API_KEY`（兼容 `DEEPSEEK_API_KEY`）/`LLM_API_URL`（默认 api.deepseek.com/v1/chat/completions）/`LLM_MODEL`（默认 deepseek-v4-flash）。`DEEPSEEK_*` 仅摘要/研报流式用（deepseek-chat 于 2026/07/24 弃用）；`SILICONFLOW_*` 仅 Embedding 去重用。已移除 Qwen3 专有 `enable_thinking`。
 - **`app/services/llm_client.py`** `stream_chat()` 统一封装流式（重试/退避/审查兜底），digest 与 briefing 复用。

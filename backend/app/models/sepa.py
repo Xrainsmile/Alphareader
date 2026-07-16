@@ -136,6 +136,8 @@ class SepaWatchlistItem(Base):
     # ── VCP 形态 & 枢轴 ──
     vcp_stage: Mapped[str | None] = mapped_column(String(128), nullable=True)  # 收缩次数/是否接近枢轴
     pivot_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # 枢轴买点
+    # VCP 算法自动识别结果（批量回填，可由 refresh-vcp 重写；与人工 vcp_confirmed 互斥独立）
+    vcp_auto: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # ── 基本面加分项（手动标注）──
     fundamental_note: Mapped[str | None] = mapped_column(Text, nullable=True)  # EPS增速/营收加速/催化剂

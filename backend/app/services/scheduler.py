@@ -383,6 +383,28 @@ async def _us_screener_job():
         raise
 
 
+async def _hk_quotes_job():
+    """港股行情刷新 — 每个交易日 16:30（北京时间）触发（HK 16:00 收盘后）。
+
+    抓取 SEPA 股池中的 HK 标的日K线，幂等 upsert 到 stock_daily_quote(market='HK')，
+    供 VCP 算法与 SEPA 港股标的分析使用。
+    """
+    try:
+        from app.services.hk_data_fetcher import refresh_hk_quotes
+
+        logger.info("HK Quotes job triggered at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        written = await refresh_hk_quotes()
+        logger.info("HK Quotes refresh: %d records", written)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.exception("HK Quotes job failed: %s", e)
+        await send_alert(
+            "🔴 HK Quotes Job Failed",
+            f"{type(e).__name__}: {e}",
+        )
+        raise
+
+
 async def _us_trend_screener_job():
     """美股趋势 Screener — 每天 05:45（北京时间）触发。
 
@@ -461,6 +483,24 @@ async def _vcp_suitability_job(market: str):
     except Exception as e:
         logger.exception("VCP 适配度计算(%s)失败: %s", market, e)
         await send_alert("🔴 VCP Suitability Job Failed", f"market={market} {type(e).__name__}: {e}")
+        raise
+
+
+async def _vcp_refresh_job(market: str):
+    """VCP 算法批量回填 — 刷新 sepa_watchlist_items.vcp_auto（收盘后日终跑）。
+
+    结果仅供算法参考，与人工 vcp_confirmed 决策相互独立。
+    """
+    try:
+        logger.info("VCP 批量回填触发（market=%s）at %s", market,
+                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        from app.services import sepa_service as svc
+        summary = await svc.refresh_vcp_watchlist(market=market, force=False)
+        logger.info("VCP 批量回填(%s)完成: %s", market, summary)
+        return summary
+    except Exception as e:
+        logger.exception("VCP 批量回填(%s)失败: %s", market, e)
+        await send_alert("🔴 VCP Refresh Job Failed", f"market={market} {type(e).__name__}: {e}")
         raise
 
 
@@ -727,6 +767,22 @@ async def start_scheduler():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
+    # ── 港股行情刷新（每个交易日 16:30 北京时间，HK 收盘后）──
+    scheduler.add_job(
+        _hk_quotes_job,
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="16",
+            minute="30",
+            timezone=settings.TIMEZONE,
+        ),
+        id="hk_quotes_daily",
+        name=f"HK Quotes Refresh (Mon-Fri 16:30 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
     # ── 指数日行情采集（A 股收盘后 15:50 / 美股盘后 05:50）──
     scheduler.add_job(
         _index_fetch_job,
@@ -786,6 +842,38 @@ async def start_scheduler():
         ),
         id="vcp_suitability_us",
         name=f"VCP Suitability US (Daily 06:10 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # ── VCP 算法批量回填（A 股 16:50 / 美股 06:50，收盘后日终，保持 vcp_auto 新鲜）──
+    scheduler.add_job(
+        _vcp_refresh_job,
+        args=["CN"],
+        trigger=CronTrigger(
+            day_of_week="mon-fri",
+            hour="16",
+            minute="50",
+            timezone=settings.TIMEZONE,
+        ),
+        id="vcp_refresh_cn",
+        name=f"VCP Auto Refresh CN (Mon-Fri 16:50 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    scheduler.add_job(
+        _vcp_refresh_job,
+        args=["US"],
+        trigger=CronTrigger(
+            hour="6",
+            minute="50",
+            timezone=settings.TIMEZONE,
+        ),
+        id="vcp_refresh_us",
+        name=f"VCP Auto Refresh US (Daily 06:50 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,

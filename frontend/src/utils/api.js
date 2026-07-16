@@ -500,6 +500,12 @@ export function checkSepaBuy(data) {
   return request('/api/v1/sepa/check', { method: 'POST', data })
 }
 
+// VCP 形态自动识别（纯算法，人在环上；不写库）
+// @param {Object} params - {market, symbol, pivotPrice}
+export function fetchVcpAnalyze({ market, symbol, pivotPrice } = {}) {
+  return request(`/api/v1/sepa/vcp/analyze${_qs({ market, symbol, pivot_price: pivotPrice })}`)
+}
+
 // 开仓（M7 纪律强制拦截）
 export function openSepaTrade(data) {
   return request('/api/v1/sepa/admin/trades', { method: 'POST', data, headers: _sepaAuthHeader() })
