@@ -21,6 +21,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import traceback
+import asyncio
+import os
+import uuid
 from datetime import datetime
 
 import pytz
@@ -49,6 +52,18 @@ logger = logging.getLogger("alphareader.scheduler")
 # 锁带 TTL：持有锁的 worker 异常退出后，其他 worker 能在 TTL 内接管。
 SCHEDULER_LOCK_KEY = "alphareader:scheduler_lock"
 SCHEDULER_LOCK_TTL = 3600  # 1 小时
+# 未持锁 worker 的看门狗重试间隔（秒）。仅一次 Redis SETNX，开销极小，
+# 用于锁空闲（stale 锁 TTL 过期 / 持锁 worker 崩溃）后快速接管。
+_WATCHDOG_INTERVAL = 60
+
+# 本 worker 唯一标识，写入锁值以便续期/释放时校验归属
+_WORKER_ID = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+
+# 模块级状态：本 worker 是否持有调度锁 / 是否已启动调度器 / 后台任务句柄
+_scheduler_lock_owner = False
+_scheduler_started = False
+_lock_keepalive_task = None
+_lock_watchdog_task = None
 
 
 async def _try_acquire_scheduler_lock() -> bool:
@@ -61,7 +76,8 @@ async def _try_acquire_scheduler_lock() -> bool:
     try:
         from app.redis import get_redis
         r = get_redis()
-        acquired = await r.set(SCHEDULER_LOCK_KEY, "1", nx=True, ex=SCHEDULER_LOCK_TTL)
+        # 用本 worker 唯一 id 作为锁值，便于续期/释放时校验归属
+        acquired = await r.set(SCHEDULER_LOCK_KEY, _WORKER_ID, nx=True, ex=SCHEDULER_LOCK_TTL)
         return bool(acquired)
     except Exception as e:
         # Redis 不可用等异常 → fail-open：仍启动调度器（pipeline 去重层会兜住重复）
@@ -70,14 +86,99 @@ async def _try_acquire_scheduler_lock() -> bool:
 
 
 def _release_scheduler_lock_bg():
-    """后台线程释放调度锁，避免 shutdown 时阻塞事件循环。"""
+    """后台线程释放调度锁，避免 shutdown 时阻塞事件循环。
+
+    仅当锁仍归本 worker 持有时才删除，避免误删其他 worker 的锁
+    （多 worker 场景下，未持锁 worker 的 shutdown 不应清除持锁 worker 的锁）。
+    """
     try:
         import redis
         from app.config import settings
         r = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
-        r.delete(SCHEDULER_LOCK_KEY)
+        if r.get(SCHEDULER_LOCK_KEY) == _WORKER_ID:
+            r.delete(SCHEDULER_LOCK_KEY)
     except Exception:
         pass
+
+
+async def _renew_scheduler_lock() -> bool:
+    """续期调度锁：仅当锁仍归本 worker 持有时才续期。
+
+    Returns:
+        True  → 续期成功（本 worker 仍持有锁）
+        False → 锁已不存在或被其他 worker 抢占（本 worker 应停止调度器）
+    """
+    try:
+        from app.redis import get_redis
+        r = get_redis()
+        if await r.get(SCHEDULER_LOCK_KEY) == _WORKER_ID:
+            await r.expire(SCHEDULER_LOCK_KEY, SCHEDULER_LOCK_TTL)
+            return True
+        return False
+    except Exception as e:
+        logger.warning("[scheduler] 续期调度锁失败: %s", e)
+        return False
+
+
+def _stop_local_scheduler():
+    """关闭本 worker 的调度器（锁丢失时由 keepalive 调用）。"""
+    global _scheduler_started
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
+        logger.info("[scheduler] 本 worker 调度器已停止（锁丢失）")
+    _scheduler_started = False
+
+
+async def _lock_keepalive_loop():
+    """持锁 worker 的锁续期循环：每隔 TTL/3 续期一次。
+
+    若发现锁已不再归本 worker 持有（被抢占或 Redis 异常），
+    则停止本地调度器，让抢到锁的 worker 独占调度权。
+    """
+    global _scheduler_lock_owner
+    while _scheduler_lock_owner:
+        await asyncio.sleep(SCHEDULER_LOCK_TTL // 3)
+        if not await _renew_scheduler_lock():
+            logger.warning(
+                "[scheduler] 调度锁已丢失（可能被其他 worker 抢占），"
+                "停止本 worker 调度器以让出调度权"
+            )
+            _scheduler_lock_owner = False
+            _stop_local_scheduler()
+            break
+
+
+async def _lock_watchdog_loop():
+    """未持锁 worker 的自愈看门狗：周期性重试获取调度锁。
+
+    解决原设计缺陷——worker 仅在启动时尝试拿锁一次、失败后永不重试，
+    导致遇到 stale 锁（如被 SIGTERM 强杀未释放）时调度器静默停摆。
+    看门狗会在锁空闲后自动接管并启动调度器，无需人工重启。
+    """
+    global _scheduler_lock_owner, _lock_keepalive_task
+    while not _scheduler_lock_owner:
+        await asyncio.sleep(_WATCHDOG_INTERVAL)
+        try:
+            acquired = await _try_acquire_scheduler_lock()
+        except Exception:
+            acquired = False
+        if acquired:
+            logger.info("[scheduler] 看门狗成功获取调度锁，自动启动调度器（自愈）")
+            _scheduler_lock_owner = True
+            await _run_scheduler_jobs()
+            _start_lock_keepalive()
+
+
+def _start_lock_keepalive():
+    global _lock_keepalive_task
+    if _lock_keepalive_task is None or _lock_keepalive_task.done():
+        _lock_keepalive_task = asyncio.create_task(_lock_keepalive_loop())
+
+
+def _start_lock_watchdog():
+    global _lock_watchdog_task
+    if _lock_watchdog_task is None or _lock_watchdog_task.done():
+        _lock_watchdog_task = asyncio.create_task(_lock_watchdog_loop())
 
 
 # ── 延迟容忍配置 ──
@@ -515,7 +616,12 @@ async def start_scheduler():
     多 worker 场景：只有成功获取 Redis 调度锁的 worker 才真正启动调度器，
     其余 worker 仅承担 API 请求处理，避免重复跑 pipeline 并防止 pipeline
     跑批时阻塞全部 worker 导致 API 超时。
+
+    自愈：未获取锁的 worker 会启动一个看门狗任务，周期性重试获取锁；
+    一旦锁空闲（如持锁 worker 被强杀留下 stale 锁、TTL 过期后），
+    看门狗自动接管并启动调度器，无需人工重启容器。
     """
+    global _scheduler_lock_owner
     # ── 分布式锁：仅一个 worker 拥有调度权 ──
     try:
         acquired = await _try_acquire_scheduler_lock()
@@ -525,11 +631,28 @@ async def start_scheduler():
     if not acquired:
         logger.info(
             "[scheduler] 本 worker 未获取调度锁（其他 worker 已持有），"
-            "跳过调度器启动，仅处理 API 请求"
+            "启动自愈看门狗，待锁空闲后自动接管调度权"
         )
+        _start_lock_watchdog()
         return
 
+    _scheduler_lock_owner = True
     logger.info("[scheduler] 本 worker 已获取调度锁，启动定时任务调度器")
+    await _run_scheduler_jobs()
+    _start_lock_keepalive()
+
+
+async def _run_scheduler_jobs():
+    """注册全部 Cron 定时任务并启动调度器。
+
+    由 start_scheduler（首次拿到锁时）或 _lock_watchdog_loop（自愈接管时）调用。
+    _scheduler_started 守卫避免同一 worker 重复 start
+    （APScheduler 在已 running 状态下再 start 会抛 RuntimeError）。
+    """
+    global _scheduler_started
+    if _scheduler_started:
+        return
+    _scheduler_started = True
 
     start_h = settings.PIPELINE_START_HOUR
     end_h = settings.PIPELINE_END_HOUR
@@ -1007,9 +1130,15 @@ async def start_scheduler():
 
 def stop_scheduler():
     """优雅关闭调度器（不等待正在执行的任务）。"""
+    global _scheduler_lock_owner
+    # 取消后台任务（看门狗 / 续期），避免事件循环关闭后残留
+    for _task in (_lock_keepalive_task, _lock_watchdog_task):
+        if _task is not None and not _task.done():
+            _task.cancel()
     if scheduler.running:
         scheduler.shutdown(wait=False)
         logger.info("Scheduler stopped")
+    _scheduler_lock_owner = False
     # 释放调度锁，让其他 worker 可立即接管（后台线程执行，不阻塞事件循环）
     import threading
     threading.Thread(target=_release_scheduler_lock_bg, daemon=True).start()
