@@ -797,33 +797,33 @@ async def _run_scheduler_jobs():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
-    # 12:00 午间：收集 08:30~12:00
+    # 12:15 午间：收集 08:30~12:15（避开高峰时段 9:00~12:00 的 2 倍价格）
     scheduler.add_job(
         _digest_job,
         args=["midday"],
         trigger=CronTrigger(
             hour="12",
-            minute="0",
+            minute="15",
             timezone=settings.TIMEZONE,
         ),
         id="digest_midday",
-        name=f"News Digest Midday (12:00 {settings.TIMEZONE})",
+        name=f"News Digest Midday (12:15 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
-    # 18:00 傍晚：收集 12:00~18:00
+    # 18:15 傍晚：收集 12:00~18:15（避开高峰时段 14:00~18:00 的 2 倍价格）
     scheduler.add_job(
         _digest_job,
         args=["evening"],
         trigger=CronTrigger(
             hour="18",
-            minute="0",
+            minute="15",
             timezone=settings.TIMEZONE,
         ),
         id="digest_evening",
-        name=f"News Digest Evening (18:00 {settings.TIMEZONE})",
+        name=f"News Digest Evening (18:15 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,
