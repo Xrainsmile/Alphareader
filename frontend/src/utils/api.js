@@ -344,7 +344,17 @@ export function peekCatalyst(tsCodes) {
 // ── Sandbox API（模拟仓）──
 
 /**
- * 验证模拟仓访问密码
+ * 访问令牌头 — 解锁后缓存的 HMAC token（7 天有效）。
+ * 私密模块（模拟仓/SEPA）不再明文存密码，验密后服务端签发 token。
+ */
+function _accessTokenHeader(storageKey) {
+  let token = ''
+  try { token = uni.getStorageSync(storageKey) || '' } catch (_) {}
+  return token ? { 'X-Access-Token': token } : {}
+}
+
+/**
+ * 验证模拟仓访问密码（通过后会返回 token，由调用方缓存）
  */
 export function verifySandboxAccess(password) {
   return request('/api/v1/sandbox/verify-access', {
@@ -357,7 +367,7 @@ export function verifySandboxAccess(password) {
  * 模拟仓概览（净值曲线 + 概览指标）
  */
 export function fetchSandboxOverview(days = 90) {
-  return request(`/api/v1/sandbox/overview?days=${days}`)
+  return request(`/api/v1/sandbox/overview?days=${days}`, { headers: _accessTokenHeader('sb_token') })
 }
 
 /**
@@ -371,14 +381,14 @@ export function fetchSandboxStocks(status = '', statusFilter = '', q = '', holdi
   if (q) params.push(`q=${encodeURIComponent(q)}`)
   if (holdingOnly) params.push(`holding_only=true`)
   const qs = params.length ? `?${params.join('&')}` : ''
-  return request(`/api/v1/sandbox/stocks${qs}`)
+  return request(`/api/v1/sandbox/stocks${qs}`, { headers: _accessTokenHeader('sb_token') })
 }
 
 /**
  * 单只股票详情（推演 + 交易记录）
  */
 export function fetchSandboxStockDetail(stockId) {
-  return request(`/api/v1/sandbox/stocks/${stockId}`)
+  return request(`/api/v1/sandbox/stocks/${stockId}`, { headers: _accessTokenHeader('sb_token') })
 }
 
 // ── Briefing API（每日研报使用）──
@@ -429,21 +439,19 @@ function _qs(params = {}) {
   return q ? `?${q}` : ''
 }
 
-/** 写操作鉴权头 — 携带解锁时缓存的 SEPA 访问密码 */
+/** 访问令牌头 — 携带解锁时缓存的 SEPA 访问令牌（不再明文存密码） */
 function _sepaAuthHeader() {
-  let pwd = ''
-  try { pwd = uni.getStorageSync('sepa_pwd') || '' } catch (_) {}
-  return pwd ? { 'X-Sandbox-Password': pwd } : {}
+  return _accessTokenHeader('sepa_token')
 }
 
 // 三市场账户概要（市场切换器）
 export function fetchSepaMarkets() {
-  return request('/api/v1/sepa/markets')
+  return request('/api/v1/sepa/markets', { headers: _sepaAuthHeader() })
 }
 
 // 市场闸门
 export function fetchSepaGate(market) {
-  return request(`/api/v1/sepa/gate${_qs({ market })}`)
+  return request(`/api/v1/sepa/gate${_qs({ market })}`, { headers: _sepaAuthHeader() })
 }
 export function updateSepaGate(data) {
   return request('/api/v1/sepa/admin/gate', { method: 'PUT', data, headers: _sepaAuthHeader() })
@@ -451,10 +459,10 @@ export function updateSepaGate(data) {
 
 // 股池 Watchlist
 export function fetchSepaWatchlist(market, status = '') {
-  return request(`/api/v1/sepa/watchlist${_qs({ market, status })}`)
+  return request(`/api/v1/sepa/watchlist${_qs({ market, status })}`, { headers: _sepaAuthHeader() })
 }
 export function fetchSepaWatchlistItem(id) {
-  return request(`/api/v1/sepa/watchlist/${id}`)
+  return request(`/api/v1/sepa/watchlist/${id}`, { headers: _sepaAuthHeader() })
 }
 export function addSepaWatchlist(data) {
   return request('/api/v1/sepa/admin/watchlist', { method: 'POST', data, headers: _sepaAuthHeader() })
@@ -471,12 +479,12 @@ export function deleteSepaWatchlist(id) {
 }
 // 填代码自动带出指标（现价/MA/RS/52周高低）
 export function autofillSepaMetrics(market, symbol) {
-  return request(`/api/v1/sepa/autofill${_qs({ market, symbol })}`)
+  return request(`/api/v1/sepa/autofill${_qs({ market, symbol })}`, { headers: _sepaAuthHeader() })
 }
 
 // 账户总览 + 持仓
 export function fetchSepaAccount(market) {
-  return request(`/api/v1/sepa/account${_qs({ market })}`)
+  return request(`/api/v1/sepa/account${_qs({ market })}`, { headers: _sepaAuthHeader() })
 }
 export function updateSepaAccount(data) {
   return request('/api/v1/sepa/admin/account', { method: 'PUT', data, headers: _sepaAuthHeader() })
@@ -484,26 +492,29 @@ export function updateSepaAccount(data) {
 
 // KPI 仪表盘
 export function fetchSepaKpi(market, period = 'all') {
-  return request(`/api/v1/sepa/kpi${_qs({ market, period })}`)
+  return request(`/api/v1/sepa/kpi${_qs({ market, period })}`, { headers: _sepaAuthHeader() })
 }
 
 // 交易日志
 export function fetchSepaTrades(market, filter = 'all') {
-  return request(`/api/v1/sepa/trades${_qs({ market, filter })}`)
+  return request(`/api/v1/sepa/trades${_qs({ market, filter })}`, { headers: _sepaAuthHeader() })
 }
 export function sepaTradesExportUrl(market) {
-  return `${BASE_URL}/api/v1/sepa/trades/export${_qs({ market })}`
+  // 浏览器直开无法带 Header → 用 query 参数传 token（7 天有效，可过期）
+  let token = ''
+  try { token = uni.getStorageSync('sepa_token') || '' } catch (_) {}
+  return `${BASE_URL}/api/v1/sepa/trades/export${_qs({ market, access_token: token })}`
 }
 
 // 买点检查（不下单）
 export function checkSepaBuy(data) {
-  return request('/api/v1/sepa/check', { method: 'POST', data })
+  return request('/api/v1/sepa/check', { method: 'POST', data, headers: _sepaAuthHeader() })
 }
 
 // VCP 形态自动识别（纯算法，人在环上；不写库）
 // @param {Object} params - {market, symbol, pivotPrice}
 export function fetchVcpAnalyze({ market, symbol, pivotPrice } = {}) {
-  return request(`/api/v1/sepa/vcp/analyze${_qs({ market, symbol, pivot_price: pivotPrice })}`)
+  return request(`/api/v1/sepa/vcp/analyze${_qs({ market, symbol, pivot_price: pivotPrice })}`, { headers: _sepaAuthHeader() })
 }
 
 // 开仓（M7 纪律强制拦截）

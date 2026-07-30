@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import verify_access_token
 from app.config import settings
 from app.database import get_db
 from app.models.sepa import (
@@ -55,17 +56,29 @@ logger = logging.getLogger("alphareader.sepa")
 router = APIRouter(prefix="/sepa", tags=["sepa"])
 
 
-def _require_admin(x_sandbox_password: str = Header(None)):
-    """SEPA 写操作鉴权 — 复用 SANDBOX_PASSWORD。
+def _require_admin(
+    x_sandbox_password: str = Header(None),
+    x_access_token: str = Header(None),
+    access_token: str = Query(None),
+):
+    """SEPA 数据/写操作鉴权 — 复用 SANDBOX_PASSWORD 体系。
 
-    前端解锁后在写请求头携带 X-Sandbox-Password。未配置密码则放行。
-    （全站已有 API Key 保护，此处为第二道前端操作锁。）
+    接受两种凭证（任一即可）：
+      1. X-Sandbox-Password（旧方式，明文密码头）；
+      2. X-Access-Token（verify-access 验密后签发的 7 天令牌，推荐；
+         浏览器直开的导出链接用 query 参数 access_token 传递）。
+    未配置 SANDBOX_PASSWORD 则放行（开发环境）。
     """
     expected = settings.SANDBOX_PASSWORD
-    if expected and not hmac.compare_digest(
-        (x_sandbox_password or "").encode(), expected.encode()
+    if not expected:
+        return
+    if x_sandbox_password and hmac.compare_digest(
+        x_sandbox_password.encode(), expected.encode()
     ):
-        raise HTTPException(status_code=401, detail="需要正确的访问密码")
+        return
+    if verify_access_token("sandbox", x_access_token or access_token):
+        return
+    raise HTTPException(status_code=401, detail="需要有效的访问凭证")
 
 
 def _check_market(market: str) -> str:
@@ -250,8 +263,8 @@ def _apply_template(w: SepaWatchlistItem) -> None:
 # ════════════════════════════════════════════════════════════
 
 @router.get("/markets")
-async def list_markets(db: AsyncSession = Depends(get_db)):
-    """三市场账户概要（用于前端市场切换器）。"""
+async def list_markets(db: AsyncSession = Depends(get_db), _: None = Depends(_require_admin)):
+    """三市场账户概要（用于前端市场切换器）。需访问凭证（私密数据）。"""
     out = []
     for m in SEPA_MARKETS:
         state = await svc.compute_account_state(db, m)
@@ -269,7 +282,7 @@ async def list_markets(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/gate")
-async def get_gate(market: str = Query(...), db: AsyncSession = Depends(get_db)):
+async def get_gate(market: str = Query(...), db: AsyncSession = Depends(get_db), _: None = Depends(_require_admin)):
     """市场闸门状态。不存在则返回默认关闭状态。"""
     _check_market(market)
     res = await db.execute(select(SepaMarketGate).where(SepaMarketGate.market == market))
@@ -297,6 +310,7 @@ async def get_watchlist(
     market: str = Query(...),
     status: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_admin),
 ):
     """股池列表（可按 status 筛选）。"""
     _check_market(market)
@@ -313,6 +327,7 @@ async def autofill_indicators(
     market: str = Query(...),
     symbol: str = Query(..., min_length=1, max_length=16),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_admin),
 ):
     """填代码自动带出指标：现价/MA/RS/52周高低（按市场，能取多少算多少）。"""
     _check_market(market)
@@ -325,6 +340,7 @@ async def analyze_vcp(
     symbol: str = Query(..., min_length=1, max_length=16),
     pivot_price: float | None = Query(None, description="可选：人工/系统指定枢轴价，仅用于 near_pivot 计算与展示"),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_admin),
 ):
     """VCP 形态自动识别（纯数据算法，人在环上）。
 
@@ -376,7 +392,7 @@ async def analyze_vcp(
 
 
 @router.get("/watchlist/{item_id}")
-async def get_watchlist_item(item_id: int, db: AsyncSession = Depends(get_db)):
+async def get_watchlist_item(item_id: int, db: AsyncSession = Depends(get_db), _: None = Depends(_require_admin)):
     res = await db.execute(select(SepaWatchlistItem).where(SepaWatchlistItem.id == item_id))
     w = res.scalar_one_or_none()
     if w is None:
@@ -385,7 +401,7 @@ async def get_watchlist_item(item_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/account")
-async def get_account(market: str = Query(...), db: AsyncSession = Depends(get_db)):
+async def get_account(market: str = Query(...), db: AsyncSession = Depends(get_db), _: None = Depends(_require_admin)):
     """账户总览 + 持仓列表（含浮动盈亏、距止损、止损触发标记）。"""
     _check_market(market)
     return await svc.compute_account_state(db, market)
@@ -396,6 +412,7 @@ async def get_kpi(
     market: str = Query(...),
     period: str = Query("all", pattern=r"^(all|week)$"),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_admin),
 ):
     """KPI 仪表盘。"""
     _check_market(market)
@@ -407,6 +424,7 @@ async def get_trades(
     market: str = Query(...),
     filter: str = Query("all", pattern=r"^(all|open|closed|win|loss|violation)$"),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_admin),
 ):
     """交易日志（filter: all/open/closed/win/loss/violation）。"""
     _check_market(market)
@@ -431,7 +449,7 @@ async def get_trades(
 
 
 @router.get("/trades/export")
-async def export_trades(market: str = Query(...), db: AsyncSession = Depends(get_db)):
+async def export_trades(market: str = Query(...), db: AsyncSession = Depends(get_db), _: None = Depends(_require_admin)):
     """导出交易日志为 CSV。"""
     _check_market(market)
     res = await db.execute(
@@ -465,8 +483,8 @@ async def export_trades(market: str = Query(...), db: AsyncSession = Depends(get
 
 
 @router.post("/check")
-async def check_buy(body: CheckRequest, db: AsyncSession = Depends(get_db)):
-    """买点检查清单 + 风险预演（不写库，供下单前实时校验）。"""
+async def check_buy(body: CheckRequest, db: AsyncSession = Depends(get_db), _: None = Depends(_require_admin)):
+    """买点检查清单 + 风险预演（不写库，供下单前实时校验）。需访问凭证。"""
     _check_market(body.market)
 
     # 闸门

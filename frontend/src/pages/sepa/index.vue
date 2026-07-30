@@ -135,7 +135,7 @@ const pwdError = ref(false)
 
 const checkCached = () => {
   try {
-    if (uni.getStorageSync('sepa_unlocked') === 'true' && uni.getStorageSync('sepa_pwd')) {
+    if (uni.getStorageSync('sepa_unlocked') === 'true' && uni.getStorageSync('sepa_token')) {
       unlocked.value = true
     }
   } catch (_) {}
@@ -150,12 +150,14 @@ const openPwd = () => {
 
 const onPwdConfirm = async () => {
   try {
-    await verifySandboxAccess(pwdValue.value)
+    const res = await verifySandboxAccess(pwdValue.value)
     unlocked.value = true
     showPwd.value = false
     try {
       uni.setStorageSync('sepa_unlocked', 'true')
-      uni.setStorageSync('sepa_pwd', pwdValue.value)
+      // 存服务端签发的访问令牌（7 天），不再明文存密码
+      if (res && res.token) uni.setStorageSync('sepa_token', res.token)
+      uni.removeStorageSync('sepa_pwd')
     } catch (_) {}
   } catch (_) {
     pwdError.value = true

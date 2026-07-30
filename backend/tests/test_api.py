@@ -202,7 +202,14 @@ class TestSandboxStocksEndpoint:
         return {"holding_id": s_holding.id, "watch_id": s_watch.id}
 
     async def test_sandbox_stocks_core_path(self, client, seed_sandbox_data):
-        resp = await client.get("/api/v1/sandbox/stocks?holding_only=true")
+        # 私密 GET 端点需 X-Access-Token（P3-11 token 化后）
+        from app.auth import issue_access_token
+
+        token = issue_access_token("sandbox")
+        resp = await client.get(
+            "/api/v1/sandbox/stocks?holding_only=true",
+            headers={"X-Access-Token": token},
+        )
         assert resp.status_code == 200
         data = resp.json()
 

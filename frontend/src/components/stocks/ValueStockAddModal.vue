@@ -147,11 +147,14 @@ const doSearch = async () => {
   searching.value = true
   searched.value = false
   try {
+    let token = ''
+    try { token = uni.getStorageSync('sb_token') || '' } catch (_) {}
     const res = await uni.request({
       url: `${import.meta.env.VITE_API_BASE_URL || (import.meta.env.MODE === 'production' ? '' : 'http://localhost:8000')}/api/v1/sandbox/stock-search?q=${encodeURIComponent(q)}`,
       method: 'GET',
       header: {
         'X-API-Key': import.meta.env.VITE_API_KEY || '',
+        'X-Access-Token': token,
       },
     })
     if (res[0]) throw res[0]
@@ -190,10 +193,10 @@ const submit = async () => {
   submitting.value = true
   submitError.value = ''
 
-  // 从 localStorage 获取密码缓存；若无缓存则用已验证过的密码（进入模拟仓时已验证）
-  let pwd = ''
-  try { pwd = uni.getStorageSync('sb_pwd') || '' } catch (_) {}
-  if (!pwd) {
+  // 从 localStorage 获取访问令牌（进入模拟仓验密后由服务端签发，7 天有效）
+  let token = ''
+  try { token = uni.getStorageSync('sb_token') || '' } catch (_) {}
+  if (!token) {
     submitError.value = '请先退出重新进入模拟仓验证密码'
     submitting.value = false
     return
@@ -201,17 +204,17 @@ const submit = async () => {
 
   try {
     const res = await uni.request({
-      url: `${import.meta.env.VITE_API_BASE_URL || (import.meta.env.MODE === 'production' ? '' : 'http://localhost:8000')}/api/v1/sandbox/value-stock/add`,
+      url: `${import.meta.env.VITE_API_BASE_URL || (import.meta.env.MODE === 'production' ? '' : 'http://localhost:8000')}/api/v1/sandbox/admin/value-stocks`,
       method: 'POST',
       header: {
         'Content-Type': 'application/json',
         'X-API-Key': import.meta.env.VITE_API_KEY || '',
+        'X-Access-Token': token,
       },
       data: {
         ts_code: selectedStock.value.ts_code,
         name: selectedStock.value.name,
         reason: reason.value.trim() || null,
-        password: pwd,
       },
     })
     const data = res[1] || res

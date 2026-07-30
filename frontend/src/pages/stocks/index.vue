@@ -199,10 +199,14 @@ const switchToSandbox = () => {
 
 const onPwdConfirm = async () => {
   try {
-    await verifySandboxAccess(pwdValue.value)
+    const res = await verifySandboxAccess(pwdValue.value)
     sbUnlocked.value = true
     showPwdModal.value = false
-    try { uni.setStorageSync('sb_unlocked', 'true') } catch (_) {}
+    try {
+      uni.setStorageSync('sb_unlocked', 'true')
+      // 存服务端签发的访问令牌（7 天），供模拟仓私密 GET 请求携带
+      if (res && res.token) uni.setStorageSync('sb_token', res.token)
+    } catch (_) {}
     activeTab.value = 'sandbox'
   } catch (_) {
     pwdError.value = true

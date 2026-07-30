@@ -24,12 +24,13 @@ import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import issue_access_token, require_scope_token, verify_access_token
 from app.config import settings
 from app.dashboard import _verify_token
 from app.database import get_db
@@ -89,7 +90,9 @@ async def verify_sandbox_access(body: SandboxAuthRequest):
         # 未配置密码 → 直接放行
         return {"ok": True}
     if hmac.compare_digest(body.password.encode(), expected.encode()):
-        return {"ok": True}
+        # 验密通过 → 签发 7 天访问令牌。前端存 token（不再明文存密码），
+        # 后续私密 GET 请求以 X-Access-Token 携带。
+        return {"ok": True, "token": issue_access_token("sandbox")}
     raise HTTPException(status_code=403, detail="密码错误")
 
 
@@ -101,8 +104,9 @@ async def verify_sandbox_access(body: SandboxAuthRequest):
 async def sandbox_overview(
     days: int = Query(90, ge=7, le=365),
     db: AsyncSession = Depends(get_db),
+    _access: None = Depends(require_scope_token("sandbox")),
 ):
-    """净值曲线 + 概览指标。"""
+    """净值曲线 + 概览指标。需 X-Access-Token（私密数据）。"""
     # 净值曲线
     nav_result = await db.execute(
         select(SandboxNav)
@@ -293,6 +297,7 @@ async def sandbox_overview(
 async def sandbox_stock_search(
     q: str = Query(..., min_length=1, max_length=20, description="搜索关键词（代码或名称）"),
     db: AsyncSession = Depends(get_db),
+    _access: None = Depends(require_scope_token("sandbox")),
 ):
     """轻量级股票搜索 — 从行情表去重搜索代码/名称，供 admin 页面选股使用。"""
     from app.models.stock import StockDailyQuote
@@ -320,6 +325,7 @@ async def sandbox_stock_list(
     holding_only: bool = Query(False, description="仅显示持仓票"),
     strategy: str | None = Query(None, pattern=r"^(swing|value)$", description="筛选策略：swing 或 value"),
     db: AsyncSession = Depends(get_db),
+    _access: None = Depends(require_scope_token("sandbox")),
 ):
     """观察池列表，附最新一条推演摘要。支持搜索、仅持仓。
     默认排除已退出(exited)的股票，除非显式传入 status=exited。"""
@@ -337,6 +343,7 @@ async def sandbox_stock_list(
 async def sandbox_stock_detail(
     stock_id: int,
     db: AsyncSession = Depends(get_db),
+    _access: None = Depends(require_scope_token("sandbox")),
 ):
     """单只股票详情 — 推演卡片流 + 交易记录。"""
     stock = await db.get(SandboxStock, stock_id)
@@ -409,9 +416,16 @@ async def sandbox_stock_detail(
 # ════════════════════════════════════════════════════════════
 
 
-def _require_admin(dash_token: str = Cookie(None)):
-    """验证 Dashboard cookie，复用现有认证机制。"""
-    if settings.DASHBOARD_PASSWORD and not _verify_token(dash_token or ""):
+def _require_admin(request: Request, dash_token: str = Cookie(None)):
+    """验证 Dashboard cookie 或 sandbox 访问令牌（X-Access-Token）。
+
+    Dashboard 走 cookie；H5 前端解锁后持 token（如价投标的录入等管理操作）。
+    """
+    if settings.DASHBOARD_PASSWORD and _verify_token(dash_token or ""):
+        return
+    if verify_access_token("sandbox", request.headers.get("X-Access-Token")):
+        return
+    if settings.DASHBOARD_PASSWORD or settings.SANDBOX_PASSWORD:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -842,6 +856,7 @@ async def compute_nav(
 @router.get("/nav/debug-prices")
 async def debug_prices(
     db: AsyncSession = Depends(get_db),
+    _access: None = Depends(require_scope_token("sandbox")),
 ):
     """调试端点：展示每只持仓股票通过各种来源获取的价格，不写入数据库。"""
     from app.models.stock import StockDailyQuote

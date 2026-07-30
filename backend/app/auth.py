@@ -7,8 +7,10 @@
 配置项 NEWS_API_KEY 为空时不启用鉴权（仅限开发环境）。
 """
 
+import hashlib
 import hmac
 import logging
+import time
 from fastapi import Depends, HTTPException, Query, Request, Security
 from fastapi.security import APIKeyHeader
 
@@ -74,3 +76,77 @@ async def require_admin_key(
             )
         return admin_key
     return None
+
+
+# ════════════════════════════════════════════════════════════
+# 模块级访问令牌（模拟仓 / SEPA 私密数据的无状态 HMAC token）
+# ════════════════════════════════════════════════════════════
+#
+# 背景：此前 verify-access 只校验密码、不下发凭证，私密 GET 端点仅靠
+# 全局 API Key（而该 Key 编译进公开 H5 bundle，等同公开），"私密"是假的。
+#
+# 设计：verify-access 验密后签发 token = "{expiry_ts}.{hmac_sha256(scope:expiry_ts)}"
+# - 密钥 = SANDBOX_PASSWORD + scope（改密码即全部失效；scope 间互不通）；
+# - 无状态，无需存储；7 天过期；
+# - 前端解锁后存 token（不再明文存密码），请求头 X-Access-Token 携带；
+# - 浏览器直开的导出链接用 query 参数 access_token 传递。
+
+_ACCESS_TOKEN_TTL = 7 * 24 * 3600  # 7 天
+
+
+def _scope_secret(scope: str) -> bytes:
+    return (settings.SANDBOX_PASSWORD + "|" + scope).encode()
+
+
+def issue_access_token(scope: str) -> str:
+    """签发 scope 访问令牌（格式: expiry_ts.hexsig）。"""
+    exp = int(time.time()) + _ACCESS_TOKEN_TTL
+    sig = hmac.new(
+        _scope_secret(scope), f"{scope}:{exp}".encode(), hashlib.sha256
+    ).hexdigest()
+    return f"{exp}.{sig}"
+
+
+def verify_access_token(scope: str, token: str | None) -> bool:
+    """校验 scope 访问令牌。未配置 SANDBOX_PASSWORD 时放行（开发环境）。"""
+    if not settings.SANDBOX_PASSWORD:
+        return True
+    if not token:
+        return False
+    try:
+        exp_str, sig = token.split(".", 1)
+        exp = int(exp_str)
+    except (ValueError, AttributeError):
+        return False
+    if exp < int(time.time()):
+        return False
+    expected = hmac.new(
+        _scope_secret(scope), f"{scope}:{exp}".encode(), hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(sig, expected)
+
+
+def require_scope_token(scope: str):
+    """生成校验 scope token 的 FastAPI 依赖。
+
+    接受 Header `X-Access-Token` 或 query 参数 `access_token`（浏览器直开导出用）。
+    未配置 SANDBOX_PASSWORD 时放行（生产由 config fail-fast 强制配置）。
+    """
+
+    async def _dep(request: Request) -> None:
+        if not settings.SANDBOX_PASSWORD:
+            return
+        token = request.headers.get("X-Access-Token") or request.query_params.get(
+            "access_token"
+        )
+        if not verify_access_token(scope, token):
+            logger.warning(
+                "Scope token 缺失或无效: scope=%s %s %s",
+                scope, request.method, request.url.path,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "forbidden", "message": "访问令牌缺失或已过期"},
+            )
+
+    return _dep
