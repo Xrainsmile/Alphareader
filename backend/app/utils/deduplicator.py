@@ -258,6 +258,11 @@ class NewsDeduplicator:
         self._index: list[_IndexEntry] = []           # SimHash 索引（24h 窗口，Redis 持久化）
         self._historical_index: list[_IndexEntry] = []  # P5: DB 加载的历史指纹（7天，不回写 Redis）
         self._emb_index: list[_EmbeddingEntry] = []   # Embedding 索引（90min 窗口）
+        # 本轮 deduplicate() 开始前的索引长度基线。
+        # 用于 discard_pending()：处理失败时丢弃本轮新增指纹，
+        # 避免"失败条目被自己上轮的指纹误判为重复而永久丢失"。
+        self._index_baseline: int | None = None
+        self._emb_baseline: int | None = None
 
     # ────────────────────────────────────────────
     # Public API
@@ -289,6 +294,23 @@ class NewsDeduplicator:
         await self._save_simhash_index()
         await self._save_embedding_index()
 
+    def discard_pending(self) -> int:
+        """丢弃本轮 deduplicate() 新增的索引条目，返回丢弃条数。
+
+        调用时机：本轮 pipeline 存在"未被成功处理"的条目时
+        （LLM 错误/漏评/入库失败，下轮需重试）。
+        这些条目若保留指纹，下轮重抓时会被自己的指纹误判为重复而永久丢失。
+        已成功处理的条目不受影响——它们有 URL 标记 + DB 历史指纹双重覆盖。
+        """
+        removed = 0
+        if self._index_baseline is not None and len(self._index) > self._index_baseline:
+            removed += len(self._index) - self._index_baseline
+            del self._index[self._index_baseline:]
+        if self._emb_baseline is not None and len(self._emb_index) > self._emb_baseline:
+            removed += len(self._emb_index) - self._emb_baseline
+            del self._emb_index[self._emb_baseline:]
+        return removed
+
     async def deduplicate(self, items: list) -> list:
         """对 RawNewsItem 列表执行去重（自动路由长/短文本通道）。
 
@@ -296,6 +318,10 @@ class NewsDeduplicator:
         """
         if not items:
             return []
+
+        # 记录基线：此后新增的索引条目均为"本轮新增"，供 discard_pending() 回滚
+        self._index_baseline = len(self._index)
+        self._emb_baseline = len(self._emb_index)
 
         # 按源优先级排序，高优先级先处理
         items_sorted = sorted(

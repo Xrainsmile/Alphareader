@@ -310,6 +310,9 @@ async def run_pipeline() -> dict:
         return summary
 
     # Step 2: SimHash + title similarity + TF-IDF semantic dedup
+    # 注意：去重索引【不再】在此持久化——延后到本轮处理结束后（见 Step 5.5），
+    # 否则"评分/入库失败的条目"会被自己上轮的指纹在下一轮误判为重复而永久丢失。
+    dedup: NewsDeduplicator | None = None
     try:
         dedup = NewsDeduplicator()
         await dedup.load_index()
@@ -318,10 +321,10 @@ async def run_pipeline() -> dict:
         if historical:
             dedup.preload_historical(historical)
         unique_items = await dedup.deduplicate(raw_items)
-        await dedup.save_index()
     except Exception as e:
         logger.error("Dedup stage failed, using raw items as fallback: %s", e)
         summary["errors"].append(f"dedup: {e}")
+        dedup = None
         unique_items = raw_items  # graceful degradation
 
     dedup_dropped = len(raw_items) - len(unique_items)
@@ -392,41 +395,57 @@ async def run_pipeline() -> dict:
     if stored_urls:
         await _mark_urls_as_seen(stored_urls)
 
-    # Also mark URLs that passed through the entire pipeline but were filtered
-    # by DeepSeek (score < threshold). These are legitimately processed and should not
-    # be re-fetched.
+    # Also mark URLs that were genuinely evaluated by the LLM but filtered out
+    # (score < threshold) or intentionally dropped by content-risk bisect.
     #
-    # SAFETY: Only do this when ALL batches succeeded. If any batch had errors,
-    # we can't tell which URLs failed vs. which were legitimately low-score.
-    # In that case, skip marking — those URLs will be retried next run.
-    filter_fully_succeeded = (
-        filter_result is not None
-        and not filter_result.had_errors
-        and "filter" not in " ".join(summary.get("errors", []))
-    )
-    if filter_fully_succeeded:
+    # 精确语义（替代旧的"全部 batch 成功才敢标记"粗粒度逻辑）：
+    # - filter_result.evaluated_urls 只包含【确实拿到 LLM 判决】或【有意丢弃】的条目；
+    # - 未被评估的条目（LLM 漏评 missing_ids / 子批 api_error / filter 阶段崩溃）
+    #   不在集合内 → 不标记 → 下轮重抓重试，杜绝"未评分却被当低分永久丢失"。
+    scored_url_set = {item.raw.url for item in scored_items}
+    stored_url_set = set(stored_urls or [])
+    evaluated_urls = filter_result.evaluated_urls if filter_result else set()
+    if evaluated_urls:
         try:
-            scored_url_set = {item.raw.url for item in scored_items}
             filtered_out_urls = [
                 item.url for item in unique_items
-                if item.url not in scored_url_set
-                and item.url not in (stored_urls or [])
+                if item.url in evaluated_urls
+                and item.url not in scored_url_set
+                and item.url not in stored_url_set
             ]
             if filtered_out_urls:
                 await _mark_urls_as_seen(filtered_out_urls)
-                logger.info("Marked %d low-score/filtered URLs as seen", len(filtered_out_urls))
+                logger.info("Marked %d evaluated/filtered URLs as seen", len(filtered_out_urls))
         except Exception as e:
             logger.warning("Failed to mark filtered URLs as seen: %s", e)
-    elif unique_items and not filter_fully_succeeded:
-        skipped_info = ""
-        if filter_result and filter_result.had_errors:
-            skipped_info = (
-                f" ({filter_result.skipped_batches}/{filter_result.total_batches} batches failed)"
-            )
+    retry_items = [
+        item for item in unique_items
+        if item.url not in evaluated_urls and item.url not in stored_url_set
+    ]
+    if retry_items:
         logger.warning(
-            "Skipping URL marking for %d items — DeepSeek filter had errors%s",
-            len(unique_items), skipped_info,
+            "%d item(s) not evaluated this run (LLM missing/error) — left unmarked for retry",
+            len(retry_items),
         )
+
+    # Step 5.5: 持久化去重指纹索引（延后到处理完成后）。
+    # 若本轮存在"未被成功处理"的条目（未评估/入库失败），丢弃本轮新增指纹，
+    # 防止它们在下轮被自己的指纹误判为重复而永久丢失。
+    # 已成功处理的条目不受影响（URL 标记 + DB 历史指纹双重覆盖）。
+    if dedup is not None:
+        try:
+            store_incomplete = len(stored_url_set) < len(scored_items)
+            if retry_items or store_incomplete:
+                removed = dedup.discard_pending()
+                logger.warning(
+                    "Discarded %d new dedup fingerprint(s): %d item(s) pending retry, "
+                    "store_incomplete=%s (%d/%d stored)",
+                    removed, len(retry_items), store_incomplete,
+                    len(stored_url_set), len(scored_items),
+                )
+            await dedup.save_index()
+        except Exception as e:
+            logger.warning("Failed to persist dedup index: %s", e)
 
     # Clean up empty errors list for cleaner output
     if not summary["errors"]:

@@ -460,6 +460,11 @@ class BatchResult:
     raw_response: str = ""
     # P1 ⑤：二分隔离中被单独触发内容审查而丢弃的条目数（仅本批次内累计）
     content_risk_dropped: int = 0
+    # 条目级追踪（供 pipeline 精确决定哪些 URL 可标记 seen）：
+    # processed_items    —— 确实拿到 LLM 评判决的条目（含低于阈值的）
+    # risk_dropped_items —— 经二分定位为内容审查而有意丢弃的条目（重试无意义）
+    processed_items: list = field(default_factory=list)
+    risk_dropped_items: list = field(default_factory=list)
 
     @property
     def is_success(self) -> bool:
@@ -878,6 +883,7 @@ async def _score_batch_once(
             missing_ids=missing_ids,
             duplicate_ids=duplicate_ids,
             raw_response=raw_text,
+            processed_items=[batch[i - 1] for i in sorted(processed_ids) if 1 <= i <= len(batch)],
         )
 
     # 理论不可达（所有 attempt 已在循环内 return）
@@ -921,14 +927,20 @@ async def _bisect_content_risk(
         logger.warning(
             "⚠️ Content risk located on single item — dropping: %s", titles_preview,
         )
-        return BatchResult(scored=[], status="content_risk", content_risk_dropped=1)
+        return BatchResult(
+            scored=[], status="content_risk",
+            content_risk_dropped=1, risk_dropped_items=list(batch),
+        )
 
     if depth >= max_depth:
         logger.warning(
             "⚠️ Content risk bisect max depth (%d) reached — dropping sub-batch of %d",
             max_depth, n,
         )
-        return BatchResult(scored=[], status="content_risk", content_risk_dropped=n)
+        return BatchResult(
+            scored=[], status="content_risk",
+            content_risk_dropped=n, risk_dropped_items=list(batch),
+        )
 
     mid = n // 2
     left, right = batch[:mid], batch[mid:]
@@ -945,12 +957,13 @@ async def _bisect_content_risk(
     right_r = await _process_half(right)
 
     merged_scored = left_r.scored + right_r.scored
-    dropped = left_r.content_risk_dropped + right_r.content_risk_dropped
+    merged_processed = left_r.processed_items + right_r.processed_items
+    merged_risk_dropped = left_r.risk_dropped_items + right_r.risk_dropped_items
+    dropped = len(merged_risk_dropped)
 
-    # 记录非 content_risk 的失败也一并当作丢弃（保守）：
-    for r, sub in ((left_r, left), (right_r, right)):
-        if r.status in ("api_error", "parse_error") and not r.scored:
-            dropped += len(sub)
+    # 注意：api_error/parse_error 的子批条目【不再】计入 content_risk_dropped ——
+    # 它们未被 LLM 评估，既不在 processed_items 也不在 risk_dropped_items，
+    # pipeline 会据此将它们留待下轮重试，而非误标 seen 永久丢失。
 
     if merged_scored:
         merged_status: BatchStatus = "ok"
@@ -963,6 +976,8 @@ async def _bisect_content_risk(
         scored=merged_scored,
         status=merged_status,
         content_risk_dropped=dropped,
+        processed_items=merged_processed,
+        risk_dropped_items=merged_risk_dropped,
     )
 
 
@@ -1307,6 +1322,9 @@ class FilterResult:
     content_risk_dropped_items: int = 0
     api_error_batches: int = 0
     parse_error_batches: int = 0
+    # 条目级：本轮所有"已被 LLM 评估或有意丢弃"的原始条目 URL 集合。
+    # pipeline 仅对集合内的 URL 标记 seen；集合外的（漏评/子批失败）留待下轮重试。
+    evaluated_urls: set = field(default_factory=set)
 
     @property
     def had_errors(self) -> bool:
@@ -1395,9 +1413,14 @@ async def filter_news(items: list[RawNewsItem]) -> FilterResult:
         ]
         results = await asyncio.gather(*tasks)
 
+    evaluated_urls: set = set()
     for result in results:
         all_scored.extend(result.scored)
         content_risk_dropped += result.content_risk_dropped
+        for _it in result.processed_items:
+            evaluated_urls.add(getattr(_it, "url", ""))
+        for _it in result.risk_dropped_items:
+            evaluated_urls.add(getattr(_it, "url", ""))
         if result.status == "content_risk":
             skipped += 1
             content_risk += 1
@@ -1433,4 +1456,5 @@ async def filter_news(items: list[RawNewsItem]) -> FilterResult:
         content_risk_dropped_items=content_risk_dropped,
         api_error_batches=api_err,
         parse_error_batches=parse_err,
+        evaluated_urls=evaluated_urls,
     )
