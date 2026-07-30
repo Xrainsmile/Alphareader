@@ -17,10 +17,16 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     status = {"status": "ok", "postgres": "ok", "redis": "ok"}
 
     # Check PostgreSQL
+    # 注意：异常详情只记日志不回前端——health 是公开端点，
+    # 原始错误可能含内网地址/连接串等敏感信息。
+    import logging
+
+    _logger = logging.getLogger("alphareader.health")
     try:
         await db.execute(text("SELECT 1"))
     except Exception as e:
-        status["postgres"] = f"error: {e}"
+        _logger.warning("health check postgres failed: %s", e)
+        status["postgres"] = "error"
         status["status"] = "degraded"
 
     # Check Redis
@@ -30,7 +36,8 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         if not pong:
             raise ConnectionError("Redis ping returned False")
     except Exception as e:
-        status["redis"] = f"error: {e}"
+        _logger.warning("health check redis failed: %s", e)
+        status["redis"] = "error"
         status["status"] = "degraded"
 
     if status["status"] == "degraded":

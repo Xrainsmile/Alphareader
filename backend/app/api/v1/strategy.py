@@ -97,7 +97,7 @@ async def strategy_adaptability(
         return await get_vcp_adaptability(market, target, save=True)
     except Exception as e:
         logger.exception("市场适配度计算失败: %s", e)
-        raise HTTPException(status_code=500, detail=f"适配度计算失败: {e}")
+        raise HTTPException(status_code=500, detail="适配度计算失败")
 
 
 @router.get("/stock_signal")
@@ -113,7 +113,7 @@ async def strategy_stock_signal(
         signal = await compute_stock_signal(market, ts_code, target)
     except Exception as e:
         logger.exception("个股信号计算失败: %s", e)
-        raise HTTPException(status_code=500, detail=f"个股信号计算失败: {e}")
+        raise HTTPException(status_code=500, detail="个股信号计算失败")
     if signal is None:
         raise HTTPException(status_code=404, detail=f"未找到 {ts_code} 在 {target} 的行情数据")
     return signal
@@ -138,6 +138,6 @@ async def strategy_compute(
         result = await compute_vcp_adaptability(market, target, save=True)
     except Exception as e:
         logger.exception("VCP 适配度计算失败: %s", e)
-        raise HTTPException(status_code=500, detail=f"适配度计算失败: {e}")
+        raise HTTPException(status_code=500, detail="适配度计算失败")
 
     return {"index_fetch": idx_summary, "adaptability": result}
