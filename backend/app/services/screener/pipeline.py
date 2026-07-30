@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -131,12 +132,14 @@ class ScreenerPipeline:
             if self.market == "US":
                 # 美股：没有预置 EMA 快照，直接从 OHLCV 数据计算 EMA
                 logger.info("美股市场：从 OHLCV 直接计算 EMA")
-                ema_df = DataLoader.compute_ema_from_ohlcv(ohlcv)
+                # 全量 pandas 计算 → to_thread，避免阻塞事件循环
+                ema_df = await asyncio.to_thread(DataLoader.compute_ema_from_ohlcv, ohlcv)
                 if ema_df.empty:
                     result["errors"].append("从 OHLCV 计算 EMA 失败")
                     return result
             else:
-                ema_df = self.loader.load_latest_ema()
+                # Parquet 磁盘读 + pandas → to_thread
+                ema_df = await asyncio.to_thread(self.loader.load_latest_ema)
                 if ema_df.empty:
                     result["errors"].append("EMA 快照加载失败")
                     return result
@@ -151,10 +154,14 @@ class ScreenerPipeline:
                     # 获取最新交易日的收盘价
                     today_close = await self.loader.load_today_close()
                     if not today_close.empty:
-                        ema_df = DataLoader.update_ema_incremental(ema_df, today_close)
+                        ema_df = await asyncio.to_thread(
+                            DataLoader.update_ema_incremental, ema_df, today_close,
+                        )
                         # 保存更新后的快照
                         if not self.dry_run:
-                            self.loader.save_ema_snapshot(ema_df, latest_trade_date)
+                            await asyncio.to_thread(
+                                self.loader.save_ema_snapshot, ema_df, latest_trade_date,
+                            )
                 else:
                     logger.info("EMA 快照已是最新 (%s)", ema_date)
 
@@ -194,7 +201,10 @@ class ScreenerPipeline:
         # ── Step 4: Stage2 趋势过滤 ──
         step_start = time.time()
         try:
-            stage2_passed = self.stage2_screener.apply(ohlcv, ema_df, extremes)
+            # 全量 pandas 技术面过滤 → to_thread，避免阻塞事件循环
+            stage2_passed = await asyncio.to_thread(
+                self.stage2_screener.apply, ohlcv, ema_df, extremes,
+            )
             result["stats"].update(self.stage2_screener.filter_stats)
 
             if stage2_passed.empty:
@@ -235,7 +245,8 @@ class ScreenerPipeline:
         # ── Step 6: 基本面过滤 ──
         step_start = time.time()
         try:
-            final_codes = self.fundamental_filter.apply(
+            final_codes = await asyncio.to_thread(
+                self.fundamental_filter.apply,
                 fundamental_df, candidate_codes, financial_details_df,
             )
             result["stats"].update(self.fundamental_filter.filter_stats)

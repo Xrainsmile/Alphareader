@@ -10,6 +10,7 @@ A 股：腾讯财经（sh{code}）优先，akshare 兜底（沪深300=000300 / �
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 
@@ -324,15 +325,16 @@ async def fetch_indices(market: str | None = None) -> dict:
         if mk == "CN":
             _, code, name = t
             # 腾讯财经优先（服务器可达），akshare 兜底
-            rows = _fetch_cn_tencent(code, name, mk, start, end)
+            # 同步阻塞 HTTP → to_thread，避免冻结事件循环
+            rows = await asyncio.to_thread(_fetch_cn_tencent, code, name, mk, start, end)
             if not rows:
-                rows = _fetch_cn_akshare(code, name, mk, start, end)
+                rows = await asyncio.to_thread(_fetch_cn_akshare, code, name, mk, start, end)
         else:
             _, code, name, sina = t
             # 新浪美股指数优先（服务器可达+完整历史），yfinance/腾讯兜底
-            rows = _fetch_us_sina(sina, code, name, mk, start, end)
+            rows = await asyncio.to_thread(_fetch_us_sina, sina, code, name, mk, start, end)
             if not rows:
-                rows = _fetch_us_yfinance(code, name, mk, start, end)
+                rows = await asyncio.to_thread(_fetch_us_yfinance, code, name, mk, start, end)
         stored = await _upsert(rows)
         summary.setdefault(mk, {"fetched": 0, "stored": 0})
         summary[mk]["fetched"] += len(rows)

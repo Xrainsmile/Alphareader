@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -118,7 +119,8 @@ class TrendPipeline:
         # ── Step 2: 右侧趋势技术面过滤 ──
         step_start = time.time()
         try:
-            trend_passed = self.trend_screener.apply(ohlcv)
+            # 全量 pandas 技术面过滤 → to_thread，避免阻塞事件循环
+            trend_passed = await asyncio.to_thread(self.trend_screener.apply, ohlcv)
             result["stats"].update(self.trend_screener.filter_stats)
 
             if trend_passed.empty:
