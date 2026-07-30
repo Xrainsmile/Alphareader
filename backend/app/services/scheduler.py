@@ -101,23 +101,34 @@ def _release_scheduler_lock_bg():
         pass
 
 
-async def _renew_scheduler_lock() -> bool:
-    """续期调度锁：仅当锁仍归本 worker 持有时才续期。
+async def _renew_scheduler_lock() -> str:
+    """续期调度锁，返回三态：
 
-    Returns:
-        True  → 续期成功（本 worker 仍持有锁）
-        False → 锁已不存在或被其他 worker 抢占（本 worker 应停止调度器）
+    "renewed" → 本 worker 仍持有锁（含锁缺失后重新抢到，见下）
+    "lost"    → 锁已被其他 worker 持有，本 worker 应让出调度权
+    "error"   → Redis 访问异常（瞬时抖动）。本轮不动作、保持调度，下轮再试；
+                绝不把一次网络抖动误判为"锁丢失"而永久停调度。
     """
     try:
         from app.redis import get_redis
         r = get_redis()
-        if await r.get(SCHEDULER_LOCK_KEY) == _WORKER_ID:
+        current = await r.get(SCHEDULER_LOCK_KEY)
+        if current == _WORKER_ID:
             await r.expire(SCHEDULER_LOCK_KEY, SCHEDULER_LOCK_TTL)
-            return True
-        return False
+            return "renewed"
+        if current is None:
+            # 锁不存在（从未设置成功 / TTL 过期 / fail-open 后 Redis 恢复）→ 尝试重新抢锁。
+            # 这同时修复了 fail-open 场景：Redis 恢复后 worker 能转为正式持锁者，
+            # 而不是像旧逻辑那样因"key 不存在"误判锁丢失、双双停调度。
+            acquired = await r.set(SCHEDULER_LOCK_KEY, _WORKER_ID, nx=True, ex=SCHEDULER_LOCK_TTL)
+            if acquired:
+                logger.info("[scheduler] 调度锁缺失，本 worker 重新抢到锁，继续持有调度权")
+                return "renewed"
+            return "lost"
+        return "lost"
     except Exception as e:
-        logger.warning("[scheduler] 续期调度锁失败: %s", e)
-        return False
+        logger.warning("[scheduler] 续期调度锁失败（视为瞬时抖动，保持调度）: %s", e)
+        return "error"
 
 
 def _stop_local_scheduler():
@@ -132,19 +143,25 @@ def _stop_local_scheduler():
 async def _lock_keepalive_loop():
     """持锁 worker 的锁续期循环：每隔 TTL/3 续期一次。
 
-    若发现锁已不再归本 worker 持有（被抢占或 Redis 异常），
-    则停止本地调度器，让抢到锁的 worker 独占调度权。
+    三态处理：
+    - renewed → 继续持有；
+    - error   → 瞬时 Redis 抖动，跳过本轮，保持调度（不误判死亡）；
+    - lost    → 确认锁已易主，停止本地调度器让出调度权，
+                并转入看门狗模式重新竞争（旧逻辑直接 break，
+                导致一次抖动即全集群调度永久停摆）。
     """
     global _scheduler_lock_owner
     while _scheduler_lock_owner:
         await asyncio.sleep(SCHEDULER_LOCK_TTL // 3)
-        if not await _renew_scheduler_lock():
+        state = await _renew_scheduler_lock()
+        if state == "lost":
             logger.warning(
-                "[scheduler] 调度锁已丢失（可能被其他 worker 抢占），"
-                "停止本 worker 调度器以让出调度权"
+                "[scheduler] 调度锁已被其他 worker 接管，停止本 worker 调度器，"
+                "转入看门狗重新竞争"
             )
             _scheduler_lock_owner = False
             _stop_local_scheduler()
+            _start_lock_watchdog()
             break
 
 
