@@ -15,7 +15,9 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "m1m2m3_phase2"
-down_revision = "l1m2n3o4p5q6"
+# 2026-07-30: 父迁移由 l1m2n3o4p5q6 改为 m0x1_missing_core_tables（插入的补建表迁移）。
+# 已应用过本迁移的库（含生产）不受影响——alembic 仅按 version_num 线性前进。
+down_revision = "m0x1_missing_core_tables"
 branch_labels = None
 depends_on = None
 

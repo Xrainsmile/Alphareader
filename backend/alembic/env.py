@@ -16,17 +16,10 @@ from alembic import context
 from app.config import settings
 from app.database import Base
 
-# Import all models so Alembic can detect them for autogenerate
-from app.models.news import News  # noqa: F401
-from app.models.report import Report  # noqa: F401
-from app.models.stock import StockDailyQuote, StockRSRating  # noqa: F401
-from app.models.analytics import AnalyticsDaily, PipelineRun  # noqa: F401
-from app.models.sandbox import SandboxStock, SandboxAnalysis, SandboxTrade, SandboxNav  # noqa: F401
-from app.models.screener import ScreenerRun, WatchlistDaily, TrendScreenerRun, TrendWatchlistDaily  # noqa: F401
-from app.models.catalyst import NewsCatalystStock  # noqa: F401
-from app.models.news_digest import NewsDigest  # noqa: F401
-from app.models.daily_briefing import DailyBriefing  # noqa: F401
-from app.models.market import IndexDaily, MarketAdaptability  # noqa: F401
+# Import all models so Alembic can detect them for autogenerate.
+# 与 main.py 保持一致的聚合导入（此前逐个 import 漏了 sepa 模型，
+# autogenerate 会误判 DROP sepa 四张表）。
+import app.models  # noqa: F401
 
 # ── Alembic Config ──
 config = context.config
