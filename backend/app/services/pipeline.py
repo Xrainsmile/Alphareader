@@ -62,10 +62,14 @@ async def _mark_urls_as_seen(urls: list[str]) -> None:
         return
 
     r = get_redis()
+    now_ts = time.time()
     hashes = [_hash_url(u) for u in urls]
     try:
-        added = await r.sadd(REDIS_DEDUP_KEY, *hashes)
-        logger.info("Marked %d URL(s) as seen in Redis (SADD returned %d)", len(hashes), added)
+        # ZSET（member=url_hash, score=标记时间戳）：支持按时间修剪，防止集合无界膨胀。
+        added = await r.zadd(REDIS_DEDUP_KEY, {h: now_ts for h in hashes})
+        # 每次标记顺手修剪 7 天前的旧条目（seen 窗口只需覆盖抓取重放周期）
+        await r.zremrangebyscore(REDIS_DEDUP_KEY, 0, now_ts - 7 * 86400)
+        logger.info("Marked %d URL(s) as seen in Redis (ZADD returned %d)", len(hashes), added)
     except Exception as e:
         logger.error("Failed to mark URLs as seen in Redis: %s", e)
 

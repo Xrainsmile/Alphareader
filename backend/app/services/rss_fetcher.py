@@ -54,7 +54,9 @@ DROP_PATTERNS = re.compile(
     r"(推广|广告|赞助|课程|直播预告|星座|彩票|红包|优惠券|抽奖|免费领)", re.IGNORECASE
 )
 
-# Redis Set 的 key，存储所有已处理过的 URL 哈希值
+# Redis ZSET 的 key，存储已处理过的 URL 哈希值
+# （member=url_hash, score=标记时间戳；pipeline 标记时滚动修剪 7 天前旧条目，防无界膨胀。
+#   注：早期版本曾是 SET，部署时已通过脚本迁移为 ZSET）
 REDIS_DEDUP_KEY = "alphareader:seen_urls"
 
 # HTTP 请求头：模拟 Chrome 浏览器，避免被信源服务器拦截
@@ -1135,10 +1137,11 @@ async def _fetch_single_source(
 
         # Check if URL was already seen — do NOT mark as seen here.
         # URLs are only marked after successful storage in the pipeline.
+        # seen_urls 为 ZSET（score=标记时间戳，7 天滚动修剪）→ 用 ZSCORE 判存在。
         try:
-            is_seen = await r.sismember(REDIS_DEDUP_KEY, url_hash)
+            is_seen = await r.zscore(REDIS_DEDUP_KEY, url_hash) is not None
         except Exception as e:
-            logger.warning("Redis SISMEMBER failed for %s, treating as new: %s", item.url[:60], e)
+            logger.warning("Redis ZSCORE failed for %s, treating as new: %s", item.url[:60], e)
             is_seen = False
 
         if is_seen:
