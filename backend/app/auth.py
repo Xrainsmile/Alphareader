@@ -46,3 +46,31 @@ async def require_api_key(
         )
 
     return api_key
+
+
+_admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
+
+
+async def require_admin_key(
+    request: Request,
+    admin_key: str | None = Security(_admin_key_header),
+) -> str | None:
+    """高成本/管理类触发端点的独立鉴权（Header: X-Admin-Key）。
+
+    用于手动生成 digest/briefing、手动触发 pipeline、行情回填等烧钱/重资源端点。
+    叠加在全局 X-API-Key 之上（两个 Header 都要传）。
+
+    - 配置 ADMIN_API_KEY：强制校验，缺失/不匹配一律 403；
+    - 未配置：放行（由全局 require_api_key 兜底；生产环境由 config 启动校验强制配置）。
+    """
+    if settings.ADMIN_API_KEY:
+        if not admin_key or not hmac.compare_digest(
+            admin_key.encode(), settings.ADMIN_API_KEY.encode()
+        ):
+            logger.warning("Admin Key 缺失或无效: %s %s", request.method, request.url.path)
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "forbidden", "message": "Admin Key 缺失或无效"},
+            )
+        return admin_key
+    return None

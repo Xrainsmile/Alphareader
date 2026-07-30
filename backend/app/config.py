@@ -17,7 +17,7 @@
   - REDIS_URL：根据 Redis 各字段动态拼接 DSN
 """
 
-from pydantic import AliasChoices, Field, computed_field
+from pydantic import AliasChoices, Field, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -116,6 +116,11 @@ class Settings(BaseSettings):
     # ── API Key 全局鉴权 ──
     NEWS_API_KEY: str = Field("", repr=False)  # 为空则不启用鉴权（仅限开发环境）
 
+    # ── Admin Key 高成本触发端点独立鉴权 ──
+    # 用于 digest/briefing 手动生成、pipeline 手动触发、行情回填等烧钱/重资源端点。
+    # 与 NEWS_API_KEY 叠加（两个 Header 都要：X-API-Key + X-Admin-Key）。生产环境必须设置。
+    ADMIN_API_KEY: str = Field("", repr=False)  # 为空则回退到全局 API Key 语义（仅限开发环境）
+
     # ── Dashboard 密码保护 ──
     DASHBOARD_PASSWORD: str = Field("", repr=False)  # 为空则不保护（不推荐生产环境）
 
@@ -159,6 +164,30 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         """将逗号分隔的 CORS_ORIGINS 字符串解析为列表。"""
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def _require_production_secrets(self):
+        """生产环境 fail-fast：关键密钥缺失直接拒绝启动，避免"静默放行"裸奔。
+
+        此前各鉴权点（NEWS_API_KEY / DASHBOARD_PASSWORD / SANDBOX_PASSWORD 等）
+        为空即跳过校验且无告警，生产忘配即全站无鉴权。此处在启动期拦截。
+        """
+        if self.APP_ENV == "production":
+            required = (
+                "NEWS_API_KEY",
+                "ADMIN_API_KEY",
+                "POSTGRES_PASSWORD",
+                "REDIS_PASSWORD",
+                "DASHBOARD_PASSWORD",
+                "SANDBOX_PASSWORD",
+            )
+            missing = [name for name in required if not getattr(self, name)]
+            if missing:
+                raise ValueError(
+                    f"生产环境缺少必需密钥配置: {', '.join(missing)}。"
+                    "请在 .env 中设置后重启（空密钥在生产环境等于无鉴权）。"
+                )
+        return self
 
 
 # 全局单例，其他模块通过 `from app.config import settings` 引用

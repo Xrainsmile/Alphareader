@@ -8,7 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy import and_, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import require_api_key
+from app.auth import require_admin_key, require_api_key
 from app.database import get_db
 from app.models.news import News
 from app.redis import get_redis
@@ -48,8 +48,15 @@ async def _run_pipeline_bg():
 
 
 @router.post("/pipeline/run")
-async def trigger_pipeline(background_tasks: BackgroundTasks, _: str | None = Depends(require_api_key)):
-    """Manually trigger the news pipeline (runs in background to avoid timeout)."""
+async def trigger_pipeline(
+    background_tasks: BackgroundTasks,
+    _: str | None = Depends(require_api_key),
+    _admin: str | None = Depends(require_admin_key),
+):
+    """Manually trigger the news pipeline (runs in background to avoid timeout).
+
+    需 X-Admin-Key（触发全量抓取+DeepSeek 评分，防刷量）。
+    """
     if _pipeline_status["running"]:
         return APIResponse(code=1, message="Pipeline already running, please wait")
 

@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_admin_key
 from app.database import get_db
 from app.models.news_digest import NewsDigest
 from app.services.digest_service import PERIOD_ICONS, PERIOD_LABELS
@@ -117,8 +118,11 @@ class GenerateRequest(BaseModel):
 
 
 @router.post("/generate")
-async def generate_digest_endpoint(payload: GenerateRequest):
-    """手动触发生成指定时段的摘要（调试/补数据用）。"""
+async def generate_digest_endpoint(
+    payload: GenerateRequest,
+    _admin: str | None = Depends(require_admin_key),
+):
+    """手动触发生成指定时段的摘要（调试/补数据用）。需 X-Admin-Key（调 DeepSeek，防刷量）。"""
     from app.services.digest_service import generate_digest
 
     try:

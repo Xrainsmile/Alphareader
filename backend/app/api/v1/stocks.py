@@ -10,10 +10,11 @@ from datetime import date, datetime
 from enum import Enum
 
 import numpy as np
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app.auth import require_admin_key
 from app.services.indicators import compute_and_save_rs_rating, load_rs_rating, backfill_rs_rating
 from app.services.data_fetcher import incremental_update_quotes, backfill_quotes
 from app.schemas.response import APIResponse
@@ -196,8 +197,9 @@ async def _run_compute(force: bool):
 @router.post("/rs_rating/compute")
 async def trigger_rs_rating_compute(
     force: bool = Query(False, description="强制重新计算"),
+    _admin: str | None = Depends(require_admin_key),
 ):
-    """手动触发 RS Rating 计算（后台任务，立即返回 202）。"""
+    """手动触发 RS Rating 计算（后台任务，立即返回 202）。需 X-Admin-Key。"""
     if _task.status == TaskStatus.RUNNING:
         return JSONResponse(
             status_code=409,
@@ -227,8 +229,9 @@ async def trigger_rs_rating_compute(
 @router.post("/update_quotes")
 async def trigger_update_quotes(
     days: int = Query(10, ge=1, le=320, description="回溯天数"),
+    _admin: str | None = Depends(require_admin_key),
 ):
-    """手动触发行情增量更新（后台任务）。"""
+    """手动触发行情增量更新（后台任务）。需 X-Admin-Key。"""
     async def _update():
         try:
             count = await incremental_update_quotes(days=days)
@@ -354,6 +357,7 @@ async def trigger_backfill(
     start_date: date = Query(..., description="起始日期"),
     end_date: date = Query(..., description="结束日期"),
     skip_existing: bool = Query(True, description="跳过已有数据的日期"),
+    _admin: str | None = Depends(require_admin_key),
 ):
     """回填指定日期范围的 RS Rating（后台任务）。
 
@@ -391,6 +395,7 @@ async def trigger_backfill(
 async def trigger_quotes_backfill(
     start_date: date = Query(..., description="起始日期 YYYY-MM-DD"),
     end_date: date = Query(..., description="结束日期 YYYY-MM-DD"),
+    _admin: str | None = Depends(require_admin_key),
 ):
     """回填指定日期范围的历史行情数据（后台任务，使用 akshare）。
 

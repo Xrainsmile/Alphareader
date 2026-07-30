@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_admin_key
 from app.database import get_db
 from app.models.daily_briefing import DailyBriefing
 from app.schemas.response import APIResponse
@@ -136,8 +137,11 @@ class GenerateBriefingRequest(BaseModel):
 
 
 @router.post("/generate")
-async def generate_briefing_endpoint(payload: GenerateBriefingRequest):
-    """手动触发生成分析报告（调试/补数据用）。"""
+async def generate_briefing_endpoint(
+    payload: GenerateBriefingRequest,
+    _admin: str | None = Depends(require_admin_key),
+):
+    """手动触发生成分析报告（调试/补数据用）。需 X-Admin-Key（调 DeepSeek，防刷量）。"""
     from app.services.briefing_service import generate_briefing
 
     try:
