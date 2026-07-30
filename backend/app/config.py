@@ -176,13 +176,21 @@ class Settings(BaseSettings):
                 "POSTGRES_PASSWORD",
                 "REDIS_PASSWORD",
                 "DASHBOARD_PASSWORD",
-                "SANDBOX_PASSWORD",
             )
             missing = [name for name in required if not getattr(self, name)]
             if missing:
                 raise ValueError(
                     f"生产环境缺少必需密钥配置: {', '.join(missing)}。"
                     "请在 .env 中设置后重启（空密钥在生产环境等于无鉴权）。"
+                )
+            # SANDBOX_PASSWORD 不做强制（面向用户的私密口令，历史上未设置=任意密码可进）。
+            # 未设置时 token 校验直通、保持现状；设置后私密 GET 端点才真正受保护。
+            if not self.SANDBOX_PASSWORD:
+                import logging
+
+                logging.getLogger("alphareader.config").warning(
+                    "SANDBOX_PASSWORD 未设置：模拟仓/SEPA 私密端点当前为开放状态，"
+                    "建议配置以启用 token 保护。"
                 )
         return self
 
