@@ -33,7 +33,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select, text as sa_text
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import verify_access_token
@@ -49,6 +49,7 @@ from app.models.sepa import (
     SepaWatchlistItem,
 )
 from app.services import sepa_service as svc
+from app.services.quote_queries import get_daily_bars
 from app.services.vcp_detector import detect_vcp, LOOKBACK_DAYS
 
 logger = logging.getLogger("alphareader.sepa")
@@ -354,34 +355,14 @@ async def analyze_vcp(
         code = code.zfill(5)
 
     limit = LOOKBACK_DAYS + 30
-    rows = await db.execute(
-        sa_text("""
-            SELECT trade_date, open, high, low, close, volume
-            FROM stock_daily_quote
-            WHERE ts_code = :code AND market = :market
-            ORDER BY trade_date DESC
-            LIMIT :limit
-        """),
-        {"code": code, "market": market, "limit": limit},
-    )
-    recs = rows.all()
-    if not recs:
+    bars = await get_daily_bars(db, code, market, limit)
+    if not bars:
         return {
             "market": market, "symbol": symbol, "vcp_detected": False,
             "data_available": False,
             "reason": "该标的无历史日K线数据（HK 需先补录历史行情）",
             "swing_points": [], "segments": [], "bars": [],
         }
-
-    bars = [{
-        "date": (r[0].isoformat() if hasattr(r[0], "isoformat") else str(r[0])),
-        "open": float(r[1]) if r[1] is not None else 0.0,
-        "high": float(r[2]) if r[2] is not None else 0.0,
-        "low": float(r[3]) if r[3] is not None else 0.0,
-        "close": float(r[4]) if r[4] is not None else 0.0,
-        "volume": float(r[5]) if r[5] is not None else 0.0,
-    } for r in recs]
-    bars.reverse()  # 转升序（oldest→newest）
 
     res = detect_vcp(bars, pivot_override=pivot_price)
     res["market"] = market

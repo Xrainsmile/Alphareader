@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from app.auth import require_admin_key
 from app.services.indicators import compute_and_save_rs_rating, load_rs_rating, backfill_rs_rating
+from app.services.quote_queries import get_latest_close_prices
 from app.services.data_fetcher import incremental_update_quotes, backfill_quotes
 from app.schemas.response import APIResponse
 
@@ -622,21 +623,7 @@ async def get_vcp_watchlist(
 
         # 批量从 stock_daily_quote 获取最新收盘价，覆盖 Screener 快照价
         ts_codes = [row.ts_code for row in rows]
-        latest_prices: dict[str, float] = {}
-        if ts_codes:
-            from sqlalchemy import text as sa_text
-            price_sql = sa_text("""
-                SELECT DISTINCT ON (ts_code) ts_code, close
-                FROM stock_daily_quote
-                WHERE ts_code = ANY(:codes) AND market = :market
-                ORDER BY ts_code, trade_date DESC
-            """)
-            price_result = await session.execute(
-                price_sql, {"codes": ts_codes, "market": market}
-            )
-            for code, close in price_result.all():
-                if close is not None:
-                    latest_prices[code] = float(close)
+        latest_prices = await get_latest_close_prices(session, ts_codes, market)
 
     items = []
     for row in rows:
@@ -835,21 +822,7 @@ async def get_trend_watchlist(
 
         # 批量从 stock_daily_quote 获取最新收盘价，覆盖 Screener 快照价
         ts_codes = [row.ts_code for row in rows]
-        latest_prices: dict[str, float] = {}
-        if ts_codes:
-            from sqlalchemy import text as sa_text
-            price_sql = sa_text("""
-                SELECT DISTINCT ON (ts_code) ts_code, close
-                FROM stock_daily_quote
-                WHERE ts_code = ANY(:codes) AND market = :market
-                ORDER BY ts_code, trade_date DESC
-            """)
-            price_result = await session.execute(
-                price_sql, {"codes": ts_codes, "market": market}
-            )
-            for code, close in price_result.all():
-                if close is not None:
-                    latest_prices[code] = float(close)
+        latest_prices = await get_latest_close_prices(session, ts_codes, market)
 
     items = []
     for row in rows:

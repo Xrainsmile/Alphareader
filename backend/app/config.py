@@ -67,9 +67,6 @@ class Settings(BaseSettings):
     # 评分/分析已迁移至 DeepSeek（见下方 LLM_* 配置），此处仅保留 Embedding 配置。
     SILICONFLOW_API_KEY: str = Field("", repr=False)                    # SiliconFlow API Key (https://cloud.siliconflow.cn)
     SILICONFLOW_EMBEDDING_MODEL: str = "BAAI/bge-m3"               # Embedding 模型：BAAI/bge-m3(1024维) / BAAI/bge-large-zh-v1.5(1024维)
-    # 以下两项为旧评分模型配置，评分已迁移到 LLM_MODEL / LLM_API_URL（DeepSeek），保留仅为向后兼容
-    SILICONFLOW_LLM_MODEL: str = "Qwen/Qwen3-8B"                  # [已废弃] 旧评分模型，评分现用 LLM_MODEL
-    SILICONFLOW_API_URL: str = "https://api.siliconflow.cn/v1/chat/completions"  # [已废弃] 旧评分 Chat API，现用 LLM_API_URL
 
     # ── DeepSeek AI（摘要/研报专用，流式调用）──
     # deepseek-chat / deepseek-reasoner 将于 2026/07/24 弃用，默认升级为 v4-flash
