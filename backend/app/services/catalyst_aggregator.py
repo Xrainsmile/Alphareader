@@ -179,11 +179,15 @@ async def _call_ticker_mapping_llm(entities: list[str]) -> dict[str, str | None]
 # ═══════════════════════════════════════════════════════════
 
 async def _fetch_high_score_news(target_date: date, min_score: int = 7) -> list[dict]:
-    """获取当日高评分新闻（ai_score >= 7）。"""
+    """获取当日高评分新闻（ai_score >= 7）。
+
+    target_date 为本地时区（Asia/Shanghai）日期，日界按本地零点切，
+    再转 UTC 与 DB 的 timestamptz 比较（此前误按 UTC 日界切，与北京时间差 8 小时）。
+    """
     async with async_session() as db:
-        day_start = datetime.combine(target_date, datetime.min.time()).replace(
-            tzinfo=pytz.UTC
-        )
+        day_start = _TZ.localize(
+            datetime.combine(target_date, datetime.min.time())
+        ).astimezone(pytz.UTC)
         day_end = day_start + timedelta(days=1)
 
         stmt = (
@@ -652,18 +656,22 @@ async def run_catalyst_aggregation(target_date: date | None = None) -> dict:
         avg_sentiment, trend_warning = _apply_trend_discount(raw_sentiment, trend_info)
 
         # 交叉验证
-        in_vcp = ts_code in vcp_map
-        vcp_score_val = vcp_map[ts_code]["vcp_score"] if in_vcp else None
-        in_trend = ts_code in trend_map
-        trend_score_val = trend_map[ts_code]["trend_score"] if in_trend else None
-        rs_val = rs_map.get(ts_code)
+        # 注意：LLM 映射的 ts_code 带交易所后缀（600489.SH），
+        # 而 vcp/trend/rs 三张 map 的 key 均为 6 位裸码（600489），
+        # 必须先归一化，否则交叉验证永不命中（in_vcp/in_trend/rs 永远为空）。
+        bare = ts_code.split(".")[0]
+        in_vcp = bare in vcp_map
+        vcp_score_val = vcp_map[bare]["vcp_score"] if in_vcp else None
+        in_trend = bare in trend_map
+        trend_score_val = trend_map[bare]["trend_score"] if in_trend else None
+        rs_val = rs_map.get(bare)
 
         # 股票名称（优先从白名单获取）
         name = None
         if in_vcp:
-            name = vcp_map[ts_code].get("name")
+            name = vcp_map[bare].get("name")
         elif in_trend:
-            name = trend_map[ts_code].get("name")
+            name = trend_map[bare].get("name")
 
         # 催化剂热度（使用修正后的情绪）
         heat = _compute_heat_score(news_count, top_score, avg_sentiment or 0)

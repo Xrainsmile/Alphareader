@@ -271,11 +271,15 @@ async def _fetch_news_digests(target_date: date) -> list[dict]:
 
 
 async def _fetch_high_score_news(target_date: date, min_score: int = 6) -> list[dict]:
-    """获取当日高评分原始新闻（用于更精确的关联分析）。"""
+    """获取当日高评分原始新闻（用于更精确的关联分析）。
+
+    target_date 为本地时区（Asia/Shanghai）日期，日界按本地零点切，
+    再转 UTC 与 DB 的 timestamptz 比较（此前误按 UTC 日界切，与北京时间差 8 小时）。
+    """
     async with async_session() as db:
-        day_start = datetime.combine(target_date, datetime.min.time()).replace(
-            tzinfo=pytz.UTC
-        )
+        day_start = _TZ.localize(
+            datetime.combine(target_date, datetime.min.time())
+        ).astimezone(pytz.UTC)
         day_end = day_start + timedelta(days=1)
 
         stmt = (
