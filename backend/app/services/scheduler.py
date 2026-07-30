@@ -407,9 +407,9 @@ async def _digest_job(period_label: str):
 
     四个时段：
       - morning (08:30): 收集 00:00~08:30 新闻
-      - midday  (12:00): 收集 08:30~12:00 新闻
-      - evening (18:00): 收集 12:00~18:00 新闻
-      - night   (00:00): 收集 18:00~24:00 新闻（次日凌晨触发）
+      - midday  (12:15): 收集 08:30~12:15 新闻
+      - evening (18:15): 收集 12:15~18:15 新闻
+      - night   (00:00): 收集 18:15~24:00 新闻（次日凌晨触发）
     """
     try:
         logger.info("Digest job [%s] triggered at %s", period_label, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -499,6 +499,37 @@ async def _us_screener_job():
             f"{type(e).__name__}: {e}",
         )
         raise
+
+
+async def _news_cleanup_job():
+    """News 表定期清理 — 每日 03:30 删除 published_at 超过 7 天的旧闻。
+
+    保留窗口与去重历史指纹窗口（DEDUP_HISTORICAL_DAYS=7）一致，
+    防止 news 表无限膨胀（review M5）。
+    """
+    try:
+        from datetime import timedelta, timezone
+
+        from sqlalchemy import text
+
+        from app.database import async_session
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        async with async_session() as s:
+            result = await s.execute(
+                text("DELETE FROM news WHERE published_at < :cutoff"),
+                {"cutoff": cutoff},
+            )
+            await s.commit()
+            deleted = result.rowcount or 0
+        logger.info("News cleanup: deleted %d rows (published_at < %s)", deleted, cutoff.isoformat())
+        return {"deleted": deleted}
+    except Exception as e:
+        logger.exception("News cleanup job failed: %s", e)
+        await send_alert(
+            "🔴 News Cleanup Job Failed",
+            f"{type(e).__name__}: {e}",
+        )
 
 
 async def _hk_quotes_job():
@@ -862,6 +893,21 @@ async def _run_scheduler_jobs():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
+    # 03:30 每日：News 表清理（删除 published_at > 7 天的旧闻，防表无限膨胀）
+    scheduler.add_job(
+        _news_cleanup_job,
+        trigger=CronTrigger(
+            hour="3",
+            minute="30",
+            timezone=settings.TIMEZONE,
+        ),
+        id="news_cleanup",
+        name=f"News Cleanup (03:30 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
     # ── 美股行情增量更新（每天 05:30 北京时间 ≈ 美东 16:30 盘后）──
     scheduler.add_job(
         _us_quotes_job,
@@ -1112,8 +1158,8 @@ async def _run_scheduler_jobs():
     logger.info("Screener scheduled Mon-Fri 15:40 (next: %s)", sc_next)
 
     # Digest jobs status
-    for label, desc in [("digest_morning", "08:30"), ("digest_midday", "12:00"),
-                        ("digest_evening", "18:00"), ("digest_night", "00:00")]:
+    for label, desc in [("digest_morning", "08:30"), ("digest_midday", "12:15"),
+                        ("digest_evening", "18:15"), ("digest_night", "00:00")]:
         dj = scheduler.get_job(label)
         dn = dj.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if dj and dj.next_run_time else "N/A"
         logger.info("Digest %s scheduled daily %s (next: %s)", label, desc, dn)
