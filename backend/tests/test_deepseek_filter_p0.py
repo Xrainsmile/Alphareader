@@ -490,10 +490,11 @@ class TestPromptLengthAndTime:
             published_at=datetime(2026, 2, 10, tzinfo=timezone.utc),
         )
         prompt = _build_user_prompt([item], is_english=False)
-        # 应该包含至少 800 字正文（我们的默认 CONTENT_PREVIEW_CHARS）
-        # 简单校验：包含中间某处的"股价上涨"字样，且总长足够
+        # 预览已压缩为 400 字符（2026-07-30 起 800→400，为省 LLM 输入 token）：
+        # 校验前 400 字完整保留、第 401 字起被截断
         assert "股价上涨" in prompt
-        assert len(prompt) > 800
+        assert long_content[:400] in prompt
+        assert long_content[:401] not in prompt
 
     def test_published_time_included(self):
         from app.services.llm_news_filter import _build_user_prompt

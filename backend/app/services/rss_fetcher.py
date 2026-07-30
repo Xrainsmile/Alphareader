@@ -1050,18 +1050,21 @@ FEED_SOURCES: list[FeedSource] = [
             f"{inst}/marktechpost" for inst in _RSSHUB_INSTANCES
         ],
     ),
-    FeedSource(
-        name="arXiv cs.AI",
-        url="https://rss.arxiv.org/rss/cs.AI",
-        parser=_parse_arxiv_ai,
-        is_rss=True,
-    ),
-    FeedSource(
-        name="arXiv cs.CL",
-        url="https://rss.arxiv.org/rss/cs.CL",
-        parser=_parse_arxiv_cl,
-        is_rss=True,
-    ),
+    # ── arXiv 两源已停用（2026-07-30）──
+    # 论文流几乎无投资催化属性，实测评分通过率 ~2%（单轮 cs.AI 282 条 0 通过），
+    # 每天白烧 ~0.5M+ 评分 token。如需恢复，取消下方注释即可。
+    # FeedSource(
+    #     name="arXiv cs.AI",
+    #     url="https://rss.arxiv.org/rss/cs.AI",
+    #     parser=_parse_arxiv_ai,
+    #     is_rss=True,
+    # ),
+    # FeedSource(
+    #     name="arXiv cs.CL",
+    #     url="https://rss.arxiv.org/rss/cs.CL",
+    #     parser=_parse_arxiv_cl,
+    #     is_rss=True,
+    # ),
     FeedSource(
         name="The Verge AI",
         url="https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",

@@ -340,6 +340,30 @@ async def run_pipeline() -> dict:
         await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
         return summary
 
+    # Step 2.5: 评分年龄闸 — published_at 超过 24h 的条目不送 LLM 评分。
+    # LLM 评分规则对 >24h 旧闻本就封顶 3 分（必低于入库阈值），送评纯属浪费 token；
+    # 直接标记 seen（永远不会被采用，避免每轮重抓重去重）。published_at 缺失的放行。
+    age_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    gated_urls: list[str] = []
+    scoring_items: list = []
+    for item in unique_items:
+        if item.published_at and item.published_at < age_cutoff:
+            gated_urls.append(item.url)
+        else:
+            scoring_items.append(item)
+    if gated_urls:
+        logger.info(
+            "Age-gate: skipped LLM scoring for %d/%d items published >24h ago",
+            len(gated_urls), len(unique_items),
+        )
+        await _mark_urls_seen(gated_urls)
+    unique_items = scoring_items
+
+    if not unique_items:
+        logger.info("All items were age-gated (>24h), pipeline done.")
+        await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
+        return summary
+
     # Step 3: Filter via DeepSeek
     filter_result: FilterResult | None = None
     try:

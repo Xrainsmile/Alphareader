@@ -1166,11 +1166,22 @@ async def _score_en_two_stage(
 
     # ── 阶段二：翻译通过阈值的条目 ──
     scored = result.scored
+    # 翻译只对"会展示"的条目（≥6 分）执行：5 分条目虽入库但被展示闸门
+    # （list_news 默认 min_score=6）挡住，翻译纯属浪费 token；
+    # 未翻译的 5 分条目保留英文标题入库（反正不展示）。
+    DISPLAY_MIN_SCORE = 6
+    to_translate = [si for si in scored if si.score >= DISPLAY_MIN_SCORE]
+    if len(to_translate) < len(scored):
+        logger.info(
+            "[two-stage] skipped translation for %d/%d item(s) scoring < %d (not displayed)",
+            len(scored) - len(to_translate), len(scored), DISPLAY_MIN_SCORE,
+        )
+
     translate_bs = getattr(settings, "LLM_TRANSLATE_BATCH_SIZE", 20)
     translate_bs = int(translate_bs) if isinstance(translate_bs, (int, float)) else 20
 
-    for i in range(0, len(scored), translate_bs):
-        sub_scored = scored[i : i + translate_bs]
+    for i in range(0, len(to_translate), translate_bs):
+        sub_scored = to_translate[i : i + translate_bs]
         sub_raws = [si.raw for si in sub_scored]
         translations = await _translate_batch_once(sub_raws, client)
 
