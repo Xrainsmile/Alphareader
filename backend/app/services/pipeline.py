@@ -356,7 +356,7 @@ async def run_pipeline() -> dict:
             "Age-gate: skipped LLM scoring for %d/%d items published >24h ago",
             len(gated_urls), len(unique_items),
         )
-        await _mark_urls_seen(gated_urls)
+        await _mark_urls_as_seen(gated_urls)
     unique_items = scoring_items
 
     if not unique_items:
