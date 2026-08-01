@@ -57,6 +57,7 @@ async def _generate_why(client, settings, row) -> str | None:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _build_user_prompt(row)},
         ],
+        "thinking": {"type": "disabled"},
         "temperature": 0.2,
         "max_tokens": 128,
     }

@@ -107,6 +107,7 @@ async def _call_ticker_mapping_llm(entities: list[str]) -> dict[str, str | None]
         "messages": [
             {"role": "user", "content": user_prompt},
         ],
+        "thinking": {"type": "disabled"},
         "temperature": 0.1,
         "max_tokens": 2000,
     }

@@ -69,9 +69,12 @@ async def stream_chat(
     payload = {
         "model": model,
         "messages": messages,
+        "thinking": {"type": "disabled"},
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": True,
+        # 让流式响应在末尾返回 usage（成本核算）
+        "stream_options": {"include_usage": True},
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -82,6 +85,7 @@ async def stream_chat(
         for attempt in range(1, max_retries + 1):
             try:
                 chunks: list[str] = []
+                usage_info: dict = {}
                 async with client.stream(
                     "POST",
                     settings.DEEPSEEK_API_URL,
@@ -98,14 +102,28 @@ async def stream_chat(
                             break
                         try:
                             data = _json.loads(data_str)
-                            delta = data["choices"][0].get("delta", {})
-                            if "content" in delta and delta["content"]:
-                                chunks.append(delta["content"])
+                            # usage 在末尾独立 chunk 返回（choices 为空）
+                            if data.get("usage"):
+                                usage_info = data["usage"]
+                            choices = data.get("choices") or []
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                if "content" in delta and delta["content"]:
+                                    chunks.append(delta["content"])
                         except (_json.JSONDecodeError, KeyError, IndexError):
                             continue
 
                 content = "".join(chunks).strip()
                 if content:
+                    if usage_info:
+                        details = usage_info.get("completion_tokens_details") or {}
+                        logger.info(
+                            "%s usage: prompt=%s completion=%s cache_hit=%s reasoning=%s total=%s",
+                            log_tag,
+                            usage_info.get("prompt_tokens"), usage_info.get("completion_tokens"),
+                            usage_info.get("prompt_cache_hit_tokens"), details.get("reasoning_tokens"),
+                            usage_info.get("total_tokens"),
+                        )
                     logger.info("%s stream OK (attempt %d): %d chars",
                                 log_tag, attempt, len(content))
                     return content

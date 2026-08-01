@@ -764,6 +764,17 @@ async def _call_llm_once(
     except (KeyError, IndexError) as e:
         return None, "api_error", f"malformed response: {e}", None
 
+    # 真实 token 用量日志（成本核算；DeepSeek 返回 usage，含缓存命中与 reasoning tokens）
+    usage = data.get("usage") or {}
+    if usage:
+        details = usage.get("completion_tokens_details") or {}
+        logger.info(
+            "LLM usage: prompt=%s completion=%s cache_hit=%s reasoning=%s total=%s",
+            usage.get("prompt_tokens"), usage.get("completion_tokens"),
+            usage.get("prompt_cache_hit_tokens"), details.get("reasoning_tokens"),
+            usage.get("total_tokens"),
+        )
+
     return raw_text, "ok", "", None
 
 
@@ -797,6 +808,7 @@ async def _score_batch_once(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
+        "thinking": {"type": "disabled"},
         "temperature": 0.1,
         "max_tokens": 4096,
     }
@@ -1065,6 +1077,7 @@ async def _translate_batch_once(
             {"role": "system", "content": SYSTEM_PROMPT_EN_TRANSLATE},
             {"role": "user", "content": user_prompt},
         ],
+        "thinking": {"type": "disabled"},
         "temperature": 0.1,
         "max_tokens": 4096,
     }

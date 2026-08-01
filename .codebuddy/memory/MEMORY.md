@@ -37,7 +37,8 @@
 - 前端 P3：VcpTab 展开行渲染 VCP 判定卡片+K线SVG(蜡烛/量能/摆动高低点/枢轴橙虚线/收缩段紫带)。P4+快路径：SepaWatchlistItem.vcp_auto JSON列(迁移t2u3v4w5x6y7)；refresh_vcp_watchlist 遍历股池→detect_vcp(含K线)→写 vcp_auto，与 vcp_confirmed 独立；触发①POST /sepa/admin/refresh-vcp ②调度_vcp_refresh_job CN16:50/US06:50 ③scripts/refresh_vcp.py。VcpTab 展开优先读 item.vcp_auto 零延迟，缺失再 fetchVcpAnalyze。**实测回填 CN 192只/37 VCP/0失败。** 部署踩坑见 2026-07-16.md。
 
 ## LLM 评分 llm_news_filter.py
-- 评分/分析/公司名映射=DeepSeek-V4-flash。配置 LLM_API_KEY(兼容DEEPSEEK_API_KEY)/LLM_API_URL/LLM_MODEL。DEEPSEEK_*仅摘要/研报；SILICONFLOW_*仅Embedding。已移除 Qwen3 enable_thinking。
+- 评分/分析/公司名映射=DeepSeek-V4-flash。配置 LLM_API_KEY(兼容DEEPSEEK_API_KEY)/LLM_API_URL/LLM_MODEL。DEEPSEEK_*仅摘要/研报；SILICONFLOW_*仅Embedding。
+- **v4-flash 推理已关闭（2026-08-01）**：v4-flash 默认开思考(effort=high)产生reasoning_tokens纯浪费，且思考模式不支持temperature(静默忽略)。5处payload(llm_client.stream_chat / llm_news_filter._score_batch_once+_translate_batch_once / catalyst_aggregator._call_ticker_mapping_llm / scripts/backfill_why.py)均加 `"thinking": {"type": "disabled"}`。httpx直接POST放顶层即可(OpenAI SDK才需extra_body)。关后temperature才真正生效。
 - 入口 filter_news：中英分组→gather(Semaphore3)→_score_batch_once(重试)→content_risk触发_bisect(递归到batch=1丢坏)。英文_two_stage先评分后翻译。
 - 规则：输入视为不可信(防注入)；旧闻>24h最高3分；is_highlight=score≥8+强催化+明文量化+一周内(score<8强制降级)。Ticker正则 A股^\d{6}$/港股^\d{5}$/美股^[A-Z]{3,5}(\.[A-Z])?$。
 - 配置：LLM_BATCH_SIZE=20/SCORE_THRESHOLD=5/MAX_RETRIES=2/CONTENT_PREVIEW_CHARS=800/MAX_CONCURRENCY=3/TWO_STAGE_EN_ENABLED=True。退避 min(30,2**attempt)+uniform(0,1)，429读Retry-After。
