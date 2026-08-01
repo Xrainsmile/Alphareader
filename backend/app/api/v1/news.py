@@ -193,6 +193,9 @@ async def list_news(
             "is_highlight": bool(getattr(n, "is_highlight", False)),
             "tags": n.tags,
             "related_to_id": str(n.related_to_id) if n.related_to_id else None,
+            # 方案A 事件中心化：聚合根被 LLM 合成后带事件标题/综述，前端优先展示
+            "event_title": getattr(n, "event_title", None),
+            "event_summary": getattr(n, "event_summary", None),
             "published_at": n.published_at.isoformat() if n.published_at else None,
             "created_at": n.created_at.isoformat() if n.created_at else None,
             "sentiment_score": n.sentiment_score,
@@ -242,7 +245,8 @@ async def hot_topics(
     sql = f"""
     WITH parents AS (
         SELECT n.id, n.title, n.source, n.url, n.ai_score, n.ai_summary,
-               n.tags, n.published_at, n.created_at, n.why_it_matters, n.is_highlight
+               n.tags, n.published_at, n.created_at, n.why_it_matters, n.is_highlight,
+               n.event_title, n.event_summary
         FROM news n
         WHERE {' AND '.join(conditions)}
     ),
@@ -258,6 +262,7 @@ async def hot_topics(
     SELECT
         p.id, p.title, p.source, p.url, p.ai_score, p.ai_summary, p.tags,
         p.published_at, p.created_at, p.why_it_matters, p.is_highlight,
+        p.event_title, p.event_summary,
         (COALESCE(ca.cnt, 0) + 1) AS source_count,
         COALESCE(ca.child_sources, ARRAY[]::text[]) AS child_sources,
         COALESCE(ca.child_titles, ARRAY[]::text[]) AS child_titles
@@ -290,6 +295,8 @@ async def hot_topics(
             "url": r["url"],
             "ai_score": r["ai_score"],
             "ai_summary": r["ai_summary"],
+            "event_title": r["event_title"],
+            "event_summary": r["event_summary"],
             "why_it_matters": r["why_it_matters"],
             "is_highlight": bool(r["is_highlight"]),
             "tags": r["tags"],

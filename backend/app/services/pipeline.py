@@ -484,6 +484,17 @@ async def run_pipeline() -> dict:
     # Step 6: 持久化运行记录到 pipeline_runs 表
     await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
 
+    # Step 7: 事件合成（方案A 事件中心化）——把本轮新形成/有新报道的多信源事件簇
+    # 交给 LLM 合成一张事件卡片，写到聚合根的 event_title/event_summary。
+    # 非关键路径：失败仅记日志，不影响 pipeline 主流程。
+    if getattr(settings, "EVENT_SYNTH_ENABLED", False):
+        try:
+            from app.services.event_synthesizer import synthesize_events
+            synth_result = await synthesize_events()
+            summary["events_synthesized"] = synth_result.get("synthesized", 0)
+        except Exception as e:
+            logger.warning("Event synthesis failed (non-fatal): %s", e)
+
     return summary
 
 

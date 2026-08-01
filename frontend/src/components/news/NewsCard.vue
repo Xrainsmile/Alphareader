@@ -8,10 +8,10 @@
     <view class="news-body">
       <!-- 搜索模式下使用 rich-text 高亮 -->
       <rich-text v-if="highlighted" class="news-title search-highlight" :nodes="item.title_highlighted || item.title"></rich-text>
-      <text v-else class="news-title">{{ item.title }}</text>
+      <text v-else class="news-title">{{ displayTitle }}</text>
 
       <rich-text v-if="highlighted && (item.summary_highlighted || item.ai_summary)" class="news-summary search-highlight" :nodes="item.summary_highlighted || item.ai_summary || ''"></rich-text>
-      <text v-else-if="!isCompact && item.ai_summary" class="news-summary">{{ item.ai_summary }}</text>
+      <text v-else-if="!isCompact && displaySummary" class="news-summary">{{ displaySummary }}</text>
 
       <!-- 推荐理由（why_it_matters）：一句话告诉用户为什么该关注 -->
       <view v-if="!isCompact && item.why_it_matters" class="news-why">
@@ -119,6 +119,10 @@ const computedGravity = computed(() => {
   const boost = props.childrenCount > 0 ? props.childrenCount * 0.2 : 0
   return base + boost
 })
+
+/** 事件中心化：聚合根被 LLM 合成后，优先展示事件标题/综述（搜索高亮模式除外） */
+const displayTitle = computed(() => props.item.event_title || props.item.title)
+const displaySummary = computed(() => props.item.event_summary || props.item.ai_summary)
 
 /** 根据密度模式决定显示的标签数量 */
 const displayTags = computed(() => {

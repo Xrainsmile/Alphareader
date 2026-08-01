@@ -97,6 +97,14 @@ class Settings(BaseSettings):
     # ── 去重 — 历史窗口扩展 ──
     DEDUP_HISTORICAL_DAYS: int = 7  # P5: 评分前从 DB 加载 N 天的 SimHash 指纹注入去重索引，识别跨天旧闻
 
+    # ── 事件合成（方案A：事件中心化）──
+    # 每轮 pipeline 结束后，把「多信源报道同一事件」的聚合簇交给 LLM 合成一张事件卡片，
+    # 写到聚合根的 event_title/event_summary，前端直接以事件为粒度展示。
+    EVENT_SYNTH_ENABLED: bool = True      # 总开关
+    EVENT_SYNTH_WINDOW_HOURS: int = 12    # 扫描最近 N 小时内有新关联报道的聚合簇
+    EVENT_SYNTH_MAX_EVENTS: int = 10      # 每轮最多合成事件数（成本控制，按信源数优先）
+    EVENT_SYNTH_MIN_SOURCES: int = 2      # 至少 N 个信源（根+子）才值得合成
+
     # ── 调度器 — Pipeline 定时执行 ──
     PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）
     PIPELINE_END_HOUR: int = 23    # 结束小时（0-23）

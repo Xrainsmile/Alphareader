@@ -45,6 +45,11 @@ class News(Base):
     catalyst_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     sentiment_entity: Mapped[str | None] = mapped_column(String(128), nullable=True)
     sentiment_reasoning: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # 方案A 事件中心化：LLM 将「根+关联报道」合成为一张事件卡片（仅写在聚合根上）
+    # event_article_count 记录上次合成时的报道总数，新子报道到达后计数变大则触发重新合成
+    event_title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    event_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_article_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     # P5: 去重指纹——持久化到 DB，评分前加载 7 天历史用于跨天旧闻识别
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     simhash_fingerprint: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)

@@ -46,6 +46,15 @@
 ## 推荐流展示
 - 入库阈值5（保留全量）；展示闸门 list_news 默认 min_score=6+max_age_hours=24；🔥=is_highlight子集。8B模型科技类系统性5-6故默认6。
 
+## 事件合成（方案A 事件中心化，2026-08-01 实现）
+- 多信源聚合簇（related_to_id 根+子）由 event_synthesizer.py 合成 1 张事件卡片：LLM(deepseek-chat, thinking disabled) 产出 event_title/event_summary 写聚合根（迁移 v4w5x6y7z8a9 三列，event_article_count 做增量判断，新子报道到达才重合成）。
+- pipeline Step 7 挂载（非关键路径）；config：EVENT_SYNTH_ENABLED/WINDOW_HOURS=12/MAX_EVENTS=10/MIN_SOURCES=2。
+- list_news/hot-topics 响应带 event_*；前端 NewsCard displayTitle/displaySummary 优先 event_*（搜索高亮除外）。
+- 演进路线（用户 2026-08-01 拍板）：A事件中心化(已做)→B对话式RAG→C个性化简报→D知识图谱(用户明确看好，长期)。
+
+## 测试既有失败（与开发改动无关，勿误修）
+- 6 个常驻失败：test_catalyst.py 5 个（futu URL 期望 futunn.com 实际 xueqiu、fetch_high_score_news seed 计数）、test_us_data_fetcher.py 1 个（tencent 特殊字符）。全量基线 = 292 passed + 6 failed。
+
 ## 去重 deduplicator.py（含P5跨天旧闻）
 - URL hash/SimHash汉明≤5(Redis24h)/SequenceMatcher>0.5(2h)/TF-IDF>0.65/Embedding语义(Redis90min,cos>0.80去重,0.67-0.80聚合)/事件聚合 related_to_id。
 - P5：News 表 content_hash(SHA256)+simhash_fingerprint(BIGINT) indexed(迁移p5q3r4s5t6u7v9)；_load_historical_fingerprints 加载7天注入_historical_index，DEDUP_HISTORICAL_DAYS=7。
