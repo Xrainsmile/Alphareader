@@ -95,8 +95,18 @@ async def _find_candidate_clusters(
     返回按信源数降序的簇列表，每个簇含根行字段 + 子报道数组。
     """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+    # fresh = 窗口内有新子报道的根（触发条件）；
+    # agg   = 全量子报道统计（合成输入 + 增量判断基数）。
+    # 增量判断必须比「全量报道总数」而非「窗口内新增数」，
+    # 否则已合成过的事件来了新子报道永远触发不了重新合成。
     sql = text("""
-        WITH fresh_children AS (
+        WITH fresh AS (
+            SELECT DISTINCT related_to_id AS pid
+            FROM news
+            WHERE related_to_id IS NOT NULL
+              AND created_at >= :cutoff
+        ),
+        agg AS (
             SELECT c.related_to_id AS pid,
                    COUNT(*) AS child_cnt,
                    jsonb_agg(jsonb_build_object(
@@ -108,18 +118,18 @@ async def _find_candidate_clusters(
                    ) ORDER BY c.ai_score DESC) AS children
             FROM news c
             WHERE c.related_to_id IS NOT NULL
-              AND c.created_at >= :cutoff
             GROUP BY c.related_to_id
         )
         SELECT p.id, p.title, p.source, p.ai_summary, p.ai_score,
                p.catalyst_type, p.event_article_count,
-               fc.child_cnt, fc.children
+               a.child_cnt, a.children
         FROM news p
-        JOIN fresh_children fc ON fc.pid = p.id
+        JOIN fresh f ON f.pid = p.id
+        JOIN agg a ON a.pid = p.id
         WHERE p.related_to_id IS NULL
-          AND (fc.child_cnt + 1) >= :min_sources
-          AND (p.event_article_count IS NULL OR (fc.child_cnt + 1) > p.event_article_count)
-        ORDER BY fc.child_cnt DESC, p.ai_score DESC
+          AND (a.child_cnt + 1) >= :min_sources
+          AND (p.event_article_count IS NULL OR (a.child_cnt + 1) > p.event_article_count)
+        ORDER BY a.child_cnt DESC, p.ai_score DESC
         LIMIT :max_events
     """)
     async with async_session() as session:

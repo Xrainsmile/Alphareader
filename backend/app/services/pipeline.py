@@ -107,6 +107,48 @@ async def _load_historical_fingerprints() -> list[tuple[str, str, int, float]]:
         return []
 
 
+def _walk_to_root(nid, links: dict) -> object:
+    """沿 related_to_id 链走到最终根（带环路保护）。"""
+    seen = set()
+    cur = nid
+    while cur in links and links[cur] is not None and cur not in seen:
+        seen.add(cur)
+        cur = links[cur]
+    return cur
+
+
+async def _resolve_event_roots(url_to_id: dict[str, str]) -> dict[str, str]:
+    """将 url→父id 映射压平为 url→最终根id（星型拓扑）。
+
+    去重器基于 90 分钟 embedding 索引做事件聚合，可能形成链：
+    A←B←C（C 聚合到 B 而非 A）。而 hot-topics、前端分组、事件合成
+    均假设星型结构（根+直接子报道），故在入库时把中间节点解析到最终根。
+    """
+    if not url_to_id:
+        return url_to_id
+    links: dict = {}
+    try:
+        async with async_session() as session:
+            from sqlalchemy import select as sa_select
+            frontier = set(url_to_id.values())
+            while frontier:
+                stmt = sa_select(News.id, News.related_to_id).where(News.id.in_(frontier))
+                rows = (await session.execute(stmt)).all()
+                next_frontier: set = set()
+                for rid, rpid in rows:
+                    if rid not in links:
+                        links[rid] = rpid
+                        if rpid is not None and rpid not in links:
+                            next_frontier.add(rpid)
+                if not next_frontier:
+                    break
+                frontier = next_frontier
+    except Exception as e:
+        logger.warning("Failed to resolve event roots (chains left as-is): %s", e)
+        return url_to_id
+    return {url: _walk_to_root(pid, links) for url, pid in url_to_id.items()}
+
+
 async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[str]]:
     """将评分通过的新闻条目存入 PostgreSQL。
 
@@ -142,6 +184,8 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                 "Event-cluster URL→ID lookup: %d URLs queried, %d found",
                 len(related_urls), len(url_to_id),
             )
+            # 链式聚合压平：中间节点解析到最终根（A←B←C → C 直接挂 A）
+            url_to_id = await _resolve_event_roots(url_to_id)
         except Exception as e:
             logger.warning("Failed to lookup related_to URLs: %s", e)
 
