@@ -1752,7 +1752,7 @@ onReachBottom(() => {
     background: rgba(0, 0, 0, 0.03);
   }
   :deep(.related-toggle-text) {
-    font-size: 13px;
+    font-size: 14px;
   }
   :deep(.related-toggle-arrow) {
     font-size: 13px;
@@ -1774,11 +1774,11 @@ onReachBottom(() => {
     font-size: 13px;
   }
   :deep(.related-item-title) {
-    font-size: 14px;
+    font-size: 15px;
   }
   :deep(.related-item-source),
   :deep(.related-item-time) {
-    font-size: 11px;
+    font-size: 12px;
   }
   :deep(.related-item-meta .meta-dot) {
     font-size: 11px;
@@ -1798,11 +1798,11 @@ onReachBottom(() => {
 
   /* ── News Body ── */
   :deep(.news-title) {
-    font-size: 16px;
+    font-size: 17px;
     line-height: 1.5;
   }
   :deep(.news-summary) {
-    font-size: 13.5px;
+    font-size: 15px;
     margin-top: 6px;
     line-height: 1.6;
     -webkit-line-clamp: 3;
@@ -1814,7 +1814,7 @@ onReachBottom(() => {
     margin-top: 8px;
   }
   :deep(.news-tag) {
-    font-size: 12px;
+    font-size: 13px;
     border-radius: 4px;
     padding: 2px 8px;
   }
@@ -1835,7 +1835,7 @@ onReachBottom(() => {
     margin-top: 2px;
   }
   :deep(.why-text) {
-    font-size: 13px;
+    font-size: 14px;
   }
 
   /* ── Meta ── */
@@ -1846,7 +1846,7 @@ onReachBottom(() => {
   :deep(.meta-source),
   :deep(.meta-dot),
   :deep(.meta-time) {
-    font-size: 12px;
+    font-size: 13px;
   }
 
   /* ── Gravity Badge ── */
@@ -1856,7 +1856,7 @@ onReachBottom(() => {
     border-radius: 10px;
   }
   :deep(.gravity-value) {
-    font-size: 13px;
+    font-size: 14px;
     letter-spacing: 0.5px;
   }
 
@@ -1865,7 +1865,7 @@ onReachBottom(() => {
     padding: 24px 0;
   }
   :deep(.load-more-text) {
-    font-size: 13px;
+    font-size: 14px;
   }
 
   /* ── Sentiment Badge PC ── */
@@ -1911,8 +1911,8 @@ onReachBottom(() => {
   .right-news-item:hover { background: var(--color-bg-hover); }
   .right-news-rank { font-size: 16px; font-weight: 800; color: var(--color-brand); flex-shrink: 0; }
   .right-news-body { flex: 1; min-width: 0; }
-  .right-news-title { font-size: 13px; color: var(--color-text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .right-news-meta { font-size: 11px; color: var(--color-text-muted); margin-top: 4px; }
+  .right-news-title { font-size: 14px; color: var(--color-text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .right-news-meta { font-size: 12px; color: var(--color-text-muted); margin-top: 4px; }
   .right-empty { padding: 20px 0; text-align: center; }
   .right-empty-text { font-size: 13px; color: var(--color-text-muted); }
   .container {
