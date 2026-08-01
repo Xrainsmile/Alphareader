@@ -28,6 +28,12 @@ class SortMode(str, Enum):
 
 router = APIRouter(prefix="/news", tags=["news"])
 
+# ── hot 排序：多信源事件加分（方案A 事件中心化配套）──
+# 同一事件被多家媒体报道（有子报道挂 related_to_id）说明其重要性已被市场交叉验证，
+# 在 HN 重力公式的 points 上加分，让事件卡在 feed 里比同龄单信源新闻停留更久。
+EVENT_BOOST_PER_SOURCE = 0.5   # 每条关联报道加 0.5 分 points
+EVENT_BOOST_MAX = 2.0          # 加分上限（≥4 个信源封顶）
+
 # Track background pipeline status
 _pipeline_status: dict = {"running": False, "last_result": None}
 
@@ -131,10 +137,18 @@ async def list_news(
     use_python_sort = False
     if sort == SortMode.HOT:
         try:
+            # 多信源事件加分：关联报道数 × EVENT_BOOST_PER_SOURCE，封顶 EVENT_BOOST_MAX。
+            # 相关子查询在 ~200 行的展示窗口内代价可忽略。
+            boost_sql = (
+                f"+ LEAST(COALESCE((SELECT COUNT(*) FROM news c "
+                f"WHERE c.related_to_id = news.id), 0) * {EVENT_BOOST_PER_SOURCE}, "
+                f"{EVENT_BOOST_MAX})"
+            )
             ranking_expr = text(gravity_sql_expression(
                 score_column="ai_score",
                 time_column="published_at",
                 gravity=gravity,
+                boost_sql=boost_sql,
             ))
             order_clause = desc(ranking_expr)
         except Exception:
@@ -172,13 +186,31 @@ async def list_news(
         result = await db.execute(fallback_stmt)
         rows = list(result.scalars().all())
 
+    # 关联报道计数（用于 Python 侧 ranking_score 与 SQL 排序口径一致；
+    # ORM 查询跨库兼容，SQLite 回退路径同样生效）
+    child_counts: dict = {}
+    try:
+        cnt_stmt = (
+            select(News.related_to_id, func.count())
+            .where(News.related_to_id.isnot(None))
+            .group_by(News.related_to_id)
+        )
+        child_counts = dict((await db.execute(cnt_stmt)).all())
+    except Exception as e:
+        logger.warning("child-count query failed, event boost degraded to 0: %s", e)
+
     # Compute ranking_score in Python for each item (for API response)
     items = []
     for n in rows:
+        boost = min(
+            child_counts.get(n.id, 0) * EVENT_BOOST_PER_SOURCE,
+            EVENT_BOOST_MAX,
+        )
         ranking_score = calculate_ranking_score(
             ai_score=n.ai_score or 0,
             publish_time=n.published_at,
             gravity=gravity,
+            boost=boost,
         )
         items.append({
             "id": str(n.id),

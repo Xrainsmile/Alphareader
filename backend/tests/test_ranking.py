@@ -140,3 +140,53 @@ class TestGravitySqlExpression:
     def test_custom_gravity(self):
         expr = gravity_sql_expression(gravity=3.0)
         assert "3.0" in expr
+
+    def test_numerator_matches_python_semantics(self):
+        """分子必须是 points-1（ai_score 本就 0-10）。
+
+        回归：历史上写成 ai_score/10.0-1，0-10 分全部归零，
+        hot 排序退化为 created_at DESC（生产实测 rank_sql 恒为 0）。
+        """
+        expr = gravity_sql_expression()
+        assert "ai_score - 1" in expr
+        assert "/ 10.0" not in expr
+
+    def test_boost_sql_injected(self):
+        expr = gravity_sql_expression(boost_sql="+ LEAST(1.0, 2.0)")
+        assert "ai_score + LEAST(1.0, 2.0) - 1" in expr
+
+
+class TestRankingBoost:
+    """多信源事件加分（方案A 配套）。"""
+
+    @pytest.fixture
+    def now(self):
+        return datetime(2026, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+
+    def test_boost_increases_rank(self, now):
+        t = now - timedelta(hours=3)
+        plain = calculate_ranking_score(6, t, now=now)
+        boosted = calculate_ranking_score(6, t, now=now, boost=1.0)
+        assert boosted > plain
+
+    def test_boost_after_normalization_no_double_scale(self, now):
+        """ai_score=10 + boost 后 points>10，不得误触发 0-100 归一化。
+
+        若归一化错误，points 会被压到 ~1.1，rank 反而低于无 boost 的 9 分。
+        """
+        t = now - timedelta(hours=1)
+        boosted_10 = calculate_ranking_score(10, t, now=now, boost=2.0)
+        plain_9 = calculate_ranking_score(9, t, now=now)
+        assert boosted_10 > plain_9
+
+    def test_negative_boost_clamped(self, now):
+        t = now - timedelta(hours=1)
+        plain = calculate_ranking_score(7, t, now=now)
+        neg = calculate_ranking_score(7, t, now=now, boost=-5.0)
+        assert neg == plain
+
+    def test_zero_boost_backward_compatible(self, now):
+        t = now - timedelta(hours=2)
+        assert calculate_ranking_score(8, t, now=now) == calculate_ranking_score(
+            8, t, now=now, boost=0.0
+        )

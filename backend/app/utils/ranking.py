@@ -22,6 +22,7 @@ def calculate_ranking_score(
     publish_time: datetime | None,
     gravity: float = 1.8,
     now: datetime | None = None,
+    boost: float = 0.0,
 ) -> float:
     """计算 Hacker Gravity 排名分数（Hacker News 原版重力公式）。
 
@@ -34,6 +35,8 @@ def calculate_ranking_score(
         publish_time: 文章发布时间（时区感知或 naive UTC）。
         gravity: 时间衰减指数，默认 1.8（与 HN 默认值一致）。
         now: 覆盖"当前时间"，用于测试。默认 UTC now。
+        boost: points 加成（如多信源事件加分），在归一化之后叠加，
+               避免 ai_score+boost 超过 10 触发 0-100 误判归一化。
 
     Returns:
         Hacker Gravity 分数（float，保留 4 位小数），越高越靠前。
@@ -44,8 +47,8 @@ def calculate_ranking_score(
     # Normalize ai_score: if > 10, assume 0-100 scale → convert to 0-10
     score = ai_score / 10.0 if ai_score > 10 else float(ai_score)
 
-    # Ensure score is at least 0
-    score = max(score, 0.0)
+    # Ensure score is at least 0; boost 在归一化后叠加
+    score = max(score, 0.0) + max(boost, 0.0)
 
     # Calculate time elapsed in hours
     if now is None:
@@ -77,21 +80,29 @@ def gravity_sql_expression(
     score_column: str = "ai_score",
     time_column: str = "published_at",
     gravity: float = 1.8,
+    boost_sql: str = "",
 ) -> str:
     """生成 Hacker Gravity 排名的 PostgreSQL SQL 表达式。
 
     可用于 ORDER BY 或计算列。
 
     Args:
-        score_column: AI 评分列名（作为 HN 公式中的 points）。
+        score_column: AI 评分列名（作为 HN 公式中的 points），取值范围 0-10。
         time_column: 发布时间列名（TIMESTAMPTZ）。
         gravity: 时间衰减指数，默认 1.8（同 HN）。
+        boost_sql: points 加成的 SQL 片段（如多信源事件加分），
+                   会原样拼接到评分列之后，例如 "+ LEAST(..., 2.0)"。
 
     Returns:
         PostgreSQL SQL 表达式字符串。
+
+    注意：分子必须与 Python 版 calculate_ranking_score 语义一致：
+    points - 1（ai_score 本就是 0-10，不可再 /10——否则 0-10 分全部
+    归零，hot 排序退化为 created_at DESC）。
     """
+    boost_part = f" {boost_sql}" if boost_sql else ""
     return (
-        f"(GREATEST({score_column} / 10.0 - 1, 0)) "
+        f"(GREATEST({score_column}{boost_part} - 1, 0)) "
         f"/ POWER("
         f"GREATEST(EXTRACT(EPOCH FROM (NOW() - COALESCE({time_column}, NOW()))) / 3600.0, 0) + 2, "
         f"{gravity})"
