@@ -34,12 +34,13 @@
         <text class="meta-source">{{ item.source }}</text>
         <text class="meta-dot">·</text>
         <text class="meta-time">{{ formatTime(item.published_at || item.created_at) }}</text>
-        <!-- 多信源聚合：同一事件被多家媒体报道时的信源数徽标 -->
-        <template v-if="density === 'detailed' && childrenCount > 0">
+        <!-- 多信源聚合：同一事件被多家媒体报道时的信源数徽标（全密度显示；
+             已被 LLM 合成为事件卡片时加「事件 ·」前缀，与普通卡视觉区分） -->
+        <template v-if="childrenCount > 0">
           <text class="meta-dot">·</text>
           <view class="source-count-badge">
             <view class="source-count-icon-svg"></view>
-            <text class="source-count-text">{{ childrenCount + 1 }} 信源</text>
+            <text class="source-count-text">{{ item.event_title ? '事件 · ' : '' }}{{ childrenCount + 1 }} 信源</text>
           </view>
         </template>
         <!-- Hacker Gravity 指标 -->
