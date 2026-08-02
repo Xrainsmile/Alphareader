@@ -11,12 +11,17 @@
       @ticker-click="(code) => $emit('ticker-click', code)"
     />
 
-    <!-- 关联报道折叠区：优先用后端 related_items（含未过展示阈值的全量子报道），
-         回落前端分组结果（仅含列表内可见子报道） -->
-    <view v-if="displayChildren.length" class="related-section">
-      <view class="related-toggle" @click.stop="$emit('toggle-related', group.id)">
-        <text class="related-toggle-text">关联报道 ({{ displayChildren.length }}条)</text>
-        <text class="related-toggle-arrow" :class="{ 'related-toggle-arrow-up': expanded }">›</text>
+    <!-- 关联报道折叠区：展开时懒加载全量信源（/events/{id}/sources），
+         related_items 为 null 表示尚未加载，用 child_count 决定入口可见性 -->
+    <view v-if="group.child_count > 0 || displayChildren.length" class="related-section">
+      <view class="related-bar">
+        <view class="related-toggle" @click.stop="$emit('toggle-related', group.id)">
+          <text class="related-toggle-text">关联报道 ({{ group.child_count || displayChildren.length }}条)</text>
+          <text class="related-toggle-arrow" :class="{ 'related-toggle-arrow-up': expanded }">›</text>
+        </view>
+        <view class="event-detail-link" @click.stop="goEventDetail">
+          <text class="event-detail-text">事件详情 ›</text>
+        </view>
       </view>
 
       <!-- 展开的子卡片列表 -->
@@ -57,11 +62,16 @@ const props = defineProps({
 
 defineEmits(['open', 'tag-search', 'toggle-related', 'ticker-click'])
 
-/** 折叠区数据源：后端 related_items（全量子报道）优先，前端分组回落 */
+/** 折叠区数据源：懒加载的 related_items 优先，前端分组回落 */
 const displayChildren = computed(() => {
   if (props.group.related_items && props.group.related_items.length) {
     return props.group.related_items
   }
   return props.group.children || []
 })
+
+/** 进入事件详情页 */
+function goEventDetail() {
+  uni.navigateTo({ url: `/pages/events/detail?id=${props.group.id}` })
+}
 </script>

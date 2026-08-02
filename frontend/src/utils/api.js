@@ -81,6 +81,37 @@ export function fetchNews(params = {}) {
   return request(`/api/v1/news/${query ? '?' + query : ''}`)
 }
 
+// ── Events API（实时事件页使用，事件化新闻）──
+
+/**
+ * 获取事件列表（仅事件根，一页 N 条 = N 个事件）
+ */
+export function fetchEvents(params = {}) {
+  const query = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return request(`/api/v1/events/${query ? '?' + query : ''}`)
+}
+
+/**
+ * 获取事件详情（当前状态 + 版本演进 + 全部关联报道）
+ */
+export function fetchEventDetail(id) {
+  return request(`/api/v1/events/${id}`)
+}
+
+/**
+ * 获取事件信源（全部关联报道，分页）
+ */
+export function fetchEventSources(id, params = {}) {
+  const query = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  return request(`/api/v1/events/${id}/sources${query ? '?' + query : ''}`)
+}
+
 /**
  * 搜索新闻
  */

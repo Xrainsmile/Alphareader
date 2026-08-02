@@ -15,7 +15,7 @@
         :class="{ active: activeTab === 'digest' }"
         @click="switchTab('digest')"
       >
-        <text class="tab-text">新闻概览</text>
+        <text class="tab-text">今日简报</text>
       </view>
       <view
         class="tab-item"
@@ -29,7 +29,7 @@
         :class="{ active: activeTab === 'reports' }"
         @click="switchTab('reports')"
       >
-        <text class="tab-text">复盘</text>
+        <text class="tab-text">深度报告</text>
       </view>
       <view class="tab-indicator" :style="{ left: tabIndicatorLeft, width: '33.33%' }"></view>
     </view>
@@ -78,9 +78,64 @@
               <text class="digest-time">{{ formatDigestDate(item) }}</text>
             </view>
 
-            <!-- Card Content (Markdown rendered) -->
+            <!-- Card Content：v2 结构化简报优先，旧版 Markdown 兼容（PRD 12） -->
             <view class="digest-content" :class="{ collapsed: !expandedIds.has(item.id) }">
-              <mp-html :content="renderMd(item.content)" :tag-style="tagStyle" :lazy-load="true" />
+              <view v-if="item.schema_version === 2 && item.structured_content" class="structured-briefing">
+                <!-- 本时段概况 -->
+                <text class="sb-summary">{{ item.structured_content.period_summary }}</text>
+
+                <!-- 必须知道 -->
+                <view v-if="item.structured_content.must_know && item.structured_content.must_know.length" class="sb-section">
+                  <text class="sb-section-title">必须知道</text>
+                  <view
+                    v-for="e in item.structured_content.must_know"
+                    :key="e.event_id"
+                    class="sb-event must"
+                    @click.stop="goEventDetail(e.event_id)"
+                  >
+                    <text class="sb-event-title">{{ e.title }}</text>
+                    <text v-if="e.latest_change" class="sb-event-change">🆕 {{ e.latest_change }}</text>
+                    <text v-if="e.why_important" class="sb-event-why">{{ e.why_important }}</text>
+                    <view class="sb-event-meta">
+                      <text v-if="e.confidence" class="sb-confidence" :class="'conf-' + e.confidence">{{ confidenceLabel(e.confidence) }}</text>
+                      <text v-if="e.watch_next" class="sb-event-watch">👁 {{ e.watch_next }}</text>
+                    </view>
+                  </view>
+                </view>
+
+                <!-- 值得留意 -->
+                <view v-if="item.structured_content.worth_watching && item.structured_content.worth_watching.length" class="sb-section">
+                  <text class="sb-section-title">值得留意</text>
+                  <view
+                    v-for="e in item.structured_content.worth_watching"
+                    :key="e.event_id"
+                    class="sb-event"
+                    @click.stop="goEventDetail(e.event_id)"
+                  >
+                    <text class="sb-event-title">{{ e.title }}</text>
+                    <text v-if="e.latest_change" class="sb-event-change">🆕 {{ e.latest_change }}</text>
+                    <text v-if="e.why_important" class="sb-event-why">{{ e.why_important }}</text>
+                  </view>
+                </view>
+
+                <!-- 共同信号 -->
+                <view v-if="item.structured_content.cross_event_signals && item.structured_content.cross_event_signals.length" class="sb-section">
+                  <text class="sb-section-title">共同信号</text>
+                  <view v-for="(s, si) in item.structured_content.cross_event_signals" :key="si" class="sb-signal">
+                    <text class="sb-signal-title">{{ s.title }}</text>
+                    <text class="sb-signal-summary">{{ s.summary }}</text>
+                  </view>
+                </view>
+
+                <!-- 接下来关注 -->
+                <view v-if="item.structured_content.upcoming && item.structured_content.upcoming.length" class="sb-section">
+                  <text class="sb-section-title">接下来关注</text>
+                  <view v-for="(u, ui) in item.structured_content.upcoming" :key="ui" class="sb-upcoming">
+                    <text class="sb-upcoming-text"><text v-if="u.time" class="sb-upcoming-time">{{ u.time }}</text>{{ u.item }}</text>
+                  </view>
+                </view>
+              </view>
+              <mp-html v-else :content="renderMd(item.content)" :tag-style="tagStyle" :lazy-load="true" />
             </view>
 
             <!-- Expand/Collapse toggle -->
@@ -91,7 +146,9 @@
 
             <!-- Card Footer -->
             <view class="digest-footer">
-              <text class="footer-stat">📊 收录 {{ item.news_count }} 条新闻</text>
+              <text class="footer-stat">📊 收录 {{ item.news_count }} 条报道</text>
+              <text v-if="item.schema_version === 2 && item.event_count != null" class="footer-stat">归并为 {{ item.event_count }} 个事件</text>
+              <text v-if="item.schema_version === 2 && item.material_update_count" class="footer-stat">{{ item.material_update_count }} 个实质更新</text>
             </view>
           </view>
         </view>
@@ -244,13 +301,14 @@ import PcSidebar from '@/components/common/PcSidebar.vue'
 import { listTagStyle, listTagStyleMobile, formatDate, reportStatusLabel, sentimentEmoji } from '@/utils/formatters'
 
 // ── Tab State ──
-const activeTab = ref('briefing')
+// 默认「今日简报」：用户打开产品首先看到最新阶段简报（PRD 4.2）
+const activeTab = ref('digest')
 
 // ── 右看板：栏目导航 ──
 const rightTabs = [
-  { key: 'digest', icon: '📰', label: '新闻概览', desc: '每日新闻时间轴' },
+  { key: 'digest', icon: '📰', label: '今日简报', desc: '过去几小时发生了什么' },
   { key: 'briefing', icon: '📊', label: '每日研报', desc: 'AI 市场分析' },
-  { key: 'reports', icon: '📝', label: '复盘', desc: '历史复盘报告' },
+  { key: 'reports', icon: '📝', label: '深度报告', desc: '历史复盘与专题' },
 ]
 
 // ── Tab indicator position (3 tabs) ──
@@ -312,6 +370,17 @@ function expandToggle(id) {
   } else {
     expandedIds.add(id)
   }
+}
+
+/** 简报事件卡 → 事件详情页（PRD 12.3） */
+function goEventDetail(eventId) {
+  if (!eventId) return
+  uni.navigateTo({ url: `/pages/events/detail?id=${eventId}` })
+}
+
+const CONFIDENCE_LABELS = { high: '高可信', medium: '中可信', low: '低可信' }
+function confidenceLabel(c) {
+  return CONFIDENCE_LABELS[c] || c
 }
 
 function formatDigestDate(item) {
@@ -920,10 +989,125 @@ onMounted(() => {
   font-weight: 500;
 }
 
+/* ── 结构化简报（schema v2）── */
+.sb-summary {
+  font-size: 26rpx;
+  color: var(--color-text-secondary, #5a5a6e);
+  line-height: 1.7;
+  display: block;
+  margin-bottom: 16rpx;
+}
+.sb-section {
+  margin-top: 20rpx;
+}
+.sb-section-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  display: block;
+  margin-bottom: 12rpx;
+}
+.sb-event {
+  background: var(--color-bg-secondary, #f7f8fa);
+  border-radius: 12rpx;
+  padding: 16rpx 20rpx;
+  margin-bottom: 12rpx;
+}
+.sb-event.must {
+  background: #fffbf2;
+  border-left: 6rpx solid #f5a623;
+}
+.sb-event-title {
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.45;
+  display: block;
+}
+.sb-event-change {
+  font-size: 25rpx;
+  color: #2e7d32;
+  line-height: 1.55;
+  display: block;
+  margin-top: 8rpx;
+}
+.sb-event-why {
+  font-size: 25rpx;
+  color: #1565c0;
+  line-height: 1.55;
+  display: block;
+  margin-top: 6rpx;
+}
+.sb-event-meta {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 10rpx;
+  flex-wrap: wrap;
+}
+.sb-confidence {
+  font-size: 20rpx;
+  padding: 2rpx 12rpx;
+  border-radius: 6rpx;
+  font-weight: 600;
+}
+.conf-high { background: #e8f5e9; color: #2e7d32; }
+.conf-medium { background: #fff3e0; color: #ef6c00; }
+.conf-low { background: #eceff1; color: #546e7a; }
+.sb-event-watch {
+  font-size: 23rpx;
+  color: var(--color-text-hint);
+}
+.sb-signal {
+  background: #f3f0ff;
+  border-radius: 12rpx;
+  padding: 16rpx 20rpx;
+  margin-bottom: 12rpx;
+}
+.sb-signal-title {
+  font-size: 27rpx;
+  font-weight: 600;
+  color: #5e35b1;
+  display: block;
+}
+.sb-signal-summary {
+  font-size: 25rpx;
+  color: var(--color-text-secondary, #5a5a6e);
+  line-height: 1.6;
+  display: block;
+  margin-top: 6rpx;
+}
+.sb-upcoming {
+  padding: 10rpx 0;
+  border-bottom: 1rpx solid var(--color-border, #f0f0f4);
+}
+.sb-upcoming:last-child {
+  border-bottom: none;
+}
+.sb-upcoming-text {
+  font-size: 25rpx;
+  color: var(--color-text-secondary, #5a5a6e);
+  line-height: 1.55;
+}
+.sb-upcoming-time {
+  color: #4285f4;
+  font-weight: 600;
+  margin-right: 12rpx;
+}
+
 /* ═══════════════════════════════════════════════════════════
    PC / Tablet 适配 (≥768px)
    ═══════════════════════════════════════════════════════════ */
 @media screen and (min-width: 768px) {
+  .sb-summary { font-size: 15px; }
+  .sb-section-title { font-size: 16px; }
+  .sb-event-title { font-size: 15px; }
+  .sb-event-change, .sb-event-why { font-size: 14px; }
+  .sb-event { border-radius: 8px; padding: 12px 16px; }
+  .sb-signal { border-radius: 8px; padding: 12px 16px; }
+  .sb-signal-title { font-size: 15px; }
+  .sb-signal-summary { font-size: 14px; }
+  .sb-upcoming-text { font-size: 14px; }
   .reports-header {
     padding: 28px 0 12px;
   }

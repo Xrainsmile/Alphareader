@@ -33,7 +33,7 @@
     <view class="info-bar">
       <view class="time-filters">
         <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 24 }" @click="setTimeFilter(24)">今日</view>
-        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 48 }" @click="setTimeFilter(48)">昨日</view>
+        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 48 }" @click="setTimeFilter(48)">近两日</view>
         <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 168 }" @click="setTimeFilter(168)">本周</view>
       </view>
       <view class="density-toggle">
@@ -255,6 +255,7 @@ const {
   tmpHighlight,
   hasActiveFilter,
   filterTags,
+  maxAgeHours,
   buildFilterParams,
   openFilter,
   confirmFilter,
@@ -1191,6 +1192,56 @@ onReachBottom(() => {
 }
 
 /* ── 关联报道子列表 ── */
+:deep(.related-bar) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+:deep(.event-detail-link) {
+  padding: 12rpx 20rpx;
+  cursor: pointer;
+  border-radius: 12rpx;
+  -webkit-tap-highlight-color: transparent;
+}
+:deep(.event-detail-link:active) {
+  background: rgba(66, 133, 244, 0.08);
+}
+:deep(.event-detail-text) {
+  font-size: 24rpx;
+  color: #4285f4;
+  font-weight: 500;
+}
+:deep(.news-change) {
+  padding: 0 28rpx;
+  margin-top: 12rpx;
+}
+:deep(.news-change-inner) {
+  background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+  border-radius: 12rpx;
+  padding: 12rpx 20rpx;
+  border-left: 6rpx solid #43a047;
+}
+:deep(.news-change-text) {
+  font-size: 25rpx;
+  color: #2e7d32;
+  line-height: 1.55;
+}
+:deep(.news-important) {
+  padding: 0 28rpx;
+  margin-top: 10rpx;
+}
+:deep(.news-important-inner) {
+  background: linear-gradient(135deg, #e3f2fd 0%, #f3f9ff 100%);
+  border-radius: 12rpx;
+  padding: 12rpx 20rpx;
+  border-left: 6rpx solid #1e88e5;
+}
+:deep(.news-important-text) {
+  font-size: 25rpx;
+  color: #1565c0;
+  line-height: 1.55;
+}
 :deep(.related-list) {
   margin: 8rpx 0 4rpx 20rpx;
   padding-left: 20rpx;
@@ -1756,6 +1807,33 @@ onReachBottom(() => {
   }
   :deep(.related-toggle-arrow) {
     font-size: 13px;
+  }
+  :deep(.event-detail-text) {
+    font-size: 13px;
+  }
+  :deep(.news-change) {
+    padding: 0 24px;
+    margin-top: 8px;
+  }
+  :deep(.news-change-inner) {
+    border-radius: 8px;
+    padding: 8px 14px;
+    border-left-width: 4px;
+  }
+  :deep(.news-change-text) {
+    font-size: 14px;
+  }
+  :deep(.news-important) {
+    padding: 0 24px;
+    margin-top: 6px;
+  }
+  :deep(.news-important-inner) {
+    border-radius: 8px;
+    padding: 8px 14px;
+    border-left-width: 4px;
+  }
+  :deep(.news-important-text) {
+    font-size: 14px;
   }
   :deep(.related-list) {
     margin: 4px 0 2px 14px;

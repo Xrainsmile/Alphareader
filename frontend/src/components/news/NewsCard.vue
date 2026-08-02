@@ -13,6 +13,20 @@
       <rich-text v-if="highlighted && (item.summary_highlighted || item.ai_summary)" class="news-summary search-highlight" :nodes="item.summary_highlighted || item.ai_summary || ''"></rich-text>
       <text v-else-if="!isCompact && displaySummary" class="news-summary">{{ displaySummary }}</text>
 
+      <!-- 事件最新变化（事件包字段，有实质更新时展示） -->
+      <view v-if="!isCompact && !highlighted && item.latest_change" class="news-change">
+        <view class="news-change-inner">
+          <text class="news-change-text">🆕 {{ item.latest_change }}</text>
+        </view>
+      </view>
+
+      <!-- 事件重要性（事件包字段） -->
+      <view v-if="!isCompact && !highlighted && item.why_important" class="news-important">
+        <view class="news-important-inner">
+          <text class="news-important-text">{{ item.why_important }}</text>
+        </view>
+      </view>
+
       <!-- 推荐理由（why_it_matters）：一句话告诉用户为什么该关注 -->
       <view v-if="!isCompact && item.why_it_matters" class="news-why">
         <view class="why-icon-svg"></view>
