@@ -426,6 +426,37 @@ def _parse_briefing_json(raw: str, valid_event_ids: set[str]) -> dict | None:
     }
 
 
+def _dedupe_structured(structured: dict, events: list[dict]) -> dict:
+    """跨栏目 / 栏内去重，并回填空标题（P0 修复）。
+
+    优先级 must_know > worth_watching > ongoing_updates：
+      - 栏内重复（同一 event_id 出现多次）→ 仅保留首次；
+      - 跨栏目重复（低优先级栏目引用高优先级已用事件）→ 低优先级丢弃；
+      - cross_event_signals.event_ids 仅引用、不写独立 link，不在此去重；
+      - LLM 返回空 title 时用事件库正式标题回填，避免保存空内容。
+    """
+    title_by_id = {e["event_id"]: (e.get("title") or "") for e in events}
+
+    def _dedupe_column(section: str, seen: set[str]) -> list[dict]:
+        out: list[dict] = []
+        col_seen: set[str] = set()
+        for entry in structured.get(section) or []:
+            eid = str(entry.get("event_id") or "")
+            if not eid or eid in col_seen or eid in seen:
+                continue
+            col_seen.add(eid)
+            seen.add(eid)
+            if not entry.get("title"):
+                entry["title"] = (title_by_id.get(eid) or "")[:200]
+            out.append(entry)
+        return out
+
+    seen: set[str] = set()
+    for section in ("must_know", "worth_watching", "ongoing_updates"):
+        structured[section] = _dedupe_column(section, seen)
+    return structured
+
+
 def _render_markdown(structured: dict, period_display: str) -> str:
     """从结构化简报程序化生成 Markdown（兼容旧前端渲染，PRD 15.4）。"""
     lines = [f"**{period_display}**", "", structured["period_summary"], ""]
@@ -556,6 +587,7 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
             "article_count": article_count,
             "material_update_count": material_updates,
         }
+        structured = _dedupe_structured(structured, events)
         markdown = _render_markdown(structured, PERIOD_LABELS[period_label])
         digest_id = await _save_digest(
             target_date, period_label, period_start, period_end,
@@ -596,6 +628,10 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
             "Digest LLM parse failed for %s %s (attempt %d)",
             target_date, period_label, attempt,
         )
+
+    if structured:
+        # 跨栏目/栏内去重，并回填空标题（P0 修复：避免同事件落入多栏目致唯一约束冲突）
+        structured = _dedupe_structured(structured, events)
 
     if not structured:
         # 失败不覆盖上一版有效简报（PRD 15.8）
@@ -736,6 +772,18 @@ async def _save_event_links(
             rows.append(_make_link(entry, section, rank))
     for rank, entry in enumerate(structured.get("ongoing_updates") or []):
         rows.append(_make_link(entry, "ongoing_updates", rank))
+
+    # 防御性去重：即便上游漏去重，也保证 (digest_id, event_id) 唯一，
+    # 否则 add_all 会因唯一约束导致整个写入事务失败（P0）。
+    _seen_pairs: set[tuple[int, str]] = set()
+    deduped: list[DigestEventLink] = []
+    for row in rows:
+        key = (row.digest_id, str(row.event_id))
+        if key in _seen_pairs:
+            continue
+        _seen_pairs.add(key)
+        deduped.append(row)
+    rows = deduped
 
     async with async_session() as db:
         await db.execute(
