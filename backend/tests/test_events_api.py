@@ -191,6 +191,19 @@ class TestEventDetail:
         resp = await client.get("/api/v1/events/not-a-uuid")
         assert resp.status_code == 400
 
+    @pytest.mark.asyncio
+    async def test_detail_child_id_resolves_to_root(self, client, seed_events):
+        """传入子报道 ID 应自动解析到事件根，而不是返回伪事件详情（无版本/无关联报道）。"""
+        child = seed_events["children_a"][0]
+        resp = await client.get(f"/api/v1/events/{child.id}")
+        assert resp.status_code == 200
+        d = resp.json()["data"]
+        # 解析到的根标题应为事件根标题，而非子报道标题
+        assert d["title"] == "事件A标题"
+        # 子报道所属的根的版本演进与全部关联报道都应可见
+        assert [v["version"] for v in d["versions"]] == [2, 1]
+        assert len(d["articles"]) == 4
+
 
 class TestEventSources:
     @pytest.mark.asyncio

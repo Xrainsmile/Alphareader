@@ -15,6 +15,7 @@
 """
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
@@ -145,7 +146,10 @@ async def list_events(
             GROUP BY root_id
         """)
         for rid, cnt in (await db.execute(src_stmt)).all():
-            source_counts[str(rid)] = int(cnt)
+            # 原生 SQL 返回的 UUID 主键在不同驱动下可能是无连字符的 hex 字符串
+            # （SQLite CHAR(36) 经 raw text 查询），统一规整为带连字符的规范形式，
+            # 否则与 ORM 取到的 n.id（带连字符）键不匹配会回退成默认值 1。
+            source_counts[str(uuid.UUID(str(rid)))] = int(cnt)
     except Exception as e:
         logger.warning("event source-count query failed: %s", e)
 
@@ -287,6 +291,18 @@ async def get_event_detail(
     ).scalar_one_or_none()
     if root is None:
         raise HTTPException(status_code=404, detail="Event not found")
+    # 自动解析到事件根：传入子报道 ID 时沿 related_to_id 上溯到聚合根，
+    # 避免返回伪事件详情。星型拓扑下一跳即可；保留至多 5 跳兜底历史链式残留。
+    depth = 0
+    while root.related_to_id is not None and depth < 5:
+        parent = (
+            await db.execute(select(News).where(News.id == root.related_to_id))
+        ).scalar_one_or_none()
+        if parent is None:
+            break
+        root = parent
+        depth += 1
+    eid = root.id  # 后续版本 / 子报道查询统一以根 ID 为准
 
     # 版本演进（倒序）
     versions = (
@@ -306,14 +322,13 @@ async def get_event_detail(
         )
     ).scalars().all()
 
-    # 统一口径：独立信源数 = 去重统计整个事件（根 + 全部子报道）的来源
-    src_cnt = await db.execute(
-        text(
-            "SELECT COUNT(DISTINCT source) FROM news "
-            "WHERE id = :eid OR related_to_id = :eid"
-        ),
-        {"eid": eid},
-    ).scalar() or 0
+    # 统一口径：独立信源数 = 去重统计整个事件（根 + 全部子报道）的来源，
+    # 根来源与子报道来源相同时只计 1 次。直接在内存中用已取出的 root + children 计算，
+    # 避免对 UUID 主键做原生 SQL 参数绑定（SQLite 不支持、Postgres 需类型转换）。
+    sources = {root.source}
+    for c in children:
+        sources.add(c.source)
+    src_cnt = len(sources) or 1
     detail = _serialize_event(root, len(children), int(src_cnt) or 1, None, None)
     detail.update({
         "uncertainty": root.event_uncertainty,

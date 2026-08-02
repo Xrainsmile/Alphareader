@@ -5,15 +5,20 @@
 """
 
 import json
+import uuid
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models.news import News
 from app.services.event_synthesizer import (
     _build_update_params,
     _build_user_prompt,
     _parse_llm_response,
+    _parse_material_update,
     _select_articles,
+    auto_stabilize_events,
     synthesize_events,
 )
 
@@ -51,6 +56,53 @@ class TestSelectArticles:
         titles = {a["title"] for a in selected}
         assert "new1" in titles and "new2" in titles
 
+    def test_sorted_by_time_ascending(self):
+        """选满后必须按发布时间升序重排，使提示词'第 1 条为最早报道'成立，
+        避免'先放最新两条、再按评分补齐'造成的顺序混乱误导模型对事件起点的判断。"""
+        # 乱序输入：先最新、再最早、再中间
+        arts = [
+            {"title": "mid", "ai_score": 5, "ts": "2026-08-01T12:00:00"},
+            {"title": "latest", "ai_score": 9, "ts": "2026-08-03T08:00:00"},
+            {"title": "earliest", "ai_score": 3, "ts": "2026-08-01T06:00:00"},
+            {"title": "new_2", "ai_score": 1, "ts": "2026-08-03T09:00:00"},
+            {"title": "old_1", "ai_score": 8, "ts": "2026-08-01T07:00:00"},
+        ]
+        selected = _select_articles(arts, max_n=8)
+        ts_seq = [a["ts"] for a in selected]
+        assert ts_seq == sorted(ts_seq)
+        # 第 1 条是时间最早者
+        assert selected[0]["title"] == "earliest"
+
+
+# ── _parse_material_update（严格布尔解析）──
+
+
+class TestParseMaterialUpdate:
+    def test_bool_true(self):
+        assert _parse_material_update(True) is True
+
+    def test_bool_false(self):
+        # 干净的 JSON 布尔 false：明确"无实质更新"，不应触发重试
+        assert _parse_material_update(False) is False
+
+    def test_string_true(self):
+        assert _parse_material_update("true") is True
+        assert _parse_material_update("TRUE") is True
+
+    def test_string_false(self):
+        # 关键回归：字符串 "false" 在旧逻辑里被 bool() 误判为 True，
+        # 会错误递增事件版本。修复后应为 False（无实质更新）。
+        assert _parse_material_update("false") is False
+        assert _parse_material_update("False") is False
+
+    def test_garbage_returns_none(self):
+        # 数字 / 其它字符串 / None / 空 → 解析失败，触发重试
+        assert _parse_material_update(None) is None
+        assert _parse_material_update(1) is None
+        assert _parse_material_update(0) is None
+        assert _parse_material_update("maybe") is None
+        assert _parse_material_update("") is None
+
 
 # ── _build_user_prompt ──
 
@@ -62,6 +114,15 @@ class TestBuildUserPrompt:
         prompt = _build_user_prompt(articles, None)
         assert "此前事件状态" not in prompt
         assert "【报道1】" in prompt
+
+    def test_publish_time_in_article(self):
+        """每条报道须明确提供发布时间（ts），且开头提示已按时间升序排列。"""
+        articles = [{"title": "t", "source": "s", "ai_score": 7,
+                     "ai_summary": "x", "catalyst_type": None, "ts": "2026-08-01T09:30:00"}]
+        prompt = _build_user_prompt(articles, None)
+        assert "发布时间" in prompt
+        assert "2026-08-01T09:30:00" in prompt
+        assert "第 1 条为最早报道" in prompt
 
     def test_prev_state_included(self):
         articles = [{"title": "t", "source": "s", "ai_score": 7,
@@ -119,6 +180,19 @@ class TestParseLlmResponse:
         assert parsed["latest_change"] == ""
         assert parsed["uncertainty"] == ""
         assert parsed["watch_next"] == ""
+
+    def test_string_false_is_no_update_not_failure(self):
+        """模型返回字符串 \"false\" 应被正确解析为无实质更新，
+        而非旧逻辑 bool(\"false\")==True 般误判导致错误递增版本。"""
+        parsed = _parse_llm_response(_event_json(has_material_update="false"))
+        assert parsed is not None
+        assert parsed["has_material_update"] is False
+
+    def test_garbage_material_update_triggers_retry(self):
+        """has_material_update 为数字 / None / 其它字符串 → 整段解析失败 → None（触发重试）。"""
+        assert _parse_llm_response(_event_json(has_material_update=1)) is None
+        assert _parse_llm_response(_event_json(has_material_update="maybe")) is None
+        assert _parse_llm_response(_event_json(has_material_update=None)) is None
 
 
 # ── _build_update_params（版本机制）──
@@ -326,3 +400,50 @@ class TestSynthesizeEvents:
         assert result["synthesized"] == 0
         assert bad_client.post.await_count == 2  # 重试 1 次
         mock_session.execute.assert_not_called()  # 旧事件信息不被破坏
+
+
+# ── auto_stabilize_events（每日维护：developing 超时 → stable）──
+
+
+class TestAutoStabilize:
+    @pytest.mark.asyncio
+    async def test_developing_stale_becomes_stable(self, db_session):
+        """developing 且无实质更新超 EVENT_STABLE_AFTER_HOURS 的事件 → stable；
+        developing 但近期有更新、以及 resolved 事件应保持不变。"""
+        from tests.conftest import _TestSession
+
+        old = datetime.now(timezone.utc) - timedelta(hours=72)
+        stale = News(
+            id=uuid.uuid4(), title="stale", source="X", url="https://x.example/s",
+            ai_score=7, ai_summary="s", event_status="developing",
+            event_last_updated_at=old,
+        )
+        fresh = News(
+            id=uuid.uuid4(), title="fresh", source="Y", url="https://y.example/f",
+            ai_score=7, ai_summary="s", event_status="developing",
+            event_last_updated_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+        resolved = News(
+            id=uuid.uuid4(), title="resolved", source="Z", url="https://z.example/r",
+            ai_score=7, ai_summary="s", event_status="resolved",
+            event_last_updated_at=old,
+        )
+        db_session.add_all([stale, fresh, resolved])
+        await db_session.commit()
+
+        # auto_stabilize_events 内部用模块级 async_session，替换为测试用 in-memory 会话
+        import app.services.event_synthesizer as es
+        orig = es.async_session
+        es.async_session = _TestSession
+        try:
+            result = await auto_stabilize_events()
+        finally:
+            es.async_session = orig
+
+        assert result["stable"] == 1
+        await db_session.refresh(stale)
+        await db_session.refresh(fresh)
+        await db_session.refresh(resolved)
+        assert stale.event_status == "stable"
+        assert fresh.event_status == "developing"  # 近期有更新，保持
+        assert resolved.event_status == "resolved"  # 不依赖时间自动判定

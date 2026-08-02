@@ -69,25 +69,38 @@ SYSTEM_PROMPT = """你是一位资深金融主编。多家媒体报道了同一�
  "uncertainty": "...", "watch_next": "...", "status": "new", "has_material_update": true}"""
 
 
+def _ts_key(a: dict) -> str:
+    """归一化发布时间为可比较字符串（root 的 ts 是 ISO 字符串，子报道的 ts 是 datetime，
+    混合排序会抛 TypeError，故统一转 ISO）。空值兜底为空串排在最后。"""
+    ts = a.get("ts")
+    if isinstance(ts, datetime):
+        return ts.isoformat()
+    return str(ts or "")
+
+
 def _select_articles(articles: list[dict], max_n: int = _MAX_ARTICLES_PER_EVENT) -> list[dict]:
     """选取送给 LLM 的报道：高分为准，但保证最新 N 条入选（PRD 7.1）。
 
-    避免单纯按评分截取遗漏最新实质更新。
+    避免单纯按评分截取遗漏最新实质更新。选满后以发布时间升序重排，
+    使提示词"第 1 条为最早报道"成立，避免模型误判事件起点 / latest_change。
     """
     if len(articles) <= max_n:
-        return articles
-    keep_recent = min(_GUARANTEED_RECENT, max_n)
-    by_score = sorted(articles, key=lambda a: a.get("ai_score") or 0, reverse=True)
-    by_recency = sorted(articles, key=lambda a: a.get("ts") or "", reverse=True)
-    # 先保底最新 N 条，再按评分补满（最新与高分重叠时也能选够 max_n）
-    picked = by_recency[:keep_recent]
-    seen = {id(a) for a in picked}
-    for a in by_score:
-        if len(picked) >= max_n:
-            break
-        if id(a) not in seen:
-            seen.add(id(a))
-            picked.append(a)
+        picked = articles
+    else:
+        keep_recent = min(_GUARANTEED_RECENT, max_n)
+        by_score = sorted(articles, key=lambda a: a.get("ai_score") or 0, reverse=True)
+        by_recency = sorted(articles, key=_ts_key, reverse=True)
+        # 先保底最新 N 条，再按评分补满（最新与高分重叠时也能选够 max_n）
+        picked = by_recency[:keep_recent]
+        seen = {id(a) for a in picked}
+        for a in by_score:
+            if len(picked) >= max_n:
+                break
+            if id(a) not in seen:
+                seen.add(id(a))
+                picked.append(a)
+    # 重新按发布时间升序排列，使"第 1 条为最早报道"成立
+    picked.sort(key=_ts_key)
     return picked
 
 
@@ -102,9 +115,9 @@ def _build_user_prompt(articles: list[dict], prev: dict | None) -> str:
             f"当前版本：v{prev.get('event_version') or 1}\n"
             f"上次最新变化：{prev.get('event_latest_change') or '无'}"
         )
-    lines = ["以下是同一事件的报道（第 1 条为最早报道）："]
+    lines = ["以下是同一事件的报道（已按发布时间升序排列，第 1 条为最早报道）："]
     for i, a in enumerate(articles, 1):
-        seg = [f"【报道{i}】来源：{a['source']}｜评分：{a['ai_score']}"]
+        seg = [f"【报道{i}】来源：{a['source']}｜评分：{a['ai_score']}｜发布时间：{a.get('ts') or '未知'}"]
         seg.append(f"标题：{a['title']}")
         if a.get("ai_summary"):
             seg.append(f"摘要：{a['ai_summary'][:_SUMMARY_PREVIEW_CHARS]}")
@@ -115,8 +128,29 @@ def _build_user_prompt(articles: list[dict], prev: dict | None) -> str:
     return "\n\n".join(parts)
 
 
+def _parse_material_update(value) -> bool | None:
+    """严格解析 has_material_update。
+
+    仅接受：
+      - Python 布尔 True / False（模型返回原生 JSON 布尔，最常见）
+      - 字符串 "true" / "false"（不区分大小写）
+    其他值（None / 数字 / 其它字符串）→ 返回 None 表示解析失败，
+    由调用方当作整段解析失败触发重试。
+    注意：bool("false") 为 True，会错误递增事件版本，故绝不能简单用 bool()。
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low == "true":
+            return True
+        if low == "false":
+            return False
+    return None
+
+
 def _parse_llm_response(raw: str) -> dict | None:
-    """解析 LLM 返回的事件包 JSON，容忍 ```json 围栏。失败返回 None。
+    """解析 LLM 返回的事件包 JSON，容忍 ```json 围栏。失败返回 None（触发重试）。
 
     必需字段：event_title / event_summary / has_material_update。
     可选字段缺失时给安全默认（空字符串 / developing）。
@@ -133,6 +167,11 @@ def _parse_llm_response(raw: str) -> dict | None:
     summary = str(data.get("event_summary") or "").strip()
     if not title or not summary:
         return None
+    hmu = _parse_material_update(data.get("has_material_update"))
+    if hmu is None:
+        # 关键字段缺失 / 格式异常 → 整段解析失败 → 触发重试，
+        # 避免 "false" 等脏值被误判为 True 而错误递增事件版本
+        return None
     status = str(data.get("status") or "").strip()
     if status not in _EVENT_STATUS_VALUES:
         status = ""
@@ -144,7 +183,7 @@ def _parse_llm_response(raw: str) -> dict | None:
         "uncertainty": str(data.get("uncertainty") or "").strip(),
         "watch_next": str(data.get("watch_next") or "").strip(),
         "status": status,
-        "has_material_update": bool(data.get("has_material_update")),
+        "has_material_update": hmu,
     }
 
 
@@ -392,3 +431,32 @@ async def synthesize_events() -> dict:
         "Event synthesis done: %d/%d clusters synthesized", synthesized, len(clusters)
     )
     return {"enabled": True, "candidates": len(clusters), "synthesized": synthesized}
+
+
+_AUTO_STABLE_SQL = text("""
+    UPDATE news
+    SET event_status = 'stable'
+    WHERE related_to_id IS NULL
+      AND event_status = 'developing'
+      AND COALESCE(event_last_updated_at, created_at) < :cutoff
+""")
+
+
+async def auto_stabilize_events() -> dict:
+    """每日维护：developing 且无实质更新超 EVENT_STABLE_AFTER_HOURS 的事件 → stable。
+
+    - 仅处理 developing：resolved 不依赖时间自动判定结束，保持人工 / 事实依赖。
+    - 以 event_last_updated_at（仅在"有实质更新"时推进）或 created_at 为基准，
+      超过阈值即视为自然平息，避免长期无新报道的事件一直保持 developing。
+    返回受影响的事件数。
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=settings.EVENT_STABLE_AFTER_HOURS)
+    async with async_session() as session:
+        result = await session.execute(_AUTO_STABLE_SQL, {"cutoff": cutoff})
+        await session.commit()
+        updated = result.rowcount or 0
+    logger.info(
+        "Event auto-stabilize: %d developing events → stable (no material update since %s)",
+        updated, cutoff.isoformat(),
+    )
+    return {"stable": updated}

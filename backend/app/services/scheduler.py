@@ -273,6 +273,20 @@ async def _pipeline_job():
         raise  # Re-raise so APScheduler records it as EVENT_JOB_ERROR
 
 
+async def _event_maintenance_job():
+    """事件状态每日维护：developing 且无实质更新超时的事件 → stable。
+    仅时间点触发（非关键路径），失败不影响主管线。"""
+    try:
+        from app.services.event_synthesizer import auto_stabilize_events
+        result = await auto_stabilize_events()
+        logger.info("Event maintenance job completed: %s", result)
+        return result
+    except Exception as e:
+        logger.exception("Event maintenance job failed: %s", e)
+        await send_alert("🔴 Event Maintenance Job Failed", f"{type(e).__name__}: {e}")
+        raise
+
+
 async def _rs_rating_job():
     """RS Rating 定时计算 — 每个交易日 11:30 和 15:00 触发。
 
@@ -1125,6 +1139,22 @@ async def _run_scheduler_jobs():
         ),
         id="daily_briefing",
         name=f"Daily Briefing PM (Mon-Fri 16:00 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # ── 事件状态每日维护：developing 且无实质更新超 EVENT_STABLE_AFTER_HOURS → stable ──
+    # 每天 04:00 运行（非关键路径）；resolved 不依赖时间自动判定。
+    scheduler.add_job(
+        _event_maintenance_job,
+        trigger=CronTrigger(
+            hour="4",
+            minute="0",
+            timezone=settings.TIMEZONE,
+        ),
+        id="event_maintenance_0400",
+        name=f"Event Status Maintenance (Daily 04:00 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,
