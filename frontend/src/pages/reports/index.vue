@@ -24,6 +24,7 @@
       >
         <text class="tab-text">每日研报</text>
       </view>
+      <!-- 深度报告 tab 已暂停（2026-08-02）：模块注释掉
       <view
         class="tab-item"
         :class="{ active: activeTab === 'reports' }"
@@ -31,7 +32,8 @@
       >
         <text class="tab-text">深度报告</text>
       </view>
-      <view class="tab-indicator" :style="{ left: tabIndicatorLeft, width: '33.33%' }"></view>
+      -->
+      <view class="tab-indicator" :style="{ left: tabIndicatorLeft, width: '50%' }"></view>
     </view>
 
     <!-- ═══════════════════════════════════════════
@@ -254,9 +256,9 @@
     </view>
 
     <!-- ═══════════════════════════════════════════
-         Tab 3: 复盘（原有 Reports 列表）
+         Tab 3: 复盘（原有 Reports 列表）— 深度报告模块已暂停（2026-08-02）
          ═══════════════════════════════════════════ -->
-    <view v-if="activeTab === 'reports'" class="reports-tab">
+    <view v-if="false /* 深度报告模块已暂停 2026-08-02 */" class="reports-tab">
       <!-- Reports List -->
       <view class="reports-list">
         <view
@@ -323,9 +325,9 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
-import { fetchReportsList, fetchDigests, fetchBriefings } from '@/utils/api'
+import { fetchDigests, fetchBriefings } from '@/utils/api'
 import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
-import { rawReports } from '@/data/reports'
+// 深度报告模块已暂停（2026-08-02）：import { rawReports } from '@/data/reports'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PcSidebar from '@/components/common/PcSidebar.vue'
@@ -339,14 +341,14 @@ const activeTab = ref('digest')
 const rightTabs = [
   { key: 'digest', icon: '📰', label: 'Reports', desc: '过去几小时发生了什么' },
   { key: 'briefing', icon: '📊', label: '每日研报', desc: 'AI 市场分析' },
-  { key: 'reports', icon: '📝', label: '深度报告', desc: '历史复盘与专题' },
+  // 深度报告 已暂停（2026-08-02）：{ key: 'reports', icon: '📝', label: '深度报告', desc: '历史复盘与专题' },
 ]
 
-// ── Tab indicator position (3 tabs) ──
+// ── Tab indicator position (2 tabs: digest / briefing；深度报告已暂停) ──
 const tabIndicatorLeft = computed(() => {
   if (activeTab.value === 'digest') return '0%'
-  if (activeTab.value === 'briefing') return '33.33%'
-  return '66.66%'
+  if (activeTab.value === 'briefing') return '50%'
+  return '100%' // 防御：reports 已禁用
 })
 
 function switchTab(tab) {
@@ -358,9 +360,10 @@ function switchTab(tab) {
   if (tab === 'briefing' && briefingList.value.length === 0 && !briefingLoading.value) {
     loadBriefings()
   }
-  if (tab === 'reports' && reportsList.value.length === 0 && !reportsLoading.value) {
-    loadReports()
-  }
+  // 深度报告 已暂停（2026-08-02）
+  // if (tab === 'reports' && reportsList.value.length === 0 && !reportsLoading.value) {
+  //   loadReports()
+  // }
 }
 
 // ── Digest State ──
@@ -369,9 +372,9 @@ const digestLoading = ref(false)
 const digestDays = ref(7)
 const expandedIds = reactive(new Set())
 
-// ── Reports State ──
-const reportsList = ref([])
-const reportsLoading = ref(false)
+// ── Reports State（深度报告模块已暂停 2026-08-02）──
+// const reportsList = ref([])
+// const reportsLoading = ref(false)
 
 // ── Briefing State ──
 const briefingList = ref([])
@@ -507,47 +510,49 @@ async function loadMoreBriefings() {
   await loadBriefings()
 }
 
+// 深度报告模块已暂停（2026-08-02），以下函数注释掉
 // 从 Mock 数据生成 fallback 列表
-function getLocalReports() {
-  return rawReports.map((raw, idx) => {
-    const { meta } = parseFrontMatter(raw)
-    return {
-      id: idx,
-      sync_id: `local-${idx}`,
-      title: meta.title || '无标题',
-      date: meta.date || '',
-      cover: meta.cover || '',
-      summary: meta.summary || '',
-      _isLocal: true
-    }
-  })
-}
+// function getLocalReports() {
+//   return rawReports.map((raw, idx) => {
+//     const { meta } = parseFrontMatter(raw)
+//     return {
+//       id: idx,
+//       sync_id: `local-${idx}`,
+//       title: meta.title || '无标题',
+//       date: meta.date || '',
+//       cover: meta.cover || '',
+//       summary: meta.summary || '',
+//       _isLocal: true
+//     }
+//   })
+// }
+//
+// async function loadReports() {
+//   reportsLoading.value = true
+//   try {
+//     const data = await fetchReportsList()
+//     if (data && data.length > 0) {
+//       reportsList.value = data
+//     } else {
+//       reportsList.value = getLocalReports()
+//     }
+//   } catch (e) {
+//     console.warn('API 不可用，使用本地数据:', e.message)
+//     reportsList.value = getLocalReports()
+//   } finally {
+//     reportsLoading.value = false
+//   }
+// }
 
-async function loadReports() {
-  reportsLoading.value = true
-  try {
-    const data = await fetchReportsList()
-    if (data && data.length > 0) {
-      reportsList.value = data
-    } else {
-      reportsList.value = getLocalReports()
-    }
-  } catch (e) {
-    console.warn('API 不可用，使用本地数据:', e.message)
-    reportsList.value = getLocalReports()
-  } finally {
-    reportsLoading.value = false
-  }
-}
-
-const goDetail = (id) => {
-  const item = reportsList.value.find(r => r.id === id)
-  if (item && item._isLocal) {
-    uni.navigateTo({ url: `/pages/reports/detail?idx=${id}` })
-  } else {
-    uni.navigateTo({ url: `/pages/reports/detail?id=${id}` })
-  }
-}
+// 深度报告模块已暂停（2026-08-02），goDetail 不再使用
+// const goDetail = (id) => {
+//   const item = reportsList.value.find(r => r.id === id)
+//   if (item && item._isLocal) {
+//     uni.navigateTo({ url: `/pages/reports/detail?idx=${id}` })
+//   } else {
+//     uni.navigateTo({ url: `/pages/reports/detail?id=${id}` })
+//   }
+// }
 
 const onShare = (item) => {
   // #ifdef H5

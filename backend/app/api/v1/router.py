@@ -10,7 +10,8 @@ from app.api.v1.digests import router as digests_router
 from app.api.v1.events import router as events_router
 from app.api.v1.health import router as health_router
 from app.api.v1.news import router as news_router
-from app.api.v1.reports import router as reports_router
+# 深度报告模块已暂停（2026-08-02）
+# from app.api.v1.reports import router as reports_router
 from app.api.v1.sandbox import router as sandbox_router
 from app.api.v1.sepa import router as sepa_router
 from app.api.v1.stocks import router as stocks_router
@@ -27,7 +28,8 @@ _protected = APIRouter(dependencies=[Depends(require_api_key)])
 _protected.include_router(news_router)
 _protected.include_router(events_router)
 _protected.include_router(bridge_router)
-_protected.include_router(reports_router)
+# 深度报告模块已暂停（2026-08-02）
+# _protected.include_router(reports_router)
 _protected.include_router(digests_router)
 _protected.include_router(briefings_router)
 _protected.include_router(stocks_router)
