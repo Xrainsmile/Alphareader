@@ -1,7 +1,7 @@
 """add prefilter_reason to news
 
 Revision ID: a9b8c7_prefilter_reason
-Revises: s1t2r3_market_adaptability
+Revises: x6y7z8a9b0c1
 Create Date: 2026-08-03
 
 为 news 表新增 prefilter_reason 列，记录新闻经预筛（LLM 评分前过滤/压缩）的决策原因，
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "a9b8c7_prefilter_reason"
-down_revision = "s1t2r3_market_adaptability"
+down_revision = "x6y7z8a9b0c1"
 branch_labels = None
 depends_on = None
 
