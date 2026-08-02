@@ -34,6 +34,9 @@ router = APIRouter(prefix="/news", tags=["news"])
 # 在 HN 重力公式的 points 上加分，让事件卡在 feed 里比同龄单信源新闻停留更久。
 EVENT_BOOST_PER_SOURCE = 0.5   # 每条关联报道加 0.5 分 points
 EVENT_BOOST_MAX = 2.0          # 加分上限（≥4 个信源封顶）
+EVENT_GRAVITY = 1.2            # 事件衰减指数：多信源事件持续发酵，生命周期长
+                               # 于单篇报道，用比全局 1.8 更慢的衰减，否则事件卡
+                               # 几小时后就被埋出首页（加分无法补偿 1.8 次方衰减）
 
 # Track background pipeline status
 _pipeline_status: dict = {"running": False, "last_result": None}
@@ -153,9 +156,9 @@ async def list_news(
         try:
             # 多信源事件加分：关联报道数 × EVENT_BOOST_PER_SOURCE，封顶 EVENT_BOOST_MAX。
             # 相关子查询在 ~200 行的展示窗口内代价可忽略。
+            child_cnt_sql = "(SELECT COUNT(*) FROM news c WHERE c.related_to_id = news.id)"
             boost_sql = (
-                f"+ LEAST(COALESCE((SELECT COUNT(*) FROM news c "
-                f"WHERE c.related_to_id = news.id), 0) * {EVENT_BOOST_PER_SOURCE}, "
+                f"+ LEAST(COALESCE({child_cnt_sql}, 0) * {EVENT_BOOST_PER_SOURCE}, "
                 f"{EVENT_BOOST_MAX})"
             )
             # 事件新鲜度：根发布时间与最新子报道发布时间取大者
@@ -165,10 +168,15 @@ async def list_news(
                 "(SELECT MAX(c2.published_at) FROM news c2 "
                 "WHERE c2.related_to_id = news.id), published_at))"
             )
+            # 事件差异化衰减：有子报道的事件用 EVENT_GRAVITY（更慢），单篇用全局 gravity
+            gravity_sql = (
+                f"CASE WHEN COALESCE({child_cnt_sql}, 0) > 0 "
+                f"THEN {EVENT_GRAVITY} ELSE {gravity} END"
+            )
             ranking_expr = text(gravity_sql_expression(
                 score_column="ai_score",
                 time_column=event_time_sql,
-                gravity=gravity,
+                gravity=gravity_sql,
                 boost_sql=boost_sql,
             ))
             order_clause = desc(ranking_expr)
@@ -236,7 +244,7 @@ async def list_news(
         ranking_score = calculate_ranking_score(
             ai_score=n.ai_score or 0,
             publish_time=effective_pub,
-            gravity=gravity,
+            gravity=EVENT_GRAVITY if child_cnt > 0 else gravity,
             boost=boost,
         )
         items.append({

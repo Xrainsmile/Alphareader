@@ -79,7 +79,7 @@ def calculate_ranking_score(
 def gravity_sql_expression(
     score_column: str = "ai_score",
     time_column: str = "published_at",
-    gravity: float = 1.8,
+    gravity: float | str = 1.8,
     boost_sql: str = "",
 ) -> str:
     """生成 Hacker Gravity 排名的 PostgreSQL SQL 表达式。
@@ -88,8 +88,9 @@ def gravity_sql_expression(
 
     Args:
         score_column: AI 评分列名（作为 HN 公式中的 points），取值范围 0-10。
-        time_column: 发布时间列名（TIMESTAMPTZ）。
-        gravity: 时间衰减指数，默认 1.8（同 HN）。
+        time_column: 发布时间列名或 SQL 时间表达式（如事件新鲜度 GREATEST(...)）。
+        gravity: 时间衰减指数，默认 1.8（同 HN）。也可传 SQL 片段实现
+                 按行差异化衰减，例如 "CASE WHEN ... THEN 1.2 ELSE 1.8 END"。
         boost_sql: points 加成的 SQL 片段（如多信源事件加分），
                    会原样拼接到评分列之后，例如 "+ LEAST(..., 2.0)"。
 
