@@ -32,6 +32,8 @@ from app.models.analytics import PipelineRun
 from app.models.news import News
 from app.redis import get_redis
 from app.services.llm_news_filter import FilterResult, ScoredNewsItem, filter_news
+from app.services.prefilter import InheritedItem, PrefilterResult
+from app.services import prefilter as prefilter_module
 from app.services.rss_fetcher import REDIS_DEDUP_KEY, _normalize_url, fetch_all_feeds
 from app.utils.deduplicator import NewsDeduplicator
 
@@ -254,6 +256,10 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                         # 超过 2^63 的值需转换为负数，否则报 "value out of int64 range"
                         simhash_fingerprint=sh.value if sh.value < 2**63 else sh.value - 2**64,
                     )
+                    # 预筛决策原因（若启用预筛）：供影子测试审计与误杀排查
+                    prefilter_reason = getattr(item, "prefilter_reason", None)
+                    if prefilter_reason:
+                        values["prefilter_reason"] = prefilter_reason
                     if related_to_id is not None:
                         values["related_to_id"] = related_to_id
                     if item.sentiment_score is not None:
@@ -296,6 +302,37 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
         logger.warning("⚠️ %d item(s) failed to store", errors)
     logger.info("Stored %d new scored items to DB (%d total processed)", stored, len(stored_urls))
     return stored, stored_urls
+
+
+def _attach_prefilter_reasons(scored_items: list[ScoredNewsItem], pref: PrefilterResult) -> None:
+    """将预筛决策原因写入评分结果，供落库审计。"""
+    reason_by_url = {
+        url: d.reason_string()
+        for url, d in pref.decisions.items()
+        if d.reasons
+    }
+    for si in scored_items:
+        r = reason_by_url.get(getattr(si.raw, "url", ""))
+        if r:
+            si.prefilter_reason = r
+
+
+def _synthesize_inherited_item(inh: InheritedItem) -> ScoredNewsItem:
+    """为"同事件无新事实"的跟稿构造一个继承事件根评分的条目，跳过 LLM 直接入库。"""
+    raw = inh.raw
+    content = getattr(raw, "content", "") or ""
+    return ScoredNewsItem(
+        raw=raw,
+        score=int(round(inh.root_score)),
+        reason="继承事件根评分（同事件无新事实）",
+        summary=content[:100] if content else getattr(raw, "title", ""),
+        tags=list(inh.root_tags or []),
+        chinese_title="",
+        relevant_tickers=[],
+        why_it_matters="",
+        is_highlight=False,
+        prefilter_reason=inh.reason,
+    )
 
 
 async def run_pipeline() -> dict:
@@ -408,11 +445,62 @@ async def run_pipeline() -> dict:
         await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
         return summary
 
+    # Step 2.75: 预筛（硬规则 / 信源质量门控 / 同事件新事实压缩）
+    # 在 LLM 评分前拦截低价值内容并压缩"媒体跟稿"的重复评分，节省大量评分 token。
+    # PREFILTER_SHADOW_MODE 下只记录决策不丢弃，用于上线前影子测试对比真实评分。
+    pref: PrefilterResult | None = None
+    prefiltered_items = unique_items
+    if settings.PREFILTER_ENABLED:
+        try:
+            async with async_session() as pf_session:
+                source_quality = await prefilter_module.compute_source_quality(pf_session)
+                pref = await prefilter_module.prefilter_news(
+                    unique_items, session=pf_session, source_quality=source_quality
+                )
+            if settings.PREFILTER_SHADOW_MODE:
+                # 影子模式：不丢弃、不压缩，全部仍送 LLM，仅记录决策供对比
+                prefiltered_items = unique_items
+            else:
+                prefiltered_items = pref.kept
+                if pref.dropped_urls:
+                    await _mark_urls_as_seen(pref.dropped_urls)
+                logger.info(
+                    "预筛生效：丢弃 %d / 继承 %d / 审计 %d / 送评 %d",
+                    len(pref.dropped_urls), len(pref.inherited),
+                    pref.audit_count, len(pref.kept),
+                )
+            summary["prefilter"] = {
+                "shadow": settings.PREFILTER_SHADOW_MODE,
+                "total": len(unique_items),
+                "drop": (
+                    sum(1 for d in pref.decisions.values() if d.shadow_action == "drop")
+                    if settings.PREFILTER_SHADOW_MODE
+                    else len(pref.dropped_urls)
+                ),
+                "inherit": (
+                    sum(1 for d in pref.decisions.values() if d.shadow_action == "inherit")
+                    if settings.PREFILTER_SHADOW_MODE
+                    else len(pref.inherited)
+                ),
+                "audit": pref.audit_count,
+            }
+        except Exception as e:
+            logger.warning("预筛执行失败，降级为不过滤（全部送评）: %s", e)
+            summary["errors"].append(f"prefilter: {e}")
+            pref = None
+            prefiltered_items = unique_items
+
     # Step 3: Filter via DeepSeek
     filter_result: FilterResult | None = None
     try:
-        filter_result = await filter_news(unique_items)
-        scored_items = filter_result.scored
+        filter_result = await filter_news(prefiltered_items)
+        scored_items = list(filter_result.scored)
+        # 将预筛决策原因挂到评分结果，供落库审计；正常模式追加"继承事件根评分"的条目
+        if pref is not None:
+            _attach_prefilter_reasons(scored_items, pref)
+            if not settings.PREFILTER_SHADOW_MODE:
+                for inh in pref.inherited:
+                    scored_items.append(_synthesize_inherited_item(inh))
     except Exception as e:
         logger.error("DeepSeek filter stage failed: %s", e)
         summary["errors"].append(f"filter: {e}")

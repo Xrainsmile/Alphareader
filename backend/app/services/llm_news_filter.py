@@ -436,6 +436,8 @@ class ScoredNewsItem:
     catalyst_type: str | None = None
     sentiment_entity: str | None = None
     sentiment_reasoning: str | None = None
+    # 预筛决策原因（若启用预筛）：记录通过/继承/被拦截原因，落库供审计
+    prefilter_reason: str | None = None
 
 
 # P0 ①⑥：批次结果的显式状态，让 filter_news 能准确统计

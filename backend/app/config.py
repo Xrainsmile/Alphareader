@@ -107,6 +107,32 @@ class Settings(BaseSettings):
     # 每日维护：developing 且无实质更新超过该小时数 → 自动转 stable（resolved 不依赖时间自动判定）
     EVENT_STABLE_AFTER_HOURS: int = 48
 
+    # ── 新闻预筛（LLM 评分前过滤/压缩，节省评分 token）──
+    # 优先拦截低价值内容、按信源历史质量门控、同事件跟稿继承根评分。
+    # 上线前务必保持 PREFILTER_SHADOW_MODE=True 跑 3-7 天影子测试，确认误杀率达标再关闭。
+    PREFILTER_ENABLED: bool = True
+    # 影子模式：仅记录预筛决策、不丢弃、不压缩，全部仍送 LLM 以对比真实评分
+    PREFILTER_SHADOW_MODE: bool = True
+    # 正常模式下，随机保留该比例的被拦截内容继续送 LLM，作为长期审计样本（防规则漂移）
+    PREFILTER_AUDIT_SAMPLE_RATE: float = 0.05
+    # 同事件标题相似度阈值（difflib，零 token）；低于则视为不同事件、需单独评分
+    PREFILTER_EVENT_SIM_THRESHOLD: float = 0.85
+    # 信源历史质量统计窗口（天）
+    PREFILTER_SOURCE_QUALITY_DAYS: int = 30
+    # C 级信源至少需要的硬信息信号数
+    PREFILTER_TIER_C_MIN_HARD_SIGNAL: int = 2
+    # D 级信源判定：展示通过率低于该值且样本数 >= 下限
+    PREFILTER_TIER_D_DISPLAY_RATE: float = 0.03
+    PREFILTER_TIER_D_MIN_SAMPLES: int = 200
+    # prefilter_score <= 该值则丢弃（兜底，官方/重大事件已提前放行不受影响）
+    PREFILTER_DROP_PREFILTER_SCORE: int = 1
+    # 低价值模式正则（命中即丢弃）。可在 .env 用 JSON 数组覆盖。
+    PREFILTER_LOW_VALUE_PATTERNS: list[str] = Field(default_factory=list)
+    # 权威/一手信源名称（命中强制 A 级、不受历史分限流）
+    PREFILTER_OFFICIAL_SOURCES: list[str] = Field(default_factory=list)
+    # 权威/一手信源域名片段
+    PREFILTER_OFFICIAL_DOMAINS: list[str] = Field(default_factory=list)
+
     # ── 调度器 — Pipeline 定时执行 ──
     PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）
     PIPELINE_END_HOUR: int = 23    # 结束小时（0-23）

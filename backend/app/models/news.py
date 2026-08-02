@@ -72,6 +72,8 @@ class News(Base):
     # P5: 去重指纹——持久化到 DB，评分前加载 7 天历史用于跨天旧闻识别
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     simhash_fingerprint: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    # 预筛决策原因：记录该条新闻通过/继承/被拦截的原因，便于影子测试审计与误杀排查
+    prefilter_reason: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
