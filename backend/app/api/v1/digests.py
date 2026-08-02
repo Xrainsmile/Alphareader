@@ -32,12 +32,16 @@ class DigestListItem(BaseModel):
     id: int
     digest_date: str  # "YYYY-MM-DD"
     period_label: str  # "morning" / "midday" / "evening" / "night"
-    period_display: str  # "早间概览"
+    period_display: str  # "早间简报"
     period_icon: str  # "🌅"
     period_start: str  # ISO datetime
     period_end: str  # ISO datetime
     news_count: int
-    content: str  # Markdown 总结
+    content: str  # Markdown 总结（v1 兼容）
+    schema_version: int = 1  # 1=旧版 Markdown；2=事件化结构化简报
+    structured_content: dict | None = None  # v2：must_know/worth_watching/signals/upcoming
+    event_count: int | None = None
+    material_update_count: int | None = None
     created_at: str  # ISO datetime
 
     class Config:
@@ -46,6 +50,26 @@ class DigestListItem(BaseModel):
 
 class DigestDetail(DigestListItem):
     pass
+
+
+def _to_item(d: NewsDigest) -> dict:
+    structured = d.structured_content if d.schema_version == 2 else None
+    return DigestListItem(
+        id=d.id,
+        digest_date=d.digest_date.isoformat(),
+        period_label=d.period_label,
+        period_display=PERIOD_LABELS.get(d.period_label, d.period_label),
+        period_icon=PERIOD_ICONS.get(d.period_label, "📰"),
+        period_start=d.period_start.isoformat(),
+        period_end=d.period_end.isoformat(),
+        news_count=d.news_count,
+        content=d.content,
+        schema_version=d.schema_version,
+        structured_content=structured,
+        event_count=(structured or {}).get("event_count"),
+        material_update_count=(structured or {}).get("material_update_count"),
+        created_at=d.created_at.isoformat() if d.created_at else "",
+    ).model_dump()
 
 
 # ── Endpoints ──
@@ -67,21 +91,7 @@ async def list_digests(
     result = await db.execute(stmt)
     digests = result.scalars().all()
 
-    items = [
-        DigestListItem(
-            id=d.id,
-            digest_date=d.digest_date.isoformat(),
-            period_label=d.period_label,
-            period_display=PERIOD_LABELS.get(d.period_label, d.period_label),
-            period_icon=PERIOD_ICONS.get(d.period_label, "📰"),
-            period_start=d.period_start.isoformat(),
-            period_end=d.period_end.isoformat(),
-            news_count=d.news_count,
-            content=d.content,
-            created_at=d.created_at.isoformat() if d.created_at else "",
-        ).model_dump()
-        for d in digests
-    ]
+    items = [_to_item(d) for d in digests]
     return APIResponse(data=items)
 
 
@@ -98,18 +108,7 @@ async def get_digest(
     if not d:
         raise HTTPException(status_code=404, detail="Digest not found")
 
-    return APIResponse(data=DigestDetail(
-        id=d.id,
-        digest_date=d.digest_date.isoformat(),
-        period_label=d.period_label,
-        period_display=PERIOD_LABELS.get(d.period_label, d.period_label),
-        period_icon=PERIOD_ICONS.get(d.period_label, "📰"),
-        period_start=d.period_start.isoformat(),
-        period_end=d.period_end.isoformat(),
-        news_count=d.news_count,
-        content=d.content,
-        created_at=d.created_at.isoformat() if d.created_at else "",
-    ).model_dump())
+    return APIResponse(data=_to_item(d))
 
 
 class GenerateRequest(BaseModel):

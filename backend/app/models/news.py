@@ -50,6 +50,25 @@ class News(Base):
     event_title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     event_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     event_article_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # 事件化新闻扩展字段（事件包：变化/重要性/不确定性/观察点/状态/版本）
+    event_latest_change: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_why_important: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_uncertainty: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_watch_next: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # new / developing / stable / resolved
+    event_status: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    event_first_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    event_last_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # 独立信源数（同一媒体多篇只计 1），与报道总数 event_article_count 分开统计
+    event_source_count: Mapped[int | None] = mapped_column(
+        SmallInteger, nullable=True, index=True
+    )
+    # 事件版本：初始 1，has_material_update=true 时 +1（快照见 event_versions 表）
+    event_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # P5: 去重指纹——持久化到 DB，评分前加载 7 天历史用于跨天旧闻识别
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     simhash_fingerprint: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)

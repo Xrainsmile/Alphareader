@@ -10,6 +10,7 @@ Unique constraint on (digest_date, period_label) prevents duplicate digests.
 from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -33,8 +34,16 @@ class NewsDigest(Base):
     # 该时段收录的新闻数量
     news_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    # DeepSeek 生成的总结内容（Markdown 格式）
+    # DeepSeek 生成的总结内容（Markdown 格式，schema v1 兼容保留）
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # 事件化简报（schema v2）：结构化 JSON——period_summary/must_know/
+    # worth_watching/cross_event_signals/upcoming，事件条目带 event_id 可跳转详情
+    structured_content: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # 1 = 旧版 Markdown；2 = 事件化结构化简报。前端优先读 structured_content
+    schema_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

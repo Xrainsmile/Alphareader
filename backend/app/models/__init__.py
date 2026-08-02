@@ -1,6 +1,7 @@
 from app.models.analytics import AnalyticsDaily, PipelineRun
 from app.models.catalyst import NewsCatalystStock
 from app.models.daily_briefing import DailyBriefing
+from app.models.event_version import EventVersion
 from app.models.news import News
 from app.models.news_digest import NewsDigest
 from app.models.report import Report
@@ -14,6 +15,7 @@ __all__ = [
     "AnalyticsDaily", "PipelineRun",
     "NewsCatalystStock",
     "DailyBriefing",
+    "EventVersion",
     "News", "NewsDigest", "Report",
     "SandboxStock", "SandboxAnalysis", "SandboxTrade", "SandboxNav",
     "ScreenerRun", "TrendScreenerRun", "WatchlistDaily", "TrendWatchlistDaily",
