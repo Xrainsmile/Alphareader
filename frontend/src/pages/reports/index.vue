@@ -15,7 +15,7 @@
         :class="{ active: activeTab === 'digest' }"
         @click="switchTab('digest')"
       >
-        <text class="tab-text">今日简报</text>
+        <text class="tab-text">Reports</text>
       </view>
       <view
         class="tab-item"
@@ -332,12 +332,12 @@ import PcSidebar from '@/components/common/PcSidebar.vue'
 import { listTagStyle, listTagStyleMobile, formatDate, reportStatusLabel, sentimentEmoji } from '@/utils/formatters'
 
 // ── Tab State ──
-// 默认「今日简报」：用户打开产品首先看到最新阶段简报（PRD 4.2）
+// 默认「Reports」：用户打开产品首先看到最新阶段简报（PRD 4.2）
 const activeTab = ref('digest')
 
 // ── 右看板：栏目导航 ──
 const rightTabs = [
-  { key: 'digest', icon: '📰', label: '今日简报', desc: '过去几小时发生了什么' },
+  { key: 'digest', icon: '📰', label: 'Reports', desc: '过去几小时发生了什么' },
   { key: 'briefing', icon: '📊', label: '每日研报', desc: 'AI 市场分析' },
   { key: 'reports', icon: '📝', label: '深度报告', desc: '历史复盘与专题' },
 ]

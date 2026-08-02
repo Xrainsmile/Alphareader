@@ -3,7 +3,7 @@
     {
       "path": "pages/reports/index",
       "style": {
-        "navigationBarTitleText": "今日简报",
+        "navigationBarTitleText": "Reports",
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
         "enablePullDownRefresh": true,
@@ -13,7 +13,7 @@
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "实时事件",
+        "navigationBarTitleText": "News",
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
         "enablePullDownRefresh": true,
@@ -87,13 +87,13 @@
     "list": [
       {
         "pagePath": "pages/reports/index",
-        "text": "今日简报",
+        "text": "Reports",
         "iconPath": "static/tabbar/reports.svg",
         "selectedIconPath": "static/tabbar/reports-active.svg"
       },
       {
         "pagePath": "pages/index/index",
-        "text": "实时事件",
+        "text": "News",
         "iconPath": "static/tabbar/news.svg",
         "selectedIconPath": "static/tabbar/news-active.svg"
       },

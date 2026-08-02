@@ -19,8 +19,8 @@ const props = defineProps({
 })
 
 const navItems = [
-  { key: 'reports', label: '今日简报', path: '/pages/reports/index' },
-  { key: 'news', label: '实时事件', path: '/pages/index/index' },
+  { key: 'reports', label: 'Reports', path: '/pages/reports/index' },
+  { key: 'news', label: 'News', path: '/pages/index/index' },
   { key: 'stocks', label: 'Stocks', path: '/pages/stocks/index' },
   { key: 'sepa', label: 'SEPA', path: '/pages/sepa/index' },
 ]
