@@ -523,13 +523,53 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
     quiet_topics = quiet_from_filter + quiet_from_stale
 
     if not events:
-        logger.info("No events for %s %s, skipping digest", target_date, period_label)
-        await _save_digest(
-            target_date, period_label, period_start, period_end, 0,
-            "该时段暂无重要事件。",
-            structured=None, schema_version=1,
+        # 无新增事件：但仍可能需保留「持续事件 / 安静议题」
+        # （PRD 跨简报对比）。不调 LLM，程序直接生成 schema v2 简报；
+        # 若连持续事件与关注议题都没有，则生成空简报。
+        # 关键点：news_count 必须用真实 article_count，不能写 0，
+        # 否则本时段收录的报道数会被错误清零。
+        has_continuation = bool(ongoing_updates or quiet_topics)
+        logger.info(
+            "No new events for %s %s (ongoing=%d quiet=%d articles=%d) — "
+            "generating no-LLM v2 brief",
+            target_date, period_label,
+            len(ongoing_updates), len(quiet_topics), article_count,
         )
-        return {"status": "skip", "news_count": 0}
+        structured = {
+            "period_summary": (
+                "本时段没有新增重大事件，前期重点议题整体延续。"
+                if has_continuation else
+                "该时段暂无重要事件。"
+            ),
+            "what_changed": (
+                "本时段未出现足以改变现有判断的新信息。"
+                if has_continuation else
+                "本时段无新增事件，也无持续跟进议题。"
+            ),
+            "must_know": [],
+            "worth_watching": [],
+            "ongoing_updates": ongoing_updates,
+            "quiet_topics": quiet_topics,
+            "cross_event_signals": [],
+            "upcoming": [],
+            "event_count": 0,
+            "article_count": article_count,
+            "material_update_count": material_updates,
+        }
+        markdown = _render_markdown(structured, PERIOD_LABELS[period_label])
+        digest_id = await _save_digest(
+            target_date, period_label, period_start, period_end,
+            article_count, markdown, structured=structured, schema_version=2,
+        )
+        if digest_id:
+            # 写入持续事件链接，保留下一份简报的对比基线
+            await _save_event_links(digest_id, structured, [], prev_links)
+        return {
+            "status": "ok",
+            "event_count": 0,
+            "article_count": article_count,
+            "material_update_count": material_updates,
+        }
 
     user_prompt = _build_digest_prompt(
         events, period_label, target_date,
