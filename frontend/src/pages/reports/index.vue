@@ -569,6 +569,10 @@ const onShare = (item) => {
 }
 
 onMounted(() => {
+  // 默认展示 Reports（今日简报）时间轴，进入即加载
+  if (activeTab.value === 'digest') {
+    loadDigests()
+  }
   loadBriefings()
 })
 </script>
