@@ -84,6 +84,11 @@
                 <!-- 本时段概况 -->
                 <text class="sb-summary">{{ item.structured_content.period_summary }}</text>
 
+                <!-- 与上一份相比的变化 -->
+                <view v-if="item.structured_content.what_changed" class="sb-changed">
+                  <text class="sb-changed-text">📍 {{ item.structured_content.what_changed }}</text>
+                </view>
+
                 <!-- 必须知道 -->
                 <view v-if="item.structured_content.must_know && item.structured_content.must_know.length" class="sb-section">
                   <text class="sb-section-title">必须知道</text>
@@ -132,6 +137,32 @@
                   <text class="sb-section-title">接下来关注</text>
                   <view v-for="(u, ui) in item.structured_content.upcoming" :key="ui" class="sb-upcoming">
                     <text class="sb-upcoming-text"><text v-if="u.time" class="sb-upcoming-time">{{ u.time }}</text>{{ u.item }}</text>
+                  </view>
+                </view>
+
+                <!-- 持续事件（重要但本时段变化较小，压缩一行） -->
+                <view v-if="item.structured_content.ongoing_updates && item.structured_content.ongoing_updates.length" class="sb-section">
+                  <text class="sb-section-title">持续事件</text>
+                  <view
+                    v-for="e in item.structured_content.ongoing_updates"
+                    :key="e.event_id"
+                    class="sb-oneline"
+                    @click.stop="goEventDetail(e.event_id)"
+                  >
+                    <text class="sb-oneline-text">{{ e.title }}<text v-if="e.note" class="sb-oneline-note"> — {{ e.note }}</text></text>
+                  </view>
+                </view>
+
+                <!-- 此前关注·暂无进展 -->
+                <view v-if="item.structured_content.quiet_topics && item.structured_content.quiet_topics.length" class="sb-section">
+                  <text class="sb-section-title">此前关注 · 暂无进展</text>
+                  <view
+                    v-for="e in item.structured_content.quiet_topics"
+                    :key="e.event_id"
+                    class="sb-oneline quiet"
+                    @click.stop="goEventDetail(e.event_id)"
+                  >
+                    <text class="sb-oneline-text">{{ e.title }}<text v-if="e.note" class="sb-oneline-note"> — {{ e.note }}</text></text>
                   </view>
                 </view>
               </view>
@@ -1093,6 +1124,37 @@ onMounted(() => {
   color: #4285f4;
   font-weight: 600;
   margin-right: 12rpx;
+}
+.sb-changed {
+  background: #eef4ff;
+  border-left: 6rpx solid #4285f4;
+  border-radius: 10rpx;
+  padding: 14rpx 20rpx;
+  margin-bottom: 8rpx;
+}
+.sb-changed-text {
+  font-size: 26rpx;
+  color: #1a4fa0;
+  line-height: 1.6;
+}
+.sb-oneline {
+  padding: 10rpx 0;
+  border-bottom: 1rpx solid var(--color-border, #f0f0f4);
+}
+.sb-oneline:last-child {
+  border-bottom: none;
+}
+.sb-oneline-text {
+  font-size: 25rpx;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+.sb-oneline.quiet .sb-oneline-text {
+  color: var(--color-text-hint);
+}
+.sb-oneline-note {
+  font-size: 23rpx;
+  color: var(--color-text-hint);
 }
 
 /* ═══════════════════════════════════════════════════════════

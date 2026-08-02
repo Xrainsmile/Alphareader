@@ -24,6 +24,7 @@ from sqlalchemy import select, and_, or_, func
 
 from app.config import settings
 from app.database import async_session
+from app.models.digest_event_link import DigestEventLink
 from app.models.news import News
 from app.models.news_digest import NewsDigest
 from app.services.llm_client import stream_chat
@@ -51,6 +52,7 @@ DIGEST_SYSTEM_PROMPT = """你是一位资深金融主编，为投资者撰写阶
 # 输出（严格 JSON，不要任何额外文字）
 {
   "period_summary": "本时段整体概况（80-150字）",
+  "what_changed": "与上一份简报相比当前局面发生了什么改变（1-2句，无对比基准时写本时段核心变化）",
   "must_know": [
     {"event_id": "输入中的事件id", "title": "事件标题", "latest_change": "本时段新增信息",
      "why_important": "为什么重要", "confidence": "high/medium/low", "watch_next": "后续观察点"}
@@ -67,7 +69,10 @@ DIGEST_SYSTEM_PROMPT = """你是一位资深金融主编，为投资者撰写阶
   ]
 }
 must_know 3-5 条（影响范围大/重大政策数据/改变判断/紧迫/可能需要行动）；
-worth_watching 3-8 条；cross_event_signals 没有明确共同信号时返回空数组，不得强行生成。"""
+worth_watching 3-8 条；cross_event_signals 没有明确共同信号时返回空数组，不得强行生成。
+事件条目的 change_type 含义：NEW_EVENT=本时段首次出现；MATERIAL_UPDATE=已有事件
+本时段发生实质更新；RESOLVED=本时段正式结束或结论明确。ONGOING（持续事件无实质更新）
+已由程序层处理，不要放入 must_know/worth_watching。"""
 
 # 时段配置：label → (start_hour, start_minute, end_hour, end_minute)
 # 边界与调度时间一致（12:15/18:15 生成，统计区间截止到生成点，PRD 10.2）
@@ -166,14 +171,31 @@ async def _fetch_period_events(
         elu = r.event_last_updated_at
         if elu is not None and elu.tzinfo is None:
             elu = elu.replace(tzinfo=period_start.tzinfo)
+        first_seen = r.event_first_seen_at or r.published_at or r.created_at
+        if first_seen is not None and first_seen.tzinfo is None:
+            first_seen = first_seen.replace(tzinfo=period_start.tzinfo)
+
         updated_in_period = (
             elu is not None
             and period_start <= elu < period_end
         )
         if updated_in_period and r.event_latest_change:
             material_updates += 1
+
+        # change_type 四分类（PRD 第三步）
+        if updated_in_period and r.event_status == "resolved":
+            change_type = "RESOLVED"
+        elif first_seen is not None and period_start <= first_seen < period_end:
+            change_type = "NEW_EVENT"
+        elif updated_in_period:
+            change_type = "MATERIAL_UPDATE"
+        else:
+            # 根在本时段入库但无实质更新标记（未合成的新事件等）
+            change_type = "NEW_EVENT"
+
         events.append({
             "event_id": str(r.id),
+            "change_type": change_type,
             "title": r.event_title or r.title,
             "summary": r.event_summary or r.ai_summary or "",
             "latest_change": r.event_latest_change or "",
@@ -181,6 +203,7 @@ async def _fetch_period_events(
             "uncertainty": r.event_uncertainty or "",
             "watch_next": r.event_watch_next or "",
             "status": r.event_status or "",
+            "event_version": r.event_version,
             "source_count": r.event_source_count or 1,
             "ai_score": r.ai_score,
             "tags": (r.tags or [])[:5],
@@ -189,20 +212,143 @@ async def _fetch_period_events(
     return events, article_count, material_updates
 
 
-def _build_digest_prompt(events: list[dict], period_label: str, target_date: date) -> str:
-    """构建 user prompt：时段内事件列表（事件层数据）。"""
+async def _load_previous_digest(
+    period_start: datetime,
+) -> tuple[NewsDigest | None, dict]:
+    """加载上一份结构化简报及其事件链接（跨简报对比机制）。
+
+    返回 (上一份简报, {event_id_str: {"version": int|None, "section": str}})。
+    无对比基准（首份 v2 简报）时返回 (None, {})。
+    """
+    async with async_session() as db:
+        prev = (
+            await db.execute(
+                select(NewsDigest)
+                .where(
+                    NewsDigest.schema_version == 2,
+                    NewsDigest.period_end <= period_start,
+                    NewsDigest.structured_content.isnot(None),
+                )
+                .order_by(NewsDigest.period_end.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if prev is None:
+            return None, {}
+        links = (
+            await db.execute(
+                select(DigestEventLink).where(DigestEventLink.digest_id == prev.id)
+            )
+        ).scalars().all()
+    return prev, {
+        str(l.event_id): {"version": l.event_version, "section": l.section}
+        for l in links
+    }
+
+
+def _filter_repeated_events(
+    events: list[dict],
+    prev_links: dict,
+) -> tuple[list[dict], list[dict]]:
+    """剔除「上一份已讲过且版本未前进」的重复事件（PRD 第四步）。
+
+    判定：event_version <= 上次简报收录版本 且 非 RESOLVED → 无新信息。
+    返回 (候选事件, 被剔除事件中曾任 must_know 的 quiet_topics 候选)。
+    """
+    kept: list[dict] = []
+    quiet: list[dict] = []
+    for e in events:
+        prev = prev_links.get(e["event_id"])
+        if (
+            prev
+            and e.get("event_version") is not None
+            and prev.get("version") is not None
+            and e["event_version"] <= prev["version"]
+            and e["change_type"] != "RESOLVED"
+        ):
+            if prev.get("section") == "must_know":
+                quiet.append({
+                    "event_id": e["event_id"],
+                    "title": e["title"],
+                    "note": f"本时段无实质更新（v{e['event_version']}）",
+                })
+            continue
+        kept.append(e)
+    return kept, quiet
+
+
+async def _build_ongoing_updates(
+    events: list[dict],
+    prev_links: dict,
+) -> tuple[list[dict], list[dict]]:
+    """生成持续事件压缩行与安静议题（ONGOING 的可判定退化规则）。
+
+    ongoing_updates：上一份简报收录过、本时段无实质更新、仍在 developing
+      → 压缩一行，不占 must_know。
+    quiet_topics：上一份 must_know、本时段无实质更新、已不再 developing
+      → 说明"此前重点议题本时段无进展"。
+    返回 (ongoing_updates, quiet_topics_extra)。
+    """
+    current_ids = {e["event_id"] for e in events}
+    stale_ids = [
+        eid for eid, meta in prev_links.items()
+        if eid not in current_ids and meta.get("section") in ("must_know", "worth_watching")
+    ]
+    if not stale_ids:
+        return [], []
+
+    import uuid as _uuid
+    uuids = [_uuid.UUID(e) for e in stale_ids]
+    async with async_session() as db:
+        roots = (
+            await db.execute(select(News).where(News.id.in_(uuids)))
+        ).scalars().all()
+
+    ongoing: list[dict] = []
+    quiet: list[dict] = []
+    for r in roots:
+        entry = {
+            "event_id": str(r.id),
+            "title": r.event_title or r.title,
+            "note": (
+                f"本时段无实质更新"
+                f"（v{r.event_version or 1} · {r.event_source_count or 1} 信源）"
+            ),
+        }
+        if r.event_status == "developing":
+            ongoing.append(entry)
+        elif prev_links[str(r.id)].get("section") == "must_know":
+            quiet.append(entry)
+    return ongoing, quiet
+
+
+def _build_digest_prompt(
+    events: list[dict],
+    period_label: str,
+    target_date: date,
+    prev_summary: str | None = None,
+) -> str:
+    """构建 user prompt：上份简报对比基准（如有）+ 时段内事件列表。"""
     sh, sm, eh, em = PERIOD_CONFIG[period_label]
     end_display = "24:00" if period_label == "night" else f"{eh:02d}:{em:02d}"
+    parts: list[str] = []
+    if prev_summary:
+        parts.append(
+            "【上一份简报概况】（用于 what_changed 对比，仅供参照，不得复述其细节）\n"
+            + prev_summary
+        )
     header = (
         f"以下是 {target_date} {sh:02d}:{sm:02d}~{end_display} "
-        f"时段内的 {len(events)} 个事件（已去重聚合）：\n"
+        f"时段内的 {len(events)} 个事件（已去重聚合、已剔除无版本前进的重复事件）：\n"
     )
     lines = []
     for i, e in enumerate(events, 1):
         seg = [
             f"【事件{i}】event_id: {e['event_id']}",
             f"标题：{e['title']}",
-            f"状态：{e['status'] or '未知'}｜评分：{e['ai_score']}｜独立信源：{e['source_count']}",
+            f"change_type：{e.get('change_type') or 'NEW_EVENT'}"
+            f"｜状态：{e['status'] or '未知'}｜评分：{e['ai_score']}"
+            f"｜独立信源：{e['source_count']}",
         ]
         if e["summary"]:
             seg.append(f"摘要：{e['summary'][:200]}")
@@ -217,7 +363,8 @@ def _build_digest_prompt(events: list[dict], period_label: str, target_date: dat
         if e["tags"]:
             seg.append(f"标签：{'、'.join(e['tags'])}")
         lines.append("\n".join(seg))
-    return header + "\n\n".join(lines)
+    parts.append(header + "\n\n".join(lines))
+    return "\n\n".join(parts)
 
 
 def _parse_briefing_json(raw: str, valid_event_ids: set[str]) -> dict | None:
@@ -271,6 +418,7 @@ def _parse_briefing_json(raw: str, valid_event_ids: set[str]) -> dict | None:
 
     return {
         "period_summary": str(data["period_summary"])[:600],
+        "what_changed": str(data.get("what_changed") or "")[:300],
         "must_know": _clean_entries(data.get("must_know")),
         "worth_watching": _clean_entries(data.get("worth_watching")),
         "cross_event_signals": signals,
@@ -281,6 +429,8 @@ def _parse_briefing_json(raw: str, valid_event_ids: set[str]) -> dict | None:
 def _render_markdown(structured: dict, period_display: str) -> str:
     """从结构化简报程序化生成 Markdown（兼容旧前端渲染，PRD 15.4）。"""
     lines = [f"**{period_display}**", "", structured["period_summary"], ""]
+    if structured.get("what_changed"):
+        lines += [f"**本时段变化**：{structured['what_changed']}", ""]
 
     def _section(title: str, entries: list[dict]) -> None:
         if not entries:
@@ -304,6 +454,17 @@ def _render_markdown(structured: dict, period_display: str) -> str:
         for s in structured["cross_event_signals"]:
             lines.append(f"- **{s['title']}**：{s['summary']}")
         lines.append("")
+
+    # 持续事件（压缩一行）与安静议题
+    for key, title in (("ongoing_updates", "持续事件"), ("quiet_topics", "此前关注·暂无进展")):
+        entries = structured.get(key) or []
+        if entries:
+            lines.append(f"**{title}**")
+            lines.append("")
+            for e in entries:
+                note = f"——{e['note']}" if e.get("note") else ""
+                lines.append(f"- {e['title']}{note}")
+            lines.append("")
 
     if structured["upcoming"]:
         lines.append("**接下来关注**")
@@ -355,6 +516,12 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
         period_start, period_end
     )
 
+    # 跨简报对比：加载上一份简报事件链接，剔除版本未前进的重复事件
+    prev_digest, prev_links = await _load_previous_digest(period_start)
+    events, quiet_from_filter = _filter_repeated_events(events, prev_links)
+    ongoing_updates, quiet_from_stale = await _build_ongoing_updates(events, prev_links)
+    quiet_topics = quiet_from_filter + quiet_from_stale
+
     if not events:
         logger.info("No events for %s %s, skipping digest", target_date, period_label)
         await _save_digest(
@@ -364,10 +531,17 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
         )
         return {"status": "skip", "news_count": 0}
 
-    user_prompt = _build_digest_prompt(events, period_label, target_date)
+    user_prompt = _build_digest_prompt(
+        events, period_label, target_date,
+        prev_summary=(prev_digest.structured_content or {}).get("period_summary")
+        if prev_digest else None,
+    )
     logger.info(
-        "Digest prompt: %d events (%d articles, %d material updates), ~%d chars",
-        len(events), article_count, material_updates, len(user_prompt),
+        "Digest prompt: %d events (%d articles, %d material updates, "
+        "%d ongoing, %d quiet, prev=%s), ~%d chars",
+        len(events), article_count, material_updates,
+        len(ongoing_updates), len(quiet_topics),
+        prev_digest.id if prev_digest else "-", len(user_prompt),
     )
 
     valid_ids = {e["event_id"] for e in events}
@@ -402,12 +576,18 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
     structured["event_count"] = len(events)
     structured["article_count"] = article_count
     structured["material_update_count"] = material_updates
+    # ongoing/quiet 由程序层生成（确定性规则），不依赖 LLM
+    structured["ongoing_updates"] = ongoing_updates
+    structured["quiet_topics"] = quiet_topics
 
     markdown = _render_markdown(structured, PERIOD_LABELS[period_label])
-    await _save_digest(
+    digest_id = await _save_digest(
         target_date, period_label, period_start, period_end, article_count,
         markdown, structured=structured, schema_version=2,
     )
+    # 写入事件链接（下一份简报的对比基准）
+    if digest_id:
+        await _save_event_links(digest_id, structured, events, prev_links)
 
     logger.info(
         "Digest saved: %s %s, %d events, %d must-know, %d signals",
@@ -442,8 +622,8 @@ async def _save_digest(
     content: str,
     structured: dict | None = None,
     schema_version: int = 1,
-) -> None:
-    """Upsert digest record — 同一天同一时段只保留最新版本。"""
+) -> int | None:
+    """Upsert digest record — 同一天同一时段只保留最新版本。返回 digest id。"""
     async with async_session() as db:
         stmt = select(NewsDigest).where(
             and_(
@@ -461,8 +641,9 @@ async def _save_digest(
             existing.content = content
             existing.structured_content = structured
             existing.schema_version = schema_version
+            digest = existing
         else:
-            db.add(NewsDigest(
+            digest = NewsDigest(
                 digest_date=digest_date,
                 period_label=period_label,
                 period_start=period_start,
@@ -471,6 +652,56 @@ async def _save_digest(
                 content=content,
                 structured_content=structured,
                 schema_version=schema_version,
-            ))
+            )
+            db.add(digest)
 
+        await db.commit()
+        return digest.id
+
+
+async def _save_event_links(
+    digest_id: int,
+    structured: dict,
+    events: list[dict],
+    prev_links: dict | None = None,
+) -> None:
+    """写入简报-事件链接（下一份简报的对比基准）。
+
+    must_know/worth_watching 带 section+rank；ongoing_updates 记为
+    ongoing_updates section（版本从 prev_links 回落，因其事件不在本时段
+    候选列表中）。重生成同一时段时先清旧 links（upsert 语义）。
+    """
+    import uuid as _uuid
+
+    version_by_id = {e["event_id"]: e.get("event_version") for e in events}
+
+    def _version_of(eid: str):
+        v = version_by_id.get(eid)
+        if v is None and prev_links:
+            v = (prev_links.get(eid) or {}).get("version")
+        return v
+
+    def _make_link(entry: dict, section: str, rank: int) -> DigestEventLink:
+        return DigestEventLink(
+            digest_id=digest_id,
+            event_id=_uuid.UUID(entry["event_id"]),
+            event_version=_version_of(entry["event_id"]),
+            section=section,
+            rank=rank,
+        )
+
+    rows: list[DigestEventLink] = []
+    for section in ("must_know", "worth_watching"):
+        for rank, entry in enumerate(structured.get(section) or []):
+            rows.append(_make_link(entry, section, rank))
+    for rank, entry in enumerate(structured.get("ongoing_updates") or []):
+        rows.append(_make_link(entry, "ongoing_updates", rank))
+
+    async with async_session() as db:
+        await db.execute(
+            DigestEventLink.__table__.delete().where(
+                DigestEventLink.digest_id == digest_id
+            )
+        )
+        db.add_all(rows)
         await db.commit()

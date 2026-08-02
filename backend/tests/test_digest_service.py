@@ -273,6 +273,118 @@ class TestGenerateDigest:
         assert result["status"] == "skip"
 
 
+# ── 跨简报对比机制（change_type / 重复剔除 / ongoing / links）──
+
+
+class TestFilterRepeatedEvents:
+    def test_same_version_dropped(self):
+        """event_version 未前进且非 RESOLVED → 剔除（PRD 第四步）。"""
+        from app.services.digest_service import _filter_repeated_events
+        events = [{
+            "event_id": "e1", "title": "旧事件", "event_version": 2,
+            "change_type": "MATERIAL_UPDATE",
+        }]
+        prev_links = {"e1": {"version": 2, "section": "worth_watching"}}
+        kept, quiet = _filter_repeated_events(events, prev_links)
+        assert kept == [] and quiet == []
+
+    def test_version_advanced_kept(self):
+        """event_version 前进 → 有新变化，保留。"""
+        from app.services.digest_service import _filter_repeated_events
+        events = [{
+            "event_id": "e1", "title": "旧事件", "event_version": 3,
+            "change_type": "MATERIAL_UPDATE",
+        }]
+        prev_links = {"e1": {"version": 2, "section": "must_know"}}
+        kept, quiet = _filter_repeated_events(events, prev_links)
+        assert len(kept) == 1 and quiet == []
+
+    def test_dropped_must_know_becomes_quiet(self):
+        """被剔除的上份 must_know 事件 → quiet_topics。"""
+        from app.services.digest_service import _filter_repeated_events
+        events = [{
+            "event_id": "e1", "title": "旧重点", "event_version": 1,
+            "change_type": "MATERIAL_UPDATE",
+        }]
+        prev_links = {"e1": {"version": 1, "section": "must_know"}}
+        kept, quiet = _filter_repeated_events(events, prev_links)
+        assert kept == []
+        assert quiet[0]["title"] == "旧重点"
+
+    def test_resolved_always_kept(self):
+        """RESOLVED 即使版本未前进也保留（用户需要知道事件结束）。"""
+        from app.services.digest_service import _filter_repeated_events
+        events = [{
+            "event_id": "e1", "title": "结束事件", "event_version": 2,
+            "change_type": "RESOLVED",
+        }]
+        prev_links = {"e1": {"version": 2, "section": "must_know"}}
+        kept, _ = _filter_repeated_events(events, prev_links)
+        assert len(kept) == 1
+
+
+class TestOngoingUpdates:
+    @pytest.mark.asyncio
+    async def test_stale_developing_becomes_ongoing(self, db_session):
+        """上份收录、本时段无更新、仍 developing → ongoing 压缩行。"""
+        from app.services.digest_service import _build_ongoing_updates
+        root = await _seed_event(db_session, title="持续事件", updated=True)
+        prev_links = {str(root.id): {"version": 1, "section": "must_know"}}
+
+        with patch("app.services.digest_service.async_session", _SessionPatch(db_session)):
+            ongoing, quiet = await _build_ongoing_updates([], prev_links)
+        assert len(ongoing) == 1
+        assert ongoing[0]["title"] == "持续事件(合成)"
+        assert "无实质更新" in ongoing[0]["note"]
+        assert quiet == []
+
+    @pytest.mark.asyncio
+    async def test_stale_resolved_must_know_becomes_quiet(self, db_session):
+        """上份 must_know、本时段无更新、已非 developing → quiet。"""
+        from app.services.digest_service import _build_ongoing_updates
+        root = await _seed_event(db_session, title="冷却事件", updated=False)
+        root.event_status = "stable"
+        await db_session.commit()
+        prev_links = {str(root.id): {"version": 1, "section": "must_know"}}
+
+        with patch("app.services.digest_service.async_session", _SessionPatch(db_session)):
+            ongoing, quiet = await _build_ongoing_updates([], prev_links)
+        assert ongoing == []
+        assert len(quiet) == 1
+
+
+class TestDigestEventLinks:
+    @pytest.mark.asyncio
+    async def test_links_written_and_reused(self, db_session):
+        """第一份简报写 links；第二份同版本事件被剔除，不重复入选。"""
+        from app.models.digest_event_link import DigestEventLink
+        from sqlalchemy import select as sa_select
+        root = await _seed_event(db_session, title="对比事件")
+
+        async def fake_stream(messages, **kw):
+            return _llm_json_for(root.id)
+
+        with (
+            patch("app.services.digest_service.stream_chat", side_effect=fake_stream),
+            patch("app.services.digest_service.async_session", _SessionPatch(db_session)),
+        ):
+            r1 = await generate_digest("midday", date.today())
+
+        assert r1["status"] == "ok"
+        links = (await db_session.execute(sa_select(DigestEventLink))).scalars().all()
+        assert len(links) == 1
+        assert links[0].section == "must_know"
+        assert links[0].event_version == 1
+
+        # 第二轮：事件版本未前进（仍 v1）→ 被剔除 → 无候选 → skip
+        with (
+            patch("app.services.digest_service.stream_chat", side_effect=fake_stream),
+            patch("app.services.digest_service.async_session", _SessionPatch(db_session)),
+        ):
+            r2 = await generate_digest("evening", date.today())
+        assert r2["status"] == "skip"
+
+
 def _SessionPatch(shared_session):
     """把 digest_service 里的 async_session 替换为共享测试 session 的工厂。
 
