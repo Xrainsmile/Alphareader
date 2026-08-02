@@ -362,7 +362,8 @@ async def hot_topics(
         p.id, p.title, p.source, p.url, p.ai_score, p.ai_summary, p.tags,
         p.published_at, p.created_at, p.why_it_matters, p.is_highlight,
         p.event_title, p.event_summary,
-        (COALESCE(ca.cnt, 0) + 1) AS source_count,
+        (SELECT COUNT(DISTINCT x.source) FROM news x
+         WHERE x.id = p.id OR x.related_to_id = p.id) AS source_count,
         COALESCE(ca.child_sources, ARRAY[]::text[]) AS child_sources,
         COALESCE(ca.child_titles, ARRAY[]::text[]) AS child_titles
     FROM parents p

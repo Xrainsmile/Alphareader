@@ -127,21 +127,42 @@ async def list_events(
     count_stmt = select(func.count()).select_from(News).where(where_clause)
     total = (await db.execute(count_stmt)).scalar() or 0
 
-    # 子报道统计（计数 + 独立信源数 + 最新发布时间）
-    child_stats: dict = {}  # pid -> (count, source_count, max_published_at)
+    # 统一口径独立信源数：COUNT(DISTINCT source) WHERE id=根 OR related_to_id=根
+    # （根报道来源与子报道来源相同时只计 1 次，避免重复计算）。
+    source_counts: dict = {}
+    try:
+        src_stmt = text("""
+            SELECT root_id, COUNT(DISTINCT source) AS source_count
+            FROM (
+                SELECT id AS root_id, source
+                FROM news
+                WHERE related_to_id IS NULL
+                UNION ALL
+                SELECT related_to_id AS root_id, source
+                FROM news
+                WHERE related_to_id IS NOT NULL
+            ) sources
+            GROUP BY root_id
+        """)
+        for rid, cnt in (await db.execute(src_stmt)).all():
+            source_counts[str(rid)] = int(cnt)
+    except Exception as e:
+        logger.warning("event source-count query failed: %s", e)
+
+    # 子报道统计（计数 + 最新发布时间）；信源数以上文统一口径为准
+    child_stats: dict = {}  # pid -> (count, max_published_at)
     try:
         stats_stmt = (
             select(
                 News.related_to_id,
                 func.count(),
-                func.count(func.distinct(News.source)),
                 func.max(News.published_at),
             )
             .where(News.related_to_id.isnot(None))
             .group_by(News.related_to_id)
         )
-        for pid, cnt, src_cnt, max_pub in (await db.execute(stats_stmt)).all():
-            child_stats[pid] = (cnt, src_cnt, max_pub)
+        for pid, cnt, max_pub in (await db.execute(stats_stmt)).all():
+            child_stats[pid] = (cnt, max_pub)
     except Exception as e:
         logger.warning("child-stats query failed: %s", e)
 
@@ -150,12 +171,12 @@ async def list_events(
     if sort == EventSortMode.IMPORTANT:
         try:
             child_cnt_sql = "(SELECT COUNT(*) FROM news c WHERE c.related_to_id = news.id)"
-            child_src_sql = (
-                "(SELECT COUNT(DISTINCT c.source) FROM news c "
-                "WHERE c.related_to_id = news.id)"
+            event_src_sql = (
+                "(SELECT COUNT(DISTINCT x.source) FROM news x "
+                "WHERE x.id = news.id OR x.related_to_id = news.id)"
             )
             boost_sql = (
-                f"+ LEAST(COALESCE({child_src_sql}, 0) * {EVENT_BOOST_PER_SOURCE}, "
+                f"+ LEAST(COALESCE({event_src_sql}, 0) * {EVENT_BOOST_PER_SOURCE}, "
                 f"{EVENT_BOOST_MAX})"
             )
             event_time_sql = (
@@ -211,10 +232,12 @@ async def list_events(
 
     items = []
     for n in rows:
-        child_cnt, src_cnt, child_max_pub = child_stats.get(n.id, (0, 0, None))
+        child_cnt, child_max_pub = child_stats.get(n.id, (0, None))
+        # 统一口径：整个事件（根 + 全部子报道）的去重信源数
+        source_count = source_counts.get(str(n.id), 1)
         ranking_score = None
         if sort == EventSortMode.IMPORTANT:
-            boost = min(src_cnt * EVENT_BOOST_PER_SOURCE, EVENT_BOOST_MAX)
+            boost = min(source_count * EVENT_BOOST_PER_SOURCE, EVENT_BOOST_MAX)
             effective_pub = n.event_last_updated_at or n.published_at
             if child_max_pub and (effective_pub is None or child_max_pub > effective_pub):
                 effective_pub = child_max_pub
@@ -224,7 +247,7 @@ async def list_events(
                 gravity=EVENT_GRAVITY if child_cnt > 0 else DEFAULT_GRAVITY,
                 boost=boost,
             )
-        items.append(_serialize_event(n, child_cnt, src_cnt + 1 if child_cnt else 1,
+        items.append(_serialize_event(n, child_cnt, source_count,
                                       child_max_pub, ranking_score))
 
     if use_python_sort and sort == EventSortMode.IMPORTANT:
@@ -283,8 +306,15 @@ async def get_event_detail(
         )
     ).scalars().all()
 
-    src_cnt = len({c.source for c in children}) + 1
-    detail = _serialize_event(root, len(children), src_cnt, None, None)
+    # 统一口径：独立信源数 = 去重统计整个事件（根 + 全部子报道）的来源
+    src_cnt = await db.execute(
+        text(
+            "SELECT COUNT(DISTINCT source) FROM news "
+            "WHERE id = :eid OR related_to_id = :eid"
+        ),
+        {"eid": eid},
+    ).scalar() or 0
+    detail = _serialize_event(root, len(children), int(src_cnt) or 1, None, None)
     detail.update({
         "uncertainty": root.event_uncertainty,
         "watch_next": root.event_watch_next,

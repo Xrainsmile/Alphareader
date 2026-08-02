@@ -26,7 +26,7 @@ def _now():
 async def seed_events(db_session):
     """构造：2 个事件根（A 有 3 子 2 信源、B 单信源）+ 若干孤儿子报道。"""
     root_a = News(
-        id=uuid.uuid4(), title="事件A首篇", source="富途新闻",
+        id=uuid.uuid4(), title="事件A首篇", source="CNBC",
         url="https://example.com/a", ai_score=8, ai_summary="A摘要",
         category="财经", published_at=_now() - timedelta(hours=2),
         event_title="事件A标题", event_summary="事件A综述",
@@ -43,7 +43,7 @@ async def seed_events(db_session):
             category="财经", published_at=_now() - timedelta(hours=1, minutes=i),
             related_to_id=root_a.id,
         )
-        for i, src in enumerate(["CNBC", "CNBC", "MarketWatch"], 1)  # CNBC 重复 → 独立信源 2+根
+        for i, src in enumerate(["CNBC", "CNBC", "MarketWatch"], 1)  # 根=CNBC 与子报道重叠，去重后独立信源 2
     ]
     root_b = News(
         id=uuid.uuid4(), title="事件B单信源", source="TechCrunch",
@@ -90,12 +90,12 @@ class TestListEvents:
 
     @pytest.mark.asyncio
     async def test_source_count_deduped(self, client, seed_events):
-        """独立信源去重：CNBC 两篇只计 1 → 根1 + CNBC + MarketWatch = 3。"""
+        """独立信源去重：根(CNBC)与子报道(CNBC)重叠只计 1 → CNBC + MarketWatch = 2。"""
         resp = await client.get("/api/v1/events/")
         items = resp.json()["data"]
         a = next(i for i in items if i["id"] == str(seed_events["root_a"].id))
         assert a["article_count"] == 4   # 根 + 3 子
-        assert a["source_count"] == 3    # 富途 + CNBC + MarketWatch
+        assert a["source_count"] == 2    # 根(CNBC)与子报道(CNBC)重叠，去重后 CNBC + MarketWatch
 
     @pytest.mark.asyncio
     async def test_pagination_by_events(self, client, seed_events):
@@ -179,7 +179,7 @@ class TestEventDetail:
         assert len(d["articles"]) == 4
         # 关联报道按发布时间倒序（首条不一定为根本身，只校验数量与来源集合）
         sources = {a["source"] for a in d["articles"]}
-        assert sources == {"富途新闻", "CNBC", "MarketWatch"}
+        assert sources == {"CNBC", "MarketWatch"}  # 根(CNBC)与子报道重叠去重
 
     @pytest.mark.asyncio
     async def test_detail_404(self, client, seed_events):

@@ -168,7 +168,12 @@ async def _find_candidate_clusters(
         agg AS (
             SELECT c.related_to_id AS pid,
                    COUNT(*) AS child_cnt,
-                   COUNT(DISTINCT c.source) AS child_source_cnt,
+                   -- 独立信源数 = 去重统计整个事件（根报道 + 全部子报道）的来源，
+                   -- 根来源与子报道来源相同时只计 1 次，避免重复计算。
+                   (SELECT COUNT(DISTINCT x.source)
+                    FROM news x
+                    WHERE x.id = c.related_to_id
+                       OR x.related_to_id = c.related_to_id) AS event_source_cnt,
                    jsonb_agg(jsonb_build_object(
                        'title', c.title,
                        'source', c.source,
@@ -185,7 +190,7 @@ async def _find_candidate_clusters(
                p.catalyst_type, p.created_at, p.published_at,
                p.event_title, p.event_summary, p.event_latest_change,
                p.event_version, p.event_article_count,
-               a.child_cnt, a.child_source_cnt, a.children
+               a.child_cnt, a.event_source_cnt, a.children
         FROM news p
         JOIN fresh f ON f.pid = p.id
         JOIN agg a ON a.pid = p.id
@@ -206,8 +211,9 @@ async def _find_candidate_clusters(
 def _build_update_params(cluster: dict, parsed: dict) -> dict:
     """根据解析结果与版本机制计算要回写字段（纯函数，便于测试）。"""
     total_articles = int(cluster["child_cnt"]) + 1
-    # 独立信源数 = 根信源 + 去重后的子报道信源
-    source_count = int(cluster["child_source_cnt"]) + 1
+    # 独立信源数 = 去重统计整个事件（根报道 + 全部子报道）的来源，
+    # 根来源与子报道来源相同时只计 1 次，避免重复计算（已在 SQL 层算好）。
+    source_count = int(cluster["event_source_cnt"] or 1)
 
     params: dict = {
         "id": str(cluster["id"]),

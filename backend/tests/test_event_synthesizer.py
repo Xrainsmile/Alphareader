@@ -124,11 +124,11 @@ class TestParseLlmResponse:
 # ── _build_update_params（版本机制）──
 
 
-def _cluster(event_version=None, child_cnt=4, child_source_cnt=3):
+def _cluster(event_version=None, child_cnt=4, event_source_cnt=4):
     return {
         "id": "00000000-0000-0000-0000-000000000001",
         "child_cnt": child_cnt,
-        "child_source_cnt": child_source_cnt,
+        "event_source_cnt": event_source_cnt,
         "event_version": event_version,
         "published_at": None,
         "created_at": None,
@@ -146,7 +146,7 @@ class TestBuildUpdateParams:
         assert params["material"] is True
         assert params["is_first"] is True
         assert params["article_count"] == 5
-        assert params["source_count"] == 4  # 3 子信源 + 根
+        assert params["source_count"] == 4  # 去重后 4 个独立信源（根与子报道来源各不相同）
 
     def test_material_update_increments_version(self):
         params = _build_update_params(_cluster(event_version=2), {
@@ -190,7 +190,7 @@ def _make_cluster(event_version=None):
         "event_version": event_version,
         "event_article_count": None,
         "child_cnt": 2,
-        "child_source_cnt": 2,
+        "event_source_cnt": 3,
         "children": [
             {"title": "子报道A", "source": "Finnhub", "ai_summary": "a",
              "ai_score": 7, "catalyst_type": None, "ts": "2026-08-02T01:00"},
