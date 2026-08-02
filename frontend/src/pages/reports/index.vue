@@ -74,7 +74,7 @@
             <!-- Card Header -->
             <view class="digest-card-header">
               <view class="digest-badge" :class="'badge-' + item.period_label">
-                <text class="badge-icon">{{ item.period_icon }}</text>
+                <IconSvg :name="periodIconName(item.period_label)" class="badge-icon" size="15px" />
                 <text class="badge-text">{{ item.period_display }}</text>
               </view>
               <text class="digest-time">{{ formatDigestDate(item) }}</text>
@@ -88,7 +88,7 @@
 
                 <!-- 与上一份相比的变化 -->
                 <view v-if="item.structured_content.what_changed" class="sb-changed">
-                  <text class="sb-changed-text">📍 {{ item.structured_content.what_changed }}</text>
+                  <text class="sb-changed-text"><IconSvg name="change" class="sb-ico" size="14px" /> {{ item.structured_content.what_changed }}</text>
                 </view>
 
                 <!-- 必须知道 -->
@@ -101,11 +101,11 @@
                     @click.stop="goEventDetail(e.event_id)"
                   >
                     <text class="sb-event-title">{{ e.title }}</text>
-                    <text v-if="e.latest_change" class="sb-event-change">🆕 {{ e.latest_change }}</text>
+                    <text v-if="e.latest_change" class="sb-event-change"><IconSvg name="new" class="sb-ico-sm" size="13px" /> {{ e.latest_change }}</text>
                     <text v-if="e.why_important" class="sb-event-why">{{ e.why_important }}</text>
                     <view class="sb-event-meta">
                       <text v-if="e.confidence" class="sb-confidence" :class="'conf-' + e.confidence">{{ confidenceLabel(e.confidence) }}</text>
-                      <text v-if="e.watch_next" class="sb-event-watch">👁 {{ e.watch_next }}</text>
+                      <text v-if="e.watch_next" class="sb-event-watch"><IconSvg name="eye" class="sb-ico-sm" size="13px" /> {{ e.watch_next }}</text>
                     </view>
                   </view>
                 </view>
@@ -120,7 +120,7 @@
                     @click.stop="goEventDetail(e.event_id)"
                   >
                     <text class="sb-event-title">{{ e.title }}</text>
-                    <text v-if="e.latest_change" class="sb-event-change">🆕 {{ e.latest_change }}</text>
+                    <text v-if="e.latest_change" class="sb-event-change"><IconSvg name="new" class="sb-ico-sm" size="13px" /> {{ e.latest_change }}</text>
                     <text v-if="e.why_important" class="sb-event-why">{{ e.why_important }}</text>
                   </view>
                 </view>
@@ -179,7 +179,7 @@
 
             <!-- Card Footer -->
             <view class="digest-footer">
-              <text class="footer-stat">📊 收录 {{ item.news_count }} 条报道</text>
+              <text class="footer-stat"><IconSvg name="chart" class="sb-ico-sm" size="13px" /> 收录 {{ item.news_count }} 条报道</text>
               <text v-if="item.schema_version === 2 && item.event_count != null" class="footer-stat">归并为 {{ item.event_count }} 个事件</text>
               <text v-if="item.schema_version === 2 && item.material_update_count" class="footer-stat">{{ item.material_update_count }} 个实质更新</text>
             </view>
@@ -239,12 +239,12 @@
           <!-- Card Footer: meta stats -->
           <view class="briefing-card-footer">
             <view class="meta-tags">
-              <text class="meta-tag tag-sentiment" v-if="item.meta && item.meta.market_sentiment">{{ sentimentEmoji(item.meta.market_sentiment) }} {{ item.meta.market_sentiment }}</text>
-              <text class="meta-tag tag-s" v-if="item.meta && item.meta.tier_s">🎯 {{ item.meta.tier_s }}</text>
-              <text class="meta-tag tag-a" v-if="item.meta && item.meta.tier_a">📋 {{ item.meta.tier_a }}</text>
-              <text class="meta-tag tag-x" v-if="item.meta && item.meta.tier_x">⚠️ {{ item.meta.tier_x }}</text>
+              <text class="meta-tag tag-sentiment" v-if="item.meta && item.meta.market_sentiment"><IconSvg name="dot" :color="sentimentColor(item.meta.market_sentiment)" class="meta-dot" size="10px" /> {{ item.meta.market_sentiment }}</text>
+              <text class="meta-tag tag-s" v-if="item.meta && item.meta.tier_s"><IconSvg name="target" class="meta-ico" size="13px" /> {{ item.meta.tier_s }}</text>
+              <text class="meta-tag tag-a" v-if="item.meta && item.meta.tier_a"><IconSvg name="clipboard" class="meta-ico" size="13px" /> {{ item.meta.tier_a }}</text>
+              <text class="meta-tag tag-x" v-if="item.meta && item.meta.tier_x"><IconSvg name="warning" class="meta-ico" size="13px" /> {{ item.meta.tier_x }}</text>
             </view>
-            <text class="briefing-gen-time" v-if="item.generation_sec">⏱ {{ item.generation_sec.toFixed(1) }}s</text>
+            <text class="briefing-gen-time" v-if="item.generation_sec"><IconSvg name="clock" class="meta-ico" size="12px" /> {{ item.generation_sec.toFixed(1) }}s</text>
           </view>
         </view>
       </view>
@@ -311,7 +311,7 @@
       <view class="right-section">
         <text class="right-section-title">栏目导航</text>
         <view v-for="t in rightTabs" :key="t.key" class="right-news-item" @click="switchTab(t.key)">
-          <text class="right-news-rank">{{ t.icon }}</text>
+          <IconSvg :name="t.iconName" class="right-news-rank" size="18px" />
           <view class="right-news-body">
             <text class="right-news-title">{{ t.label }}</text>
             <text class="right-news-meta">{{ t.desc }}</text>
@@ -331,7 +331,8 @@ import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PcSidebar from '@/components/common/PcSidebar.vue'
-import { listTagStyle, listTagStyleMobile, formatDate, reportStatusLabel, sentimentEmoji } from '@/utils/formatters'
+import IconSvg from '@/components/common/IconSvg.vue'
+import { listTagStyle, listTagStyleMobile, formatDate, reportStatusLabel } from '@/utils/formatters'
 
 // ── Tab State ──
 // 默认「Reports」：用户打开产品首先看到最新阶段简报（PRD 4.2）
@@ -339,9 +340,9 @@ const activeTab = ref('digest')
 
 // ── 右看板：栏目导航 ──
 const rightTabs = [
-  { key: 'digest', icon: '📰', label: 'Reports', desc: '过去几小时发生了什么' },
-  { key: 'briefing', icon: '📊', label: '每日研报', desc: 'AI 市场分析' },
-  // 深度报告 已暂停（2026-08-02）：{ key: 'reports', icon: '📝', label: '深度报告', desc: '历史复盘与专题' },
+  { key: 'digest', iconName: 'news', label: 'Reports', desc: '过去几小时发生了什么' },
+  { key: 'briefing', iconName: 'briefing', label: '每日研报', desc: 'AI 市场分析' },
+  // 深度报告 已暂停（2026-08-02）：{ key: 'reports', iconName: 'clipboard', label: '深度报告', desc: '历史复盘与专题' },
 ]
 
 // ── Tab indicator position (2 tabs: digest / briefing；深度报告已暂停) ──
@@ -415,6 +416,19 @@ function goEventDetail(eventId) {
 const CONFIDENCE_LABELS = { high: '高可信', medium: '中可信', low: '低可信' }
 function confidenceLabel(c) {
   return CONFIDENCE_LABELS[c] || c
+}
+
+// ── Icon helpers（替代 emoji）──
+function periodIconName(label) {
+  return { morning: 'sunrise', midday: 'sun', evening: 'sunset', night: 'moon' }[label] || 'sun'
+}
+function sentimentColor(s) {
+  if (!s) return '#9ca3af'
+  const t = String(s)
+  if (t.includes('乐观') || t.includes('看多') || t.includes('偏多')) return '#16a34a'
+  if (t.includes('悲观') || t.includes('看空') || t.includes('偏空')) return '#dc2626'
+  if (t.includes('中性') || t.includes('震荡')) return '#d97706'
+  return '#9ca3af'
 }
 
 function formatDigestDate(item) {
@@ -724,7 +738,7 @@ onMounted(() => {
 .badge-night   { background: var(--color-bg-time-night); }
 
 .badge-icon {
-  font-size: 28rpx;
+  flex: none;
 }
 .badge-text {
   font-size: 24rpx;
@@ -1384,4 +1398,17 @@ onMounted(() => {
 
 @media screen and (min-width: 1200px) {
 }
+/* ── IconSvg 适配（替代 emoji）── */
+.badge-icon { flex: none; }
+.right-news-rank { flex: none; color: var(--color-brand); }
+.sb-ico,
+.sb-ico-sm,
+.meta-ico { flex: none; margin-right: 3px; }
+.meta-dot { flex: none; margin-right: 3px; }
+.meta-tag { display: inline-flex; align-items: center; }
+.briefing-gen-time { display: inline-flex; align-items: center; gap: 3px; }
+.sb-changed-text,
+.sb-event-change,
+.sb-event-watch { display: inline-flex; align-items: center; }
+
 </style>
