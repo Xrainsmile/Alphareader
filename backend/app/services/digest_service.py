@@ -485,7 +485,7 @@ async def _call_llm_briefing(user_prompt: str) -> str:
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.3,
-        max_tokens=2500,
+        max_tokens=6000,
         log_tag="Digest",
     )
 
