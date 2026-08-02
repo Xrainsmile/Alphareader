@@ -58,7 +58,11 @@ server {
     index index.html;
 
     # Frontend SPA
+    # HTML 不缓存：SPA 入口必须每次重验证，否则发版后浏览器启发式缓存
+    # 会持续引用旧 bundle，用户看不到更新（js/css 走下方 30d 缓存不受影响）
     location / {
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        expires -1;
         try_files $uri $uri/ /index.html;
     }
 
