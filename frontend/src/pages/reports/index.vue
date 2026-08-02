@@ -241,7 +241,7 @@ import { rawReports } from '@/data/reports'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PcSidebar from '@/components/common/PcSidebar.vue'
-import { listTagStyle, formatDate, reportStatusLabel, sentimentEmoji } from '@/utils/formatters'
+import { listTagStyle, listTagStyleMobile, formatDate, reportStatusLabel, sentimentEmoji } from '@/utils/formatters'
 
 // ── Tab State ──
 const activeTab = ref('briefing')
@@ -290,7 +290,14 @@ const briefingLoading = ref(true)
 const briefingDays = ref(7)
 
 // Markdown tag styles (from shared formatters)
-const tagStyle = listTagStyle
+// 按屏宽选择字号体系：PC 15px 正文 / 移动端 13px，均对齐 news 页面
+const tagStyle = (() => {
+  try {
+    return uni.getSystemInfoSync().windowWidth >= 768 ? listTagStyle : listTagStyleMobile
+  } catch (_) {
+    return listTagStyle
+  }
+})()
 
 // ── Helpers ──
 
@@ -767,7 +774,7 @@ onMounted(() => {
 }
 
 .briefing-preview {
-  font-size: 26rpx;
+  font-size: 25rpx;
   color: var(--color-text-tertiary);
   line-height: 1.65;
   display: -webkit-box;
@@ -863,7 +870,7 @@ onMounted(() => {
   height: 100%;
 }
 .card-title {
-  font-size: 34rpx;
+  font-size: 30rpx;
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.4;
@@ -874,7 +881,7 @@ onMounted(() => {
   font-family: var(--font-sans);
 }
 .card-summary {
-  font-size: 26rpx;
+  font-size: 25rpx;
   color: var(--color-text-hint);
   line-height: 1.6;
   margin-top: 12rpx;
@@ -983,7 +990,7 @@ onMounted(() => {
     font-size: 13px;
   }
   .digest-time {
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .digest-content.collapsed {
@@ -1005,7 +1012,7 @@ onMounted(() => {
     border-top-width: 1px;
   }
   .footer-stat {
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .load-more {
@@ -1049,10 +1056,10 @@ onMounted(() => {
     font-size: 8px;
   }
   .status-text {
-    font-size: 12px;
+    font-size: 13px;
   }
   .briefing-preview {
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1.7;
   }
   .briefing-card-footer {
@@ -1064,12 +1071,12 @@ onMounted(() => {
     gap: 8px;
   }
   .meta-tag {
-    font-size: 12px;
+    font-size: 13px;
     padding: 2px 8px;
     border-radius: 4px;
   }
   .briefing-gen-time {
-    font-size: 12px;
+    font-size: 13px;
   }
 
   /* Reports */
@@ -1098,7 +1105,7 @@ onMounted(() => {
     line-height: 1.4;
   }
   .card-summary {
-    font-size: 13px;
+    font-size: 15px;
     margin-top: 8px;
     line-height: 1.5;
   }
@@ -1106,7 +1113,7 @@ onMounted(() => {
     margin-top: 12px;
   }
   .card-date {
-    font-size: 12px;
+    font-size: 13px;
   }
   .action-btn {
     width: 28px;

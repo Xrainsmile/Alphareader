@@ -171,24 +171,40 @@ export const detailTagStyle = {
 /** 列表页 mp-html tag-style（更紧凑）
  *  同样使用 px 而非 rpx，原因见 detailTagStyle 注释。
  */
+// 列表页（Reports）Markdown 样式——字号对齐 news 页面：
+// 正文 15px = news-summary(PC)，标题层级等比放大
 export const listTagStyle = {
-  p: 'font-size: 14px; color: #5a5a6e; line-height: 1.7; margin-bottom: 6px;',
-  h1: 'font-size: 18px; font-weight: 700; color: #1a1a2e; margin: 10px 0 5px;',
-  h2: 'font-size: 16px; font-weight: 600; color: #1a1a2e; margin: 8px 0 4px;',
-  h3: 'font-size: 15px; font-weight: 600; color: #1a1a2e; margin: 7px 0 4px;',
-  h4: 'font-size: 14px; font-weight: 600; color: #3a3a4a; margin: 6px 0 3px;',
+  p: 'font-size: 15px; color: #5a5a6e; line-height: 1.7; margin-bottom: 6px;',
+  h1: 'font-size: 19px; font-weight: 700; color: #1a1a2e; margin: 10px 0 5px;',
+  h2: 'font-size: 17px; font-weight: 600; color: #1a1a2e; margin: 8px 0 4px;',
+  h3: 'font-size: 16px; font-weight: 600; color: #1a1a2e; margin: 7px 0 4px;',
+  h4: 'font-size: 15px; font-weight: 600; color: #3a3a4a; margin: 6px 0 3px;',
   ul: 'padding-left: 16px; margin-bottom: 5px;',
   ol: 'padding-left: 16px; margin-bottom: 5px;',
-  li: 'font-size: 14px; color: #5a5a6e; line-height: 1.7; margin-bottom: 3px;',
+  li: 'font-size: 15px; color: #5a5a6e; line-height: 1.7; margin-bottom: 3px;',
   blockquote: 'border-left: 3px solid #e0e0e6; padding-left: 10px; color: #6b6b7b; margin: 5px 0;',
-  code: 'font-size: 12px; background: #f5f5f7; padding: 1px 4px; border-radius: 3px; color: #d63384;',
+  code: 'font-size: 13px; background: #f5f5f7; padding: 1px 4px; border-radius: 3px; color: #d63384;',
   pre: 'background: #f5f5f7; padding: 8px; border-radius: 6px; overflow-x: auto; margin: 5px 0;',
   img: 'max-width: 100%; border-radius: 6px;',
   table: 'width: 100%; border-collapse: collapse; margin: 5px 0;',
-  th: 'font-size: 12px; padding: 5px 6px; background: #f5f5f7; border: 1px solid #e8e8ed; text-align: left; font-weight: 600;',
-  td: 'font-size: 12px; padding: 5px 6px; border: 1px solid #e8e8ed;',
+  th: 'font-size: 13px; padding: 5px 6px; background: #f5f5f7; border: 1px solid #e8e8ed; text-align: left; font-weight: 600;',
+  td: 'font-size: 13px; padding: 5px 6px; border: 1px solid #e8e8ed;',
   strong: 'font-weight: 700; color: #1a1a2e;',
   em: 'font-style: italic; color: #5a5a6e;',
   hr: 'border: none; border-top: 1px solid #e8e8ed; margin: 10px 0;',
   a: 'color: #4285f4; text-decoration: none;',
+}
+
+// 移动端变体——对齐 news 移动端字号（news-summary 25rpx ≈ 13px）
+export const listTagStyleMobile = {
+  ...listTagStyle,
+  p: 'font-size: 13px; color: #5a5a6e; line-height: 1.7; margin-bottom: 6px;',
+  h1: 'font-size: 17px; font-weight: 700; color: #1a1a2e; margin: 10px 0 5px;',
+  h2: 'font-size: 15px; font-weight: 600; color: #1a1a2e; margin: 8px 0 4px;',
+  h3: 'font-size: 14px; font-weight: 600; color: #1a1a2e; margin: 7px 0 4px;',
+  h4: 'font-size: 13px; font-weight: 600; color: #3a3a4a; margin: 6px 0 3px;',
+  li: 'font-size: 13px; color: #5a5a6e; line-height: 1.7; margin-bottom: 3px;',
+  code: 'font-size: 11px; background: #f5f5f7; padding: 1px 4px; border-radius: 3px; color: #d63384;',
+  th: 'font-size: 11px; padding: 5px 6px; background: #f5f5f7; border: 1px solid #e8e8ed; text-align: left; font-weight: 600;',
+  td: 'font-size: 11px; padding: 5px 6px; border: 1px solid #e8e8ed;',
 }
