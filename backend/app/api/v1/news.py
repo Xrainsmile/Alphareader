@@ -229,6 +229,33 @@ async def list_news(
     except Exception as e:
         logger.warning("child-stats query failed, event boost degraded to 0: %s", e)
 
+    # 关联报道明细（含未过展示阈值的子报道）：事件卡折叠区展示
+    # 「同事件的其他信源报道」，每个根最多 12 条，按发布时间倒序
+    children_map: dict = {}  # pid -> [child dict, ...]
+    if child_stats:
+        try:
+            child_rows_stmt = (
+                select(News.id, News.related_to_id, News.title, News.source,
+                       News.url, News.published_at)
+                .where(News.related_to_id.isnot(None))
+            )
+            for c in (await db.execute(child_rows_stmt)).all():
+                children_map.setdefault(c.related_to_id, []).append({
+                    "id": str(c.id),
+                    "title": c.title,
+                    "source": c.source,
+                    "url": c.url,
+                    "published_at": c.published_at.isoformat() if c.published_at else None,
+                })
+            for pid_children in children_map.values():
+                pid_children.sort(
+                    key=lambda x: x["published_at"] or "", reverse=True
+                )
+                del pid_children[12:]
+        except Exception as e:
+            logger.warning("children-detail query failed, related_items empty: %s", e)
+            children_map = {}
+
     # Compute ranking_score in Python for each item (for API response)
     items = []
     for n in rows:
@@ -263,6 +290,8 @@ async def list_news(
             # 关联报道总数（含未过展示阈值的子报道）：事件徽标的数据源，
             # 不能依赖前端分组结果——子报道可能因分数低于 min_score 不在列表中
             "child_count": child_cnt,
+            # 关联报道明细（含未过展示阈值的）：折叠区展示全部信源
+            "related_items": children_map.get(n.id, []) if child_cnt else [],
             # 方案A 事件中心化：聚合根被 LLM 合成后带事件标题/综述，前端优先展示
             "event_title": getattr(n, "event_title", None),
             "event_summary": getattr(n, "event_summary", None),

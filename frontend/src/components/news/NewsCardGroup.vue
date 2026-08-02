@@ -11,17 +11,18 @@
       @ticker-click="(code) => $emit('ticker-click', code)"
     />
 
-    <!-- 关联报道折叠区 -->
-    <view v-if="group.children && group.children.length" class="related-section">
+    <!-- 关联报道折叠区：优先用后端 related_items（含未过展示阈值的全量子报道），
+         回落前端分组结果（仅含列表内可见子报道） -->
+    <view v-if="displayChildren.length" class="related-section">
       <view class="related-toggle" @click.stop="$emit('toggle-related', group.id)">
-        <text class="related-toggle-text">关联报道 ({{ group.children.length }}条)</text>
+        <text class="related-toggle-text">关联报道 ({{ displayChildren.length }}条)</text>
         <text class="related-toggle-arrow" :class="{ 'related-toggle-arrow-up': expanded }">›</text>
       </view>
 
       <!-- 展开的子卡片列表 -->
       <view v-if="expanded" class="related-list">
         <view
-          v-for="child in group.children"
+          v-for="child in displayChildren"
           :key="child.id"
           class="related-item"
           @click.stop="$emit('open', child.url, child.id)"
@@ -42,10 +43,11 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { formatTime } from '../../utils/formatters.js'
 import NewsCard from './NewsCard.vue'
 
-defineProps({
+const props = defineProps({
   group: { type: Object, required: true },
   isLast: { type: Boolean, default: false },
   expanded: { type: Boolean, default: false },
@@ -54,4 +56,12 @@ defineProps({
 })
 
 defineEmits(['open', 'tag-search', 'toggle-related', 'ticker-click'])
+
+/** 折叠区数据源：后端 related_items（全量子报道）优先，前端分组回落 */
+const displayChildren = computed(() => {
+  if (props.group.related_items && props.group.related_items.length) {
+    return props.group.related_items
+  }
+  return props.group.children || []
+})
 </script>
