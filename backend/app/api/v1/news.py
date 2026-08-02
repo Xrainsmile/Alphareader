@@ -260,6 +260,9 @@ async def list_news(
             "is_highlight": bool(getattr(n, "is_highlight", False)),
             "tags": n.tags,
             "related_to_id": str(n.related_to_id) if n.related_to_id else None,
+            # 关联报道总数（含未过展示阈值的子报道）：事件徽标的数据源，
+            # 不能依赖前端分组结果——子报道可能因分数低于 min_score 不在列表中
+            "child_count": child_cnt,
             # 方案A 事件中心化：聚合根被 LLM 合成后带事件标题/综述，前端优先展示
             "event_title": getattr(n, "event_title", None),
             "event_summary": getattr(n, "event_summary", None),

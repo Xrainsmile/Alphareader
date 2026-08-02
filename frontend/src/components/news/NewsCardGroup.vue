@@ -4,7 +4,7 @@
     <NewsCard
       :item="group"
       :show-gravity="showGravity"
-      :children-count="group.children ? group.children.length : 0"
+      :children-count="group.child_count || (group.children ? group.children.length : 0)"
       :density="density"
       @open="(url, id) => $emit('open', url, id)"
       @tag-search="(tag) => $emit('tag-search', tag)"
