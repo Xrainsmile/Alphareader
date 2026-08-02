@@ -1,13 +1,7 @@
 <template>
   <view class="page-layout">
-    <!-- PC 侧边栏导航 -->
-    <view class="pc-sidebar">
-      <text class="pc-sidebar-logo">AlphaReader</text>
-      <view class="pc-nav-item pc-nav-active" @click="navTo('/pages/index/index')"><text class="pc-nav-text">News</text></view>
-      <view class="pc-nav-item" @click="navTo('/pages/stocks/index')"><text class="pc-nav-text">Stocks</text></view>
-      <view class="pc-nav-item" @click="navTo('/pages/reports/index')"><text class="pc-nav-text">Reports</text></view>
-      <view class="pc-nav-item" @click="navTo('/pages/sepa/index')"><text class="pc-nav-text">SEPA</text></view>
-    </view>
+    <!-- PC 侧边栏导航（使用共享组件，统一顺序 Reports/News/Stocks/SEPA） -->
+    <PcSidebar active="news" />
 
     <!-- 主内容区 -->
     <view class="container">
@@ -188,6 +182,7 @@ import { onShow, onHide, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-
 import { initTracker, trackImpression, trackClick, destroyTracker } from '../../utils/tracker.js'
 import { tickerLookup, fetchNews } from '../../utils/api.js'
 import SiteFooter from '@/components/common/SiteFooter.vue'
+import PcSidebar from '@/components/common/PcSidebar.vue'
 import NewsSearchBar from '@/components/news/NewsSearchBar.vue'
 import NewsFilterPopover from '@/components/news/NewsFilterPopover.vue'
 import NewsCardGroup from '@/components/news/NewsCardGroup.vue'
@@ -303,11 +298,6 @@ function onToggleHighlight() {
 function setTimeFilter(hours) {
   maxAgeHours.value = hours
   doResetAndLoad()
-}
-
-/** PC 侧边栏导航 */
-function navTo(url) {
-  uni.switchTab({ url })
 }
 
 // ── PC 右侧看板：TOP5 高分新闻 ──
