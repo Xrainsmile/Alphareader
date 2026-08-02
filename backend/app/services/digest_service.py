@@ -97,8 +97,10 @@ PERIOD_ICONS = {
     "night":   "🌙",
 }
 
-# 送给 LLM 的事件数上限（按评分+信源数排序截取）
-_MAX_EVENTS_PER_DIGEST = 20
+# 预取候选事件数（远大于最终上限：先过滤重复再截取，避免漏掉排名靠后但版本确有前进的新事件）
+_FETCH_EVENT_LIMIT = 60
+# 真正交给 LLM 的事件数上限（按评分+信源数排序截取）
+_FINAL_EVENT_LIMIT = 20
 
 
 def _get_period_range(period_label: str, target_date: date) -> tuple[datetime, datetime]:
@@ -118,7 +120,6 @@ def _get_period_range(period_label: str, target_date: date) -> tuple[datetime, d
 async def _fetch_period_events(
     period_start: datetime,
     period_end: datetime,
-    max_events: int = _MAX_EVENTS_PER_DIGEST,
 ) -> tuple[list[dict], int, int]:
     """查询时段内的事件根（PRD 10.1：简报只读事件层）。
 
@@ -160,7 +161,7 @@ async def _fetch_period_events(
                 News.event_source_count.desc().nullslast(),
                 News.published_at.desc(),
             )
-            .limit(max_events)
+            .limit(_FETCH_EVENT_LIMIT)
         )
         rows = (await db.execute(stmt)).scalars().all()
 
@@ -550,8 +551,17 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
     # 跨简报对比：加载上一份简报事件链接，剔除版本未前进的重复事件
     prev_digest, prev_links = await _load_previous_digest(period_start)
     events, quiet_from_filter = _filter_repeated_events(events, prev_links)
+    # 持续事件判定使用完整候选集（不过早截断），避免活跃事件被误判为 ongoing
     ongoing_updates, quiet_from_stale = await _build_ongoing_updates(events, prev_links)
     quiet_topics = quiet_from_filter + quiet_from_stale
+
+    # 先过滤重复，再按优先级截取最终上限 _FINAL_EVENT_LIMIT 交给 LLM，
+    # 避免排名靠后但版本确有前进的新事件被过早的 LIMIT 拦掉（漏事件问题）。
+    events = events[:_FINAL_EVENT_LIMIT]
+    # material_updates 基于最终候选重算，与 event_count 口径一致
+    material_updates = sum(
+        1 for e in events if e.get("updated_in_period") and e.get("latest_change")
+    )
 
     if not events:
         # 无新增事件：但仍可能需保留「持续事件 / 安静议题」
