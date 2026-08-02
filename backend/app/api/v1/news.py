@@ -5,8 +5,9 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
-from sqlalchemy import and_, desc, func, select, text
+from sqlalchemy import and_, desc, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.auth import require_admin_key, require_api_key
 from app.database import get_db
@@ -124,7 +125,20 @@ async def list_news(
     # Use Python-computed cutoff for cross-DB compatibility (SQLite + PostgreSQL)
     if max_age_hours:
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
-        conditions.append(News.created_at >= cutoff_time)
+        # 事件根的自身可能很旧，但只要窗口内仍有新关联报道（事件仍在发展），
+        # 就保留在 feed 中——事件的"新鲜度"由最新子报道决定，否则像
+        # 「车企7月销量」这样 15 信源的大事件会因根超过 24h 而整张卡消失
+        child_news = aliased(News)
+        fresh_parents = (
+            select(child_news.related_to_id)
+            .where(child_news.related_to_id.isnot(None))
+            .where(child_news.created_at >= cutoff_time)
+            .distinct()
+        )
+        conditions.append(or_(
+            News.created_at >= cutoff_time,
+            News.id.in_(fresh_parents),
+        ))
 
     where_clause = and_(*conditions)
 
@@ -144,9 +158,16 @@ async def list_news(
                 f"WHERE c.related_to_id = news.id), 0) * {EVENT_BOOST_PER_SOURCE}, "
                 f"{EVENT_BOOST_MAX})"
             )
+            # 事件新鲜度：根发布时间与最新子报道发布时间取大者
+            # （PG 的 GREATEST 忽略 NULL，published_at 缺失时自然回落）
+            event_time_sql = (
+                "GREATEST(published_at, COALESCE("
+                "(SELECT MAX(c2.published_at) FROM news c2 "
+                "WHERE c2.related_to_id = news.id), published_at))"
+            )
             ranking_expr = text(gravity_sql_expression(
                 score_column="ai_score",
-                time_column="published_at",
+                time_column=event_time_sql,
                 gravity=gravity,
                 boost_sql=boost_sql,
             ))
@@ -186,29 +207,35 @@ async def list_news(
         result = await db.execute(fallback_stmt)
         rows = list(result.scalars().all())
 
-    # 关联报道计数（用于 Python 侧 ranking_score 与 SQL 排序口径一致；
-    # ORM 查询跨库兼容，SQLite 回退路径同样生效）
-    child_counts: dict = {}
+    # 关联报道统计（计数 + 最新发布时间）：用于 Python 侧 ranking_score
+    # 与 SQL 排序口径一致；ORM 查询跨库兼容，SQLite 回退路径同样生效
+    child_stats: dict = {}  # pid -> (count, max_published_at)
     try:
         cnt_stmt = (
-            select(News.related_to_id, func.count())
+            select(News.related_to_id, func.count(), func.max(News.published_at))
             .where(News.related_to_id.isnot(None))
             .group_by(News.related_to_id)
         )
-        child_counts = dict((await db.execute(cnt_stmt)).all())
+        for pid, cnt, max_pub in (await db.execute(cnt_stmt)).all():
+            child_stats[pid] = (cnt, max_pub)
     except Exception as e:
-        logger.warning("child-count query failed, event boost degraded to 0: %s", e)
+        logger.warning("child-stats query failed, event boost degraded to 0: %s", e)
 
     # Compute ranking_score in Python for each item (for API response)
     items = []
     for n in rows:
+        child_cnt, child_max_pub = child_stats.get(n.id, (0, None))
         boost = min(
-            child_counts.get(n.id, 0) * EVENT_BOOST_PER_SOURCE,
+            child_cnt * EVENT_BOOST_PER_SOURCE,
             EVENT_BOOST_MAX,
         )
+        # 事件新鲜度：根与最新子报道取大者（与 SQL event_time_sql 口径一致）
+        effective_pub = n.published_at
+        if child_max_pub and (effective_pub is None or child_max_pub > effective_pub):
+            effective_pub = child_max_pub
         ranking_score = calculate_ranking_score(
             ai_score=n.ai_score or 0,
-            publish_time=n.published_at,
+            publish_time=effective_pub,
             gravity=gravity,
             boost=boost,
         )
