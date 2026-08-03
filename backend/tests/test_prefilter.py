@@ -51,6 +51,16 @@ class TestMinimumInformation:
         it = make_item("公司A发布财报", content="公司A发布财报")
         assert pf.has_minimum_information(it) is False
 
+    def test_flash_news_title_equals_content_with_hard_signal_kept(self):
+        # 快讯类信源常把标题当作全文；含明确实体+动作时应放行，避免误杀重点快讯
+        it = make_item("阿斯利康与百时美施贵宝洽谈合并", content="阿斯利康与百时美施贵宝洽谈合并")
+        assert pf.has_minimum_information(it) is True
+
+    def test_title_equals_content_no_signal_dropped(self):
+        # 标题即全文且无任何硬信号 → 仍判低价值
+        it = make_item("盘面平淡", content="盘面平淡")
+        assert pf.has_minimum_information(it) is False
+
 
 # ───────────────────────── 2. 硬信息信号 ─────────────────────────
 

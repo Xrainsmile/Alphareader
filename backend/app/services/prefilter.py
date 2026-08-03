@@ -304,9 +304,12 @@ def has_minimum_information(item, patterns: list[str] | None = None) -> bool:
     # 标题过短且正文为空
     if len(title) < 8 and len(content) < 80:
         return False
-    # 标题与正文基本相同（无信息增量）
+    # 标题与正文基本相同（无信息增量）。
+    # 注意：快讯类信源（富途 / Seeking Alpha 等）常把标题当作全文，标题本身即有效新闻，
+    # 仅当同时缺乏任何硬信息信号（实体/数字/动作/政策）才判为低价值，避免误杀重点快讯。
     if title and content and title in content and len(content) - len(title) < 20:
-        return False
+        if hard_signal_score(item) == 0:
+            return False
     # 命中招聘 / 活动 / 播客 / 课程推广等明显非新闻模式
     if any(re.search(p, text, re.I) for p in patterns):
         return False
