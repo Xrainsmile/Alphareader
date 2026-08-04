@@ -2,6 +2,7 @@
 
 ## 产品/设计决策
 - News 只保留「推荐流」一种（热点融入卡片：why_it_matters 橙底、🔥信源徽标、关联报道）。**不要**恢复双 tab。`/news/hot-topics` 接口保留前端未用。
+- **事件化改版（2026-08-02 大版本）**：三入口 今日简报(默认页)/实时事件/深度报告。**对外导航英文命名（2026-08-02 定）**：Reports=今日简报、News=实时事件、Stocks、SEPA（左导航 PcSidebar + 移动端 tabBar + 页面标题均用此英文）。事件=基本单位：事件包字段（latest_change/why_important/uncertainty/watch_next/status/version）+ event_versions 版本表（仅实质更新写快照）。/api/v1/events 仅事件根按事件分页；简报 schema v2 只读事件根输出结构化 JSON（失败不覆盖旧版）。独立信源数与报道总数分开统计。事件排序三维优待见「推荐流展示」。
 
 ## 前端约定（uni-app H5）
 - 不用裸 `<template>` 分组（会渲染成 display:none），用 `<view>`；带 v-if/v-for 的 `<template>` 是 fragment 安全。
@@ -43,17 +44,30 @@
 - 规则：输入视为不可信(防注入)；旧闻>24h最高3分；is_highlight=score≥8+强催化+明文量化+一周内(score<8强制降级)。Ticker正则 A股^\d{6}$/港股^\d{5}$/美股^[A-Z]{3,5}(\.[A-Z])?$。
 - 配置：LLM_BATCH_SIZE=20/SCORE_THRESHOLD=5/MAX_RETRIES=2/CONTENT_PREVIEW_CHARS=800/MAX_CONCURRENCY=3/TWO_STAGE_EN_ENABLED=True。退避 min(30,2**attempt)+uniform(0,1)，429读Retry-After。
 
+## 新闻预筛 prefilter.py（LLM 评分前，省 token）
+- **作用**：`run_pipeline` 的 Step 2.75（去重+年龄闸之后、Step 3 `filter_news` 之前）拦截低价值内容、按信源历史质量分级门控、压缩"媒体跟稿"重复评分。设计见用户 2026-08-03 长文「推荐的 AlphaReader 方案」：去重→权威放行→硬规则→信源分级→同事件新事实→LLM。
+- **零 token**：全程不用 LLM/Embedding；标题相似度用 `difflib`，数字/实体/动作/时间用正则集合比较。`needs_individual_scoring` 判"同事件无新事实"→继承事件根 `ai_score`/`tags` 跳过 LLM（正常模式 `_synthesize_inherited_item` 直接入库为关联子报道）。
+- **核心函数**：`has_minimum_information`(内容完整性+低价值模式) / `hard_signal_score`(实体+数字+动作+政策) / `compute_prefilter_score`(加权, <=1 兜底丢弃) / `is_official_source`(权威性兜底, 不被历史分限流) / `contains_major_event_signal`(重大事件强制送评) / `compute_source_quality`+`classify_source`(A/B/C/D 分级) / `prefilter_news`(编排, 返回 kept/inherited/dropped_urls/decisions/audit_count)。
+- **权威/重大兜底**：官方信源(政府·监管·交易所·央行·公司公告)与重大事件(并购/破产/诉讼/利率/关税/制裁)强制送评，控制误杀。
+- **影子测试**：`PREFILTER_SHADOW_MODE=True`（默认）只记录决策不丢弃；正常模式随机保留 `PREFILTER_AUDIT_SAMPLE_RATE`(0.05) 被拦截内容送 LLM 审计。关闭影子前需先跑 3–7 天对比真实评分（误杀率<2%、低分命中>80%）。
+- **落库**：`News.prefilter_reason`(String256, 索引) 记录预筛原因；迁移 `a9b8c7_prefilter_reason.py`（down_revision `s1t2r3_market_adaptability`）。
+- 测试 `tests/test_prefilter.py`(25 例全过)。**已部署（2026-08-03，commit 79b5f3b + 迁移修复 94146a7），当前 `PREFILTER_SHADOW_MODE=True` 影子模式在生产生效，仅记录不丢弃；跑 3–7 天对比真实评分后关闭影子正式拦截。**
+- **迁移踩坑**：新增 alembic 迁移前务必先 `alembic heads` 确认真实 head 再写 `down_revision`，否则易与既有链末端（如 `x6y7z8a9b0c1`）产生多 head 冲突致 `upgrade head` 失败。
+- **误杀教训（2026-08-03）**：快讯源（富途/Seeking Alpha）常把标题当全文（content==title），"标题==正文→低价值"规则会误杀评分7-8的重点快讯。改为仅当标题==正文**且**无硬信息信号（实体/数字/动作/政策）才丢弃；含明确实体+动作放行。`has_minimum_information` 的这一分支务必带硬信号护栏。
+
 ## 推荐流展示
 - 入库阈值5（保留全量）；展示闸门 list_news 默认 min_score=6+max_age_hours=24；🔥=is_highlight子集。8B模型科技类系统性5-6故默认6。
+- **hot 排序（2026-08-02 修复）**：gravity_sql_expression 分子曾误写 ai_score/10.0-1 致恒零、hot 长期退化为 latest；已修为 ai_score-1。事件三维优待：points+=min(关联报道数×0.5,2.0)、时间取 GREATEST(根,MAX子报道)、**gravity 事件 1.2 / 单篇 1.8**（EVENT_GRAVITY，SQL CASE 按行切换）。事件卡徽标全密度显示「🔥 事件 · N 信源」。
 
-## 事件合成（方案A 事件中心化，2026-08-01 实现）
+## 事件合成（方案A 事件中心化，2026-08-01 已上线）
 - 多信源聚合簇（related_to_id 根+子）由 event_synthesizer.py 合成 1 张事件卡片：LLM(deepseek-chat, thinking disabled) 产出 event_title/event_summary 写聚合根（迁移 v4w5x6y7z8a9 三列，event_article_count 做增量判断，新子报道到达才重合成）。
 - pipeline Step 7 挂载（非关键路径）；config：EVENT_SYNTH_ENABLED/WINDOW_HOURS=12/MAX_EVENTS=10/MIN_SOURCES=2。
 - list_news/hot-topics 响应带 event_*；前端 NewsCard displayTitle/displaySummary 优先 event_*（搜索高亮除外）。
+- **星型拓扑前提（2026-08-02 修）**：去重器聚合会产生链 A←B←C，pipeline 入库时 `_resolve_event_roots` 压平为星型；存量已用 scripts/flatten_related_chains.py 回填（125 行）。事件新鲜度=最新子报道时间：list_news 时间窗口保留活跃事件根、hot 排序时间项取 GREATEST(根, MAX子报道)。容器内跑脚本文件需 `-e PYTHONPATH=/app`（python -c 不需要）。
 - 演进路线（用户 2026-08-01 拍板）：A事件中心化(已做)→B对话式RAG→C个性化简报→D知识图谱(用户明确看好，长期)。
 
 ## 测试既有失败（与开发改动无关，勿误修）
-- 6 个常驻失败：test_catalyst.py 5 个（futu URL 期望 futunn.com 实际 xueqiu、fetch_high_score_news seed 计数）、test_us_data_fetcher.py 1 个（tencent 特殊字符）。全量基线 = 292 passed + 6 failed。
+- 常驻失败（2026-08-03 实测全量 = 377 passed + 9 failed）：test_catalyst.py 5 个（futu URL 期望 futunn.com 实际 xueqiu、fetch_high_score_news seed 计数等）、test_us_data_fetcher.py 1 个（tencent 特殊字符）、test_digest_service.py 2 个（reports 路由 404 / digest skip 逻辑）、test_reports_api.py 1 个（/api/v1/reports/ 404）。后 3 个经 `git stash` 确认在干净基线同样失败，非新改动引入。
 
 ## 去重 deduplicator.py（含P5跨天旧闻）
 - URL hash/SimHash汉明≤5(Redis24h)/SequenceMatcher>0.5(2h)/TF-IDF>0.65/Embedding语义(Redis90min,cos>0.80去重,0.67-0.80聚合)/事件聚合 related_to_id。
