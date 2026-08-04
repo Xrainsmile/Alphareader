@@ -497,7 +497,8 @@ def build_wecom_digest_summary(structured: dict, period_label: str, digest_id: i
         lines.append("")
 
     base = settings.SITE_BASE_URL.rstrip("/")
-    lines.append(f"📎 原文：{base}/#/pages/briefing/detail?id={digest_id}")
+    # 阶段简报无独立详情路由，全部内联展示在 Reports 页时间线，故链接指向 Reports 页
+    lines.append(f"📎 原文：{base}/#/pages/reports/index")
     lines.append("⚠️ AI 生成，仅供参考，不构成投资建议。")
     return "\n".join(lines)
 
