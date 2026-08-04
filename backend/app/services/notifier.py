@@ -112,3 +112,80 @@ async def send_alert(title: str, message: str) -> None:
     except Exception as e:
         # Never let notification failure crash the caller
         logger.warning("Failed to send alert (%s): %s", platform, e)
+
+
+def _split_text(content: str, max_bytes: int) -> list[str]:
+    """将长文本按 UTF-8 字节上限切分为多段，优先在换行处断开，避免截断多字节字符。
+
+    用于企业微信文本消息（单条上限 2048 字节）发送超长内容。
+    """
+    lines = content.split("\n")
+    chunks: list[str] = []
+    cur: list[str] = []
+    cur_bytes = 0
+
+    for line in lines:
+        lb = len(line.encode("utf-8"))
+        # 单行超限：先把已累积段落 flush，再把这一行按字符硬切
+        if lb > max_bytes:
+            if cur:
+                chunks.append("\n".join(cur))
+                cur = []
+                cur_bytes = 0
+            piece = ""
+            for ch in line:
+                if len((piece + ch).encode("utf-8")) > max_bytes:
+                    chunks.append(piece)
+                    piece = ch
+                else:
+                    piece += ch
+            if piece:
+                cur.append(piece)
+                cur_bytes = len(piece.encode("utf-8"))
+            continue
+
+        if cur_bytes + lb + 1 > max_bytes and cur:
+            chunks.append("\n".join(cur))
+            cur = [line]
+            cur_bytes = lb
+        else:
+            cur.append(line)
+            cur_bytes += lb + 1
+
+    if cur:
+        chunks.append("\n".join(cur))
+    return chunks
+
+
+async def send_report(content: str) -> None:
+    """推送 Reports 简报到配置的企业微信群机器人（ALERT_WEBHOOK_URL）。
+
+    与 send_alert 区分：这里推送的是「内容本身」（不附加时间戳前缀），
+    且只在 webhook 为企业微信时发送。URL 为空或非企微时静默跳过。
+    单条文本超过 2000 字节自动按行切分为多条消息。
+    """
+    url = settings.ALERT_WEBHOOK_URL
+    if not url:
+        return  # Report push disabled
+
+    platform = _detect_platform(url)
+    if platform != "wecom":
+        logger.info("send_report: webhook is %s (not wecom), skipping report push", platform)
+        return
+
+    chunks = _split_text(content, 2000)
+    for i, chunk in enumerate(chunks):
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                resp = await client.post(
+                    url, json={"msgtype": "text", "text": {"content": chunk}}
+                )
+                if resp.status_code < 300:
+                    logger.info("Report pushed to WeCom (%d/%d)", i + 1, len(chunks))
+                else:
+                    logger.warning(
+                        "Report webhook returned %d: %s",
+                        resp.status_code, resp.text[:200],
+                    )
+        except Exception as e:
+            logger.warning("Failed to push report to WeCom (%d/%d): %s", i + 1, len(chunks), e)

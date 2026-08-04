@@ -143,6 +143,9 @@ class Settings(BaseSettings):
     # 留空则禁用告警
     ALERT_WEBHOOK_URL: str = ""
 
+    # ── 站点基础地址（用于推送消息中拼接原文链接）──
+    SITE_BASE_URL: str = "https://www.alphareader.site"
+
     # ── Reports 同步鉴权 ──
     REPORT_SYNC_TOKEN: str = Field("", repr=False)  # Node.js 上传脚本使用的 Bearer Token，生产环境必须设置
 

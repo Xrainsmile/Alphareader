@@ -28,6 +28,7 @@ from app.models.digest_event_link import DigestEventLink
 from app.models.news import News
 from app.models.news_digest import NewsDigest
 from app.services.llm_client import stream_chat
+from app.services.notifier import send_report
 
 logger = logging.getLogger("alphareader.digest")
 
@@ -458,6 +459,58 @@ def _dedupe_structured(structured: dict, events: list[dict]) -> dict:
     return structured
 
 
+def build_wecom_digest_summary(structured: dict, period_label: str, digest_id: int) -> str:
+    """构建企业微信群机器人友好的纯文本简报摘要（无表格），末尾附原文链接。
+
+    企微群机器人 webhook 的 text 消息不支持表格、单条上限 2048 字节。
+    这里用 emoji + 短行生成一份「重点速览」，并在末尾附上 App 原文链接。
+    """
+    icon = PERIOD_ICONS.get(period_label, "")
+    title = PERIOD_LABELS.get(period_label, "简报")
+    s = structured or {}
+    lines: list[str] = [f"{icon} {title} · AlphaReader"]
+
+    summary = s.get("period_summary", "")
+    if summary:
+        lines.append(summary)
+    lines.append("")
+
+    for label, key, limit in (
+        ("🔥 必须知道", "must_know", 5),
+        ("👀 值得留意", "worth_watching", 5),
+    ):
+        entries = s.get(key) or []
+        if entries:
+            lines.append(f"—— {label} ——")
+            for e in entries[:limit]:
+                lines.append(f"• {e.get('title', '')}")
+                if e.get("latest_change"):
+                    lines.append(f"  变化：{e['latest_change'][:120]}")
+            lines.append("")
+
+    upcoming = s.get("upcoming") or []
+    if upcoming:
+        lines.append("—— ⏰ 接下来关注 ——")
+        for u in upcoming[:3]:
+            prefix = f"{u.get('time', '')} " if u.get("time") else ""
+            lines.append(f"• {prefix}{u.get('item', '')}")
+        lines.append("")
+
+    base = settings.SITE_BASE_URL.rstrip("/")
+    lines.append(f"📎 原文：{base}/#/pages/briefing/detail?id={digest_id}")
+    lines.append("⚠️ AI 生成，仅供参考，不构成投资建议。")
+    return "\n".join(lines)
+
+
+async def _push_digest_to_wecom(digest_id: int, structured: dict, period_label: str) -> None:
+    """生成并推送阶段简报摘要到企微群（失败不影响主流程）。"""
+    try:
+        text = build_wecom_digest_summary(structured, period_label, digest_id)
+        await send_report(text)
+    except Exception as e:  # 推送失败绝不回滚简报生成
+        logger.warning("Failed to push digest %s to WeCom: %s", digest_id, e)
+
+
 def _render_markdown(structured: dict, period_display: str) -> str:
     """从结构化简报程序化生成 Markdown（兼容旧前端渲染，PRD 15.4）。"""
     lines = [f"**{period_display}**", "", structured["period_summary"], ""]
@@ -606,6 +659,8 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
         if digest_id:
             # 写入持续事件链接，保留下一份简报的对比基线
             await _save_event_links(digest_id, structured, [], prev_links)
+            # 推送到企微群机器人（ALERT_WEBHOOK_URL）
+            await _push_digest_to_wecom(digest_id, structured, period_label)
         return {
             "status": "ok",
             "event_count": 0,
@@ -674,6 +729,8 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
     # 写入事件链接（下一份简报的对比基准）
     if digest_id:
         await _save_event_links(digest_id, structured, events, prev_links)
+        # 推送到企微群机器人（ALERT_WEBHOOK_URL）
+        await _push_digest_to_wecom(digest_id, structured, period_label)
 
     logger.info(
         "Digest saved: %s %s, %d events, %d must-know, %d signals",

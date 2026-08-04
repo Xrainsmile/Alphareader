@@ -132,8 +132,15 @@ async def stream_chat(
                                log_tag, attempt, max_retries)
 
             except httpx.HTTPStatusError as e:
-                body = e.response.text[:500] if e.response else "N/A"
                 status_code = e.response.status_code if e.response else "?"
+                # 流式响应在异常时 body 尚未读取，直接访问 .text 会抛 ResponseNotRead；
+                # 安全读取，失败则忽略 body（仍能按 status_code 决定重试/中止）。
+                body = ""
+                if e.response is not None:
+                    try:
+                        body = (await e.response.aread()).decode("utf-8", "replace")[:500]
+                    except Exception:
+                        body = ""
                 # 内容审查 → 不重试
                 if status_code == 400 and any(kw in body for kw in _CONTENT_RISK_KEYWORDS):
                     logger.warning("%s content risk (400), aborting: %s", log_tag, body[:200])
