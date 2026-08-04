@@ -80,119 +80,77 @@
           </view>
 
           <!-- Card -->
-          <view class="digest-card" @click="expandToggle(item.id)">
-            <!-- Card Header -->
-            <view class="digest-card-header">
-              <view class="digest-badge" :class="'badge-' + item.period_label">
-                <IconSvg :name="periodIconName(item.period_label)" class="badge-icon" size="15px" />
-                <text class="badge-text">{{ item.period_display }}</text>
-              </view>
-              <text class="digest-time">{{ formatDigestDate(item) }}</text>
+          <view class="digest-card">
+            <!-- Header: 时段 + 时间范围 + 统计 -->
+            <view class="dc-head">
+              <text class="dc-title">{{ item.period_display }}</text>
+              <text class="dc-range">{{ formatPeriodRange(item) }}</text>
+            </view>
+            <view class="dc-stats">
+              <text class="dc-stat">{{ item.event_count || 0 }} 个事件</text>
+              <text class="dc-sep">·</text>
+              <text class="dc-stat">{{ item.material_update_count || 0 }} 个重要变化</text>
+              <text class="dc-sep">·</text>
+              <text class="dc-stat">{{ (sc(item).must_know || []).length }} 个必须知道</text>
             </view>
 
-            <!-- Card Content：v2 结构化简报优先，旧版 Markdown 兼容（PRD 12） -->
-            <view class="digest-content" :class="{ collapsed: !expandedIds.has(item.id) }">
-              <view v-if="item.schema_version === 2 && item.structured_content" class="structured-briefing">
-                <!-- 本时段概况 -->
-                <text class="sb-summary">{{ item.structured_content.period_summary }}</text>
+            <!-- 核心变化（跨事件共同信号，一眼看本时段最重要变化）-->
+            <view v-if="sc(item).cross_event_signals && sc(item).cross_event_signals.length" class="dc-section dc-core">
+              <text class="dc-section-title">核心变化</text>
+              <view v-for="(s, si) in sc(item).cross_event_signals" :key="si" class="dc-core-item">
+                <text class="dc-core-dot">•</text>
+                <text class="dc-core-text">{{ s.title }}</text>
+              </view>
+            </view>
 
-                <!-- 与上一份相比的变化 -->
-                <view v-if="item.structured_content.what_changed" class="sb-changed">
-                  <text class="sb-changed-text"><IconSvg name="change" class="sb-ico" size="14px" /> {{ item.structured_content.what_changed }}</text>
-                </view>
-
-                <!-- 必须知道 -->
-                <view v-if="item.structured_content.must_know && item.structured_content.must_know.length" class="sb-section">
-                  <text class="sb-section-title">必须知道</text>
-                  <view
-                    v-for="e in item.structured_content.must_know"
-                    :key="e.event_id"
-                    class="sb-event must"
-                    @click.stop="goEventDetail(e.event_id)"
-                  >
-                    <text class="sb-event-title">{{ e.title }}</text>
-                    <text v-if="e.latest_change" class="sb-event-change"><IconSvg name="new" class="sb-ico-sm" size="13px" /> {{ e.latest_change }}</text>
-                    <text v-if="e.why_important" class="sb-event-why">{{ e.why_important }}</text>
-                    <view class="sb-event-meta">
-                      <text v-if="e.confidence" class="sb-confidence" :class="'conf-' + e.confidence">{{ confidenceLabel(e.confidence) }}</text>
-                      <text v-if="e.watch_next" class="sb-event-watch"><IconSvg name="eye" class="sb-ico-sm" size="13px" /> {{ e.watch_next }}</text>
-                    </view>
-                  </view>
-                </view>
-
-                <!-- 值得留意 -->
-                <view v-if="item.structured_content.worth_watching && item.structured_content.worth_watching.length" class="sb-section">
-                  <text class="sb-section-title">值得留意</text>
-                  <view
-                    v-for="e in item.structured_content.worth_watching"
-                    :key="e.event_id"
-                    class="sb-event"
-                    @click.stop="goEventDetail(e.event_id)"
-                  >
-                    <text class="sb-event-title">{{ e.title }}</text>
-                    <text v-if="e.latest_change" class="sb-event-change"><IconSvg name="new" class="sb-ico-sm" size="13px" /> {{ e.latest_change }}</text>
-                    <text v-if="e.why_important" class="sb-event-why">{{ e.why_important }}</text>
-                  </view>
-                </view>
-
-                <!-- 共同信号 -->
-                <view v-if="item.structured_content.cross_event_signals && item.structured_content.cross_event_signals.length" class="sb-section">
-                  <text class="sb-section-title">共同信号</text>
-                  <view v-for="(s, si) in item.structured_content.cross_event_signals" :key="si" class="sb-signal">
-                    <text class="sb-signal-title">{{ s.title }}</text>
-                    <text class="sb-signal-summary">{{ s.summary }}</text>
-                  </view>
-                </view>
-
-                <!-- 接下来关注 -->
-                <view v-if="item.structured_content.upcoming && item.structured_content.upcoming.length" class="sb-section">
-                  <text class="sb-section-title">接下来关注</text>
-                  <view v-for="(u, ui) in item.structured_content.upcoming" :key="ui" class="sb-upcoming">
-                    <text class="sb-upcoming-text"><text v-if="u.time" class="sb-upcoming-time">{{ u.time }}</text>{{ u.item }}</text>
-                  </view>
-                </view>
-
-                <!-- 持续事件（重要但本时段变化较小，压缩一行） -->
-                <view v-if="item.structured_content.ongoing_updates && item.structured_content.ongoing_updates.length" class="sb-section">
-                  <text class="sb-section-title">持续事件</text>
-                  <view
-                    v-for="e in item.structured_content.ongoing_updates"
-                    :key="e.event_id"
-                    class="sb-oneline"
-                    @click.stop="goEventDetail(e.event_id)"
-                  >
-                    <text class="sb-oneline-text">{{ e.title }}<text v-if="e.note" class="sb-oneline-note"> — {{ e.note }}</text></text>
-                  </view>
-                </view>
-
-                <!-- 此前关注·暂无进展 -->
-                <view v-if="item.structured_content.quiet_topics && item.structured_content.quiet_topics.length" class="sb-section">
-                  <text class="sb-section-title">此前关注 · 暂无进展</text>
-                  <view
-                    v-for="e in item.structured_content.quiet_topics"
-                    :key="e.event_id"
-                    class="sb-oneline quiet"
-                    @click.stop="goEventDetail(e.event_id)"
-                  >
-                    <text class="sb-oneline-text">{{ e.title }}<text v-if="e.note" class="sb-oneline-note"> — {{ e.note }}</text></text>
+            <!-- 必须知道（编号体现优先级，次级信息收进事件详情页）-->
+            <view v-if="sc(item).must_know && sc(item).must_know.length" class="dc-section">
+              <text class="dc-section-title">必须知道</text>
+              <view
+                v-for="(e, ei) in sc(item).must_know"
+                :key="e.event_id"
+                class="dc-mk"
+              >
+                <text class="dc-mk-rank">{{ String(ei + 1).padStart(2, '0') }}</text>
+                <view class="dc-mk-body">
+                  <text class="dc-mk-title">{{ e.title }}</text>
+                  <text v-if="e.latest_change" class="dc-mk-change">{{ e.latest_change }}</text>
+                  <view class="dc-mk-foot" @click.stop="goEventDetail(e.event_id)">
+                    <text class="dc-mk-detail">查看详情 →</text>
                   </view>
                 </view>
               </view>
-              <mp-html v-else :content="renderMd(item.content)" :tag-style="tagStyle" :lazy-load="true" />
             </view>
 
-            <!-- Expand/Collapse toggle -->
-            <view class="digest-toggle" v-if="item.content && item.content.length > 100">
-              <text class="toggle-text">{{ expandedIds.has(item.id) ? '收起' : '展开全文' }}</text>
-              <text class="toggle-arrow">{{ expandedIds.has(item.id) ? '▲' : '▼' }}</text>
+            <!-- 值得留意（紧凑列表）-->
+            <view v-if="sc(item).worth_watching && sc(item).worth_watching.length" class="dc-section">
+              <text class="dc-section-title">值得留意</text>
+              <view v-for="e in sc(item).worth_watching" :key="e.event_id" class="dc-watch">
+                <text class="dc-watch-bullet">—</text>
+                <text class="dc-watch-text">{{ e.title }}</text>
+              </view>
             </view>
 
-            <!-- Card Footer -->
-            <view class="digest-footer">
-              <text class="footer-stat"><IconSvg name="chart" class="sb-ico-sm" size="13px" /> 收录 {{ item.news_count }} 条报道</text>
-              <text v-if="item.schema_version === 2 && item.event_count != null" class="footer-stat">归并为 {{ item.event_count }} 个事件</text>
-              <text v-if="item.schema_version === 2 && item.material_update_count" class="footer-stat">{{ item.material_update_count }} 个实质更新</text>
+            <!-- 持续关注（持续事件 + 此前关注暂无进展）-->
+            <view v-if="ongoingList(item).length" class="dc-section">
+              <text class="dc-section-title">持续关注</text>
+              <view v-for="e in ongoingList(item)" :key="e.event_id" class="dc-watch">
+                <text class="dc-watch-bullet">—</text>
+                <text class="dc-watch-text">{{ e.title }}<text v-if="e.note" class="dc-watch-note"> · {{ e.note }}</text></text>
+              </view>
             </view>
+
+            <!-- 接下来关注 -->
+            <view v-if="sc(item).upcoming && sc(item).upcoming.length" class="dc-section">
+              <text class="dc-section-title">接下来关注</text>
+              <view v-for="(u, ui) in sc(item).upcoming" :key="ui" class="dc-upcoming">
+                <text v-if="u.time" class="dc-upcoming-time">{{ u.time }}</text>
+                <text class="dc-upcoming-text">{{ u.item }}</text>
+              </view>
+            </view>
+
+            <!-- 旧版 Markdown 兼容（schema_version != 2）-->
+            <mp-html v-if="!(item.schema_version === 2 && item.structured_content)" :content="renderMd(item.content)" :tag-style="tagStyle" :lazy-load="true" />
           </view>
         </view>
       </view>
@@ -422,12 +380,22 @@ function renderMd(md) {
   return renderMarkdown(md)
 }
 
-function expandToggle(id) {
-  if (expandedIds.has(id)) {
-    expandedIds.delete(id)
-  } else {
-    expandedIds.add(id)
+// 安全读取结构化简报（避免 structured_content 为空时报错）
+function sc(item) {
+  return item && item.structured_content ? item.structured_content : {}
+}
+// 持续关注 = 持续事件(ongoing_updates) + 此前关注暂无进展(quiet_topics)
+function ongoingList(item) {
+  const s = sc(item)
+  return [...(s.ongoing_updates || []), ...(s.quiet_topics || [])]
+}
+// 时段范围：08:30—12:15
+function formatPeriodRange(item) {
+  const fmt = (iso) => {
+    const d = new Date(iso)
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
+  return `${fmt(item.period_start)}—${fmt(item.period_end)}`
 }
 
 // 深链：从企微推送 ?id=<digest_id> 进入时，确保该简报在列表内、已展开，并滚动定位
@@ -1113,156 +1081,155 @@ onMounted(() => {
   font-weight: 500;
 }
 
-/* ── 结构化简报（schema v2）── */
-.sb-summary {
-  font-size: 26rpx;
-  color: var(--color-text-secondary, #5a5a6e);
-  line-height: 1.7;
-  display: block;
-  margin-bottom: 16rpx;
+/* ── 阶段简报卡片（新版结构化简报）── */
+.dc-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14rpx;
+  flex-wrap: wrap;
 }
-.sb-section {
-  margin-top: 20rpx;
-}
-.sb-section-title {
-  font-size: 28rpx;
-  font-weight: 700;
+.dc-title {
+  font-size: 36rpx;
+  font-weight: 800;
   color: var(--color-text-primary);
-  display: block;
-  margin-bottom: 12rpx;
+  letter-spacing: 0.5rpx;
 }
-.sb-event {
-  background: var(--color-bg-secondary, #f7f8fa);
+.dc-range {
+  font-size: 24rpx;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+}
+.dc-stats {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+}
+.dc-stat { color: var(--color-text-secondary); }
+.dc-sep { color: var(--color-border); }
+
+.dc-section {
+  margin-top: 24rpx;
+}
+.dc-section-title {
+  font-size: 24rpx;
+  font-weight: 700;
+  color: var(--color-text-hint);
+  letter-spacing: 1rpx;
+  margin-bottom: 10rpx;
+  display: block;
+}
+
+/* 核心变化：唯一强调色，浅底突出 */
+.dc-core {
+  background: var(--color-bg-brand-light, #eef4ff);
   border-radius: 12rpx;
   padding: 16rpx 20rpx;
-  margin-bottom: 12rpx;
 }
-.sb-event.must {
-  background: #fffbf2;
-  border-left: 6rpx solid #f5a623;
+.dc-core-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  margin-top: 8rpx;
 }
-.sb-event-title {
+.dc-core-dot { color: var(--color-brand, #4285f4); font-weight: 700; line-height: 1.6; }
+.dc-core-text {
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+  line-height: 1.55;
+  font-weight: 600;
+}
+
+/* 必须知道：编号体现优先级 */
+.dc-mk {
+  display: flex;
+  align-items: flex-start;
+  gap: 14rpx;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid var(--color-border-light, #f0f0f4);
+}
+.dc-mk:last-child { border-bottom: none; }
+.dc-mk-rank {
+  flex: none;
+  font-size: 26rpx;
+  font-weight: 800;
+  color: var(--color-brand, #4285f4);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  min-width: 36rpx;
+}
+.dc-mk-body { flex: 1; min-width: 0; }
+.dc-mk-title {
   font-size: 27rpx;
   font-weight: 600;
   color: var(--color-text-primary);
   line-height: 1.45;
   display: block;
 }
-.sb-event-change {
-  font-size: 25rpx;
-  color: #2e7d32;
+.dc-mk-change {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
   line-height: 1.55;
-  display: block;
-  margin-top: 8rpx;
-}
-.sb-event-why {
-  font-size: 25rpx;
-  color: #1565c0;
-  line-height: 1.55;
-  display: block;
   margin-top: 6rpx;
+  display: block;
 }
-.sb-event-meta {
+.dc-mk-foot { margin-top: 8rpx; }
+.dc-mk-detail {
+  font-size: 22rpx;
+  color: var(--color-brand, #4285f4);
+  font-weight: 500;
+}
+
+/* 值得留意 / 持续关注：紧凑列表 */
+.dc-watch {
   display: flex;
-  align-items: center;
-  gap: 16rpx;
-  margin-top: 10rpx;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10rpx;
+  padding: 7rpx 0;
 }
-.sb-confidence {
-  font-size: 20rpx;
-  padding: 2rpx 12rpx;
-  border-radius: 6rpx;
-  font-weight: 600;
-}
-.conf-high { background: #e8f5e9; color: #2e7d32; }
-.conf-medium { background: #fff3e0; color: #ef6c00; }
-.conf-low { background: #eceff1; color: #546e7a; }
-.sb-event-watch {
-  font-size: 23rpx;
-  color: var(--color-text-hint);
-}
-.sb-signal {
-  background: #f3f0ff;
-  border-radius: 12rpx;
-  padding: 16rpx 20rpx;
-  margin-bottom: 12rpx;
-}
-.sb-signal-title {
-  font-size: 27rpx;
-  font-weight: 600;
-  color: #5e35b1;
-  display: block;
-}
-.sb-signal-summary {
+.dc-watch-bullet { color: var(--color-text-hint); line-height: 1.55; }
+.dc-watch-text {
   font-size: 25rpx;
-  color: var(--color-text-secondary, #5a5a6e);
-  line-height: 1.6;
-  display: block;
-  margin-top: 6rpx;
-}
-.sb-upcoming {
-  padding: 10rpx 0;
-  border-bottom: 1rpx solid var(--color-border, #f0f0f4);
-}
-.sb-upcoming:last-child {
-  border-bottom: none;
-}
-.sb-upcoming-text {
-  font-size: 25rpx;
-  color: var(--color-text-secondary, #5a5a6e);
-  line-height: 1.55;
-}
-.sb-upcoming-time {
-  color: #4285f4;
-  font-weight: 600;
-  margin-right: 12rpx;
-}
-.sb-changed {
-  background: #eef4ff;
-  border-left: 6rpx solid #4285f4;
-  border-radius: 10rpx;
-  padding: 14rpx 20rpx;
-  margin-bottom: 8rpx;
-}
-.sb-changed-text {
-  font-size: 26rpx;
-  color: #1a4fa0;
-  line-height: 1.6;
-}
-.sb-oneline {
-  padding: 10rpx 0;
-  border-bottom: 1rpx solid var(--color-border, #f0f0f4);
-}
-.sb-oneline:last-child {
-  border-bottom: none;
-}
-.sb-oneline-text {
-  font-size: 25rpx;
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
   line-height: 1.5;
 }
-.sb-oneline.quiet .sb-oneline-text {
+.dc-watch-note { color: var(--color-text-hint); font-size: 22rpx; }
+
+/* 接下来关注 */
+.dc-upcoming {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  padding: 7rpx 0;
+}
+.dc-upcoming-time {
+  flex: none;
+  font-size: 22rpx;
+  font-weight: 600;
   color: var(--color-text-hint);
 }
-.sb-oneline-note {
-  font-size: 23rpx;
-  color: var(--color-text-hint);
+.dc-upcoming-text {
+  font-size: 25rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 
 /* ═══════════════════════════════════════════════════════════
    PC / Tablet 适配 (≥768px)
    ═══════════════════════════════════════════════════════════ */
 @media screen and (min-width: 768px) {
-  .sb-summary { font-size: 15px; }
-  .sb-section-title { font-size: 16px; }
-  .sb-event-title { font-size: 15px; }
-  .sb-event-change, .sb-event-why { font-size: 14px; }
-  .sb-event { border-radius: 8px; padding: 12px 16px; }
-  .sb-signal { border-radius: 8px; padding: 12px 16px; }
-  .sb-signal-title { font-size: 15px; }
-  .sb-signal-summary { font-size: 14px; }
-  .sb-upcoming-text { font-size: 14px; }
+  .dc-title { font-size: 22px; }
+  .dc-range { font-size: 14px; }
+  .dc-stats { font-size: 13px; }
+  .dc-section-title { font-size: 14px; }
+  .dc-core-text { font-size: 15px; }
+  .dc-mk-rank { font-size: 15px; min-width: 22px; }
+  .dc-mk-title { font-size: 15px; }
+  .dc-mk-change { font-size: 14px; }
+  .dc-mk-detail { font-size: 13px; }
+  .dc-watch-text { font-size: 14px; }
+  .dc-upcoming-text { font-size: 14px; }
   .reports-header {
     padding: 28px 0 12px;
   }
@@ -1312,6 +1279,7 @@ onMounted(() => {
     border-radius: 12px;
     border-width: 1px;
     margin-bottom: 12px;
+    max-width: 760px;
   }
   .digest-card:hover {
     box-shadow: 0 2px 12px rgba(0,0,0,0.06);
