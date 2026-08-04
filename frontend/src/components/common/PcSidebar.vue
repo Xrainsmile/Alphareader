@@ -1,32 +1,57 @@
 <template>
   <view class="pc-sidebar">
     <text class="pc-sidebar-logo">AlphaReader</text>
+    <!-- Reports + 侧门「!」入口 -->
     <view
-      v-for="item in navItems"
-      :key="item.path"
       class="pc-nav-item"
-      :class="{ 'pc-nav-active': active === item.key }"
-      @click="navTo(item.path)"
+      :class="{ 'pc-nav-active': active === 'reports' }"
+      @click="navTo('/pages/reports/index', true)"
     >
-      <text class="pc-nav-text">{{ item.label }}</text>
+      <text class="pc-nav-text">Reports</text>
+    </view>
+    <GateButton />
+    <!-- News -->
+    <view
+      class="pc-nav-item"
+      :class="{ 'pc-nav-active': active === 'news' }"
+      @click="navTo('/pages/index/index', true)"
+    >
+      <text class="pc-nav-text">News</text>
+    </view>
+    <!-- Stocks / SEPA：默认对外隐藏，解锁（gate_open）后显现 -->
+    <view
+      v-show="isOpen"
+      class="pc-nav-item"
+      :class="{ 'pc-nav-active': active === 'stocks' }"
+      @click="navTo('/pages/stocks/index', false)"
+    >
+      <text class="pc-nav-text">Stocks</text>
+    </view>
+    <view
+      v-show="isOpen"
+      class="pc-nav-item"
+      :class="{ 'pc-nav-active': active === 'sepa' }"
+      @click="navTo('/pages/sepa/index', false)"
+    >
+      <text class="pc-nav-text">SEPA</text>
     </view>
   </view>
 </template>
 
 <script setup>
+import GateButton from '@/components/common/GateButton.vue'
+import { useGate } from '@/utils/useGate'
+
 const props = defineProps({
   active: { type: String, default: 'news' },
 })
 
-const navItems = [
-  { key: 'reports', label: 'Reports', path: '/pages/reports/index' },
-  { key: 'news', label: 'News', path: '/pages/index/index' },
-  { key: 'stocks', label: 'Stocks', path: '/pages/stocks/index' },
-  { key: 'sepa', label: 'SEPA', path: '/pages/sepa/index' },
-]
+const { isOpen } = useGate()
 
-function navTo(url) {
-  uni.switchTab({ url })
+// tab=true → 原生 tabBar 页，用 switchTab；否则（已隐藏的 Stocks/SEPA）用 navigateTo
+function navTo(url, isTab) {
+  if (isTab) uni.switchTab({ url })
+  else uni.navigateTo({ url })
 }
 </script>
 

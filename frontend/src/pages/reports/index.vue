@@ -4,8 +4,17 @@
     <view class="container">
     <!-- Header -->
     <view class="reports-header">
-      <text class="reports-title">Reports</text>
+      <view class="reports-title-row">
+        <text class="reports-title">Reports</text>
+        <!-- 移动端：侧门「!」入口（桌面端由左侧导航承载，此处隐藏）-->
+        <GateButton class="gate-mobile-only" />
+      </view>
       <text class="reports-subtitle">每日研报 · 新闻概览 · 每日复盘</text>
+      <!-- 移动端解锁后：Stocks / SEPA 入口（原生 tabBar 已默认隐藏）-->
+      <view v-if="isOpen" class="gate-reveal-mobile">
+        <view class="gate-reveal-chip" @click="goHidden('stocks')">Stocks</view>
+        <view class="gate-reveal-chip" @click="goHidden('sepa')">SEPA</view>
+      </view>
     </view>
 
     <!-- Tab Bar -->
@@ -332,11 +341,22 @@ import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PcSidebar from '@/components/common/PcSidebar.vue'
 import IconSvg from '@/components/common/IconSvg.vue'
+import GateButton from '@/components/common/GateButton.vue'
+import { useGate } from '@/utils/useGate'
 import { listTagStyle, listTagStyleMobile, formatDate, reportStatusLabel } from '@/utils/formatters'
 
 // ── Tab State ──
 // 默认「Reports」：用户打开产品首先看到最新阶段简报（PRD 4.2）
 const activeTab = ref('digest')
+
+// ── 侧门（gate）：Stocks / SEPA 对外隐藏，解锁后显现 ──
+const { isOpen } = useGate()
+
+// 移动端解锁后跳转到被隐藏的 Stocks / SEPA（已从原生 tabBar 移除，改用 navigateTo）
+function goHidden(kind) {
+  const url = kind === 'stocks' ? '/pages/stocks/index' : '/pages/sepa/index'
+  uni.navigateTo({ url })
+}
 
 // ── 右看板：栏目导航 ──
 const rightTabs = [
@@ -605,6 +625,11 @@ onMounted(() => {
 .reports-header {
   padding: 36rpx 0 16rpx;
 }
+.reports-title-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
 .reports-title {
   font-size: 44rpx;
   font-weight: 800;
@@ -612,6 +637,24 @@ onMounted(() => {
   letter-spacing: 1rpx;
   font-family: var(--font-display);
   display: block;
+}
+/* 侧门「!」在桌面端由左侧导航承载，页面头此处仅移动端显示 */
+.gate-mobile-only {
+  display: inline-flex;
+}
+.gate-reveal-mobile {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 14rpx;
+}
+.gate-reveal-chip {
+  padding: 8rpx 28rpx;
+  border-radius: 999rpx;
+  background: var(--color-bg-brand-light, #eef4ff);
+  color: var(--color-brand, #4285f4);
+  font-size: 24rpx;
+  font-weight: 600;
+  cursor: pointer;
 }
 .reports-subtitle {
   font-size: 24rpx;
@@ -1200,6 +1243,9 @@ onMounted(() => {
     font-size: 26px;
     letter-spacing: 0.5px;
   }
+  /* 桌面端：页面头不重复显示侧门入口与解锁入口（由左侧导航承载）*/
+  .gate-mobile-only { display: none; }
+  .gate-reveal-mobile { display: none; }
   .reports-subtitle {
     font-size: 13px;
     margin-top: 4px;

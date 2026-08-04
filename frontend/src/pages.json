@@ -96,18 +96,6 @@
         "text": "News",
         "iconPath": "static/tabbar/news.svg",
         "selectedIconPath": "static/tabbar/news-active.svg"
-      },
-      {
-        "pagePath": "pages/stocks/index",
-        "text": "Stocks",
-        "iconPath": "static/tabbar/stocks.svg",
-        "selectedIconPath": "static/tabbar/stocks-active.svg"
-      },
-      {
-        "pagePath": "pages/sepa/index",
-        "text": "SEPA",
-        "iconPath": "static/tabbar/sepa.svg",
-        "selectedIconPath": "static/tabbar/sepa-active.svg"
       }
     ]
   },
