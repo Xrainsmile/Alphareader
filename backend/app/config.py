@@ -107,6 +107,22 @@ class Settings(BaseSettings):
     # 每日维护：developing 且无实质更新超过该小时数 → 自动转 stable（resolved 不依赖时间自动判定）
     EVENT_STABLE_AFTER_HOURS: int = 48
 
+    # ── 事件记忆（方案B：跨周期相似事件召回）──
+    # 合成事件包时，用向量召回「历史上的同类事件」注入 prompt，让 LLM 能判断
+    # 该类事件过去如何演进（是否常被证伪 / 通常多久落地），提升 why_important 与 watch_next 质量。
+    # 向量复用去重器的 Embedding API（provider 由 EMBEDDING_PROVIDER 决定），以 REAL[] 存在
+    # news.event_embedding；召回在 Python 内存做余弦，不引入 pgvector（4G 服务器内存友好）。
+    EVENT_MEMORY_ENABLED: bool = True
+    EVENT_MEMORY_LOOKBACK_DAYS: int = 90       # 只召回近 N 天的历史事件
+    EVENT_MEMORY_TOP_K: int = 3                # 每次注入的历史事件条数（控制 token）
+    # 相似度区间对齐 deduplicator 的同模型标定：>0.80 为同一条新闻，>0.67 为同一事件
+    # 的不同报道（已由去重器聚合）。因此「历史同类事件」取 [0.50, 0.67)——
+    # 语义相关但不是同一事件。上界若放宽，会把同一事件当成「历史规律」误导 LLM。
+    EVENT_MEMORY_MIN_SIM: float = 0.50
+    EVENT_MEMORY_MAX_SIM: float = 0.67
+    EVENT_MEMORY_MAX_CANDIDATES: int = 5000    # 单次加载候选向量上限（内存保护）
+    EVENT_MEMORY_SUMMARY_CHARS: int = 60       # 注入的历史事件摘要截断长度
+
     # ── 新闻预筛（LLM 评分前过滤/压缩，节省评分 token）──
     # 优先拦截低价值内容、按信源历史质量门控、同事件跟稿继承根评分。
     # 上线前务必保持 PREFILTER_SHADOW_MODE=True 跑 3-7 天影子测试，确认误杀率达标再关闭。

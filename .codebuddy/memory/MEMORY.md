@@ -29,6 +29,7 @@
 - **LLM 评分 llm_news_filter.py**：评分/翻译用 `deepseek-chat`（**勿切回 v4-flash**，曾致 ~100M tokens/天）。v4-flash 推理已关（`"thinking":{"type":"disabled"}`）。规则：输入不可信防注入；旧闻>24h 最高3分；is_highlight=score≥8+强催化+量化+一周内。配置 LLM_BATCH_SIZE=20/SCORE_THRESHOLD=5。
 - **新闻预筛 prefilter.py**：`run_pipeline` Step 2.75（零 token，用 difflib+正则）。权威/重大事件强制送评；`PREFILTER_SHADOW_MODE=True` 影子模式生产中仅记录不丢弃（跑 3–7 天对比后再关闭）。落库 `News.prefilter_reason`。
 - **事件合成 event_synthesizer.py**：多源簇合成 1 事件卡（LLM deepseek-chat）。pipeline Step 7 挂载；星型拓扑由 `_resolve_event_roots` 压平。
+- **事件记忆 event_memory.py（方案B，2026-08-04）**：合成时召回近 90 天「历史同类事件」注入 prompt。向量存 `news.event_embedding REAL[]` + `event_embedding_model`(=`provider/model/dim` 标签，切 provider 自动失效)。**不用 pgvector**——千级候选用 numpy 内存余弦即可，省 4G 服务器内存。**相似度区间 [0.50, 0.67)**：上界对齐 `deduplicator.EMBEDDING_CLUSTER_THRESHOLD`，≥0.67 属同一事件（去重器负责），放宽会误导 LLM。SYSTEM_PROMPT 明令历史内容不得进 title/summary/latest_change，只可影响 why_important/watch_next。每轮仅 +2 次批量 embedding 调用，全链路失败静默降级。冷启动跑 `scripts/backfill_event_embeddings.py`。**明确不引入 mem0/hymemory**（与 event_versions 语义重叠、Qdrant 内存跑不下、与长期方案D知识图谱冲突）。
 - **推荐流展示**：入库阈值5全量；展示闸门默认 min_score=6+max_age_hours=24；🔥=is_highlight 子集。hot 排序 gravity 事件1.2/单篇1.8，事件三维优待。
 - **去重 deduplicator.py**：URL/SimHash/Embedding/事件聚合；P5 跨天旧闻。
 - **Reports 播客**：暂停（Azure 登录阻塞）。

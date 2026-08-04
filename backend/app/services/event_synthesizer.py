@@ -29,6 +29,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import async_session
+from app.services import event_memory
 
 logger = logging.getLogger("alphareader.event_synth")
 
@@ -62,6 +63,13 @@ SYSTEM_PROMPT = """你是一位资深金融主编。多家媒体报道了同一�
    stable（近期无重要新增）/ resolved（基本结束或结论明确）。
 8. has_material_update：出现新事实、新数据、新确认、新政策、新时间表或重要分歧 → true；
    仅重复转述、评论、标题变化或相同信息再传播 → false。
+
+# 历史同类事件的使用规则
+若输入包含【历史同类事件】，那是数据库中过去发生过的相似事件，仅供你判断这一类事件的
+演进规律（通常多久落地、是否常被证伪、关键验证节点在哪里）。
+严禁把历史事件中的主体、数字、时间写进 event_title / event_summary / latest_change——
+这三个字段只能来自本次报道。仅当确有参考价值时，可在 why_important 或 watch_next 中
+体现该规律，且不得点名具体历史事件。若历史事件与本次无关，直接忽略。
 
 # 输出约束
 只输出原始 JSON，不要任何额外文字：
@@ -104,9 +112,17 @@ def _select_articles(articles: list[dict], max_n: int = _MAX_ARTICLES_PER_EVENT)
     return picked
 
 
-def _build_user_prompt(articles: list[dict], prev: dict | None) -> str:
-    """构造用户提示：此前事件状态（如有）+ 簇内报道列表。"""
+def _build_user_prompt(
+    articles: list[dict], prev: dict | None, memory_block: str = ""
+) -> str:
+    """构造用户提示：历史同类事件（如有）+ 此前事件状态（如有）+ 簇内报道列表。
+
+    顺序上把本次报道放最后，确保「待分析的新信息」离输出最近，
+    历史参照与旧状态作为前置背景，降低模型混淆事实来源的概率。
+    """
     parts: list[str] = []
+    if memory_block:
+        parts.append(memory_block)
     if prev and prev.get("event_title"):
         parts.append(
             "【此前事件状态】\n"
@@ -229,6 +245,8 @@ async def _find_candidate_clusters(
                p.catalyst_type, p.created_at, p.published_at,
                p.event_title, p.event_summary, p.event_latest_change,
                p.event_version, p.event_article_count,
+               (p.event_embedding IS NOT NULL
+                AND p.event_embedding_model = :emb_tag) AS has_embedding,
                a.child_cnt, a.event_source_cnt, a.children
         FROM news p
         JOIN fresh f ON f.pid = p.id
@@ -242,7 +260,12 @@ async def _find_candidate_clusters(
     async with async_session() as session:
         result = await session.execute(
             sql,
-            {"cutoff": cutoff, "min_sources": min_sources, "max_events": max_events},
+            {
+                "cutoff": cutoff,
+                "min_sources": min_sources,
+                "max_events": max_events,
+                "emb_tag": event_memory.embedding_tag(),
+            },
         )
         return [dict(r) for r in result.mappings().all()]
 
@@ -313,8 +336,14 @@ _INSERT_VERSION_SQL = text("""
 """)
 
 
-async def _synthesize_one(cluster: dict, client: httpx.AsyncClient) -> bool:
-    """对单个事件簇调用 LLM 合成并回写聚合根（含版本快照）。成功返回 True。"""
+async def _synthesize_one(
+    cluster: dict, client: httpx.AsyncClient, memory_block: str = ""
+) -> dict | None:
+    """对单个事件簇调用 LLM 合成并回写聚合根（含版本快照）。
+
+    成功返回 {"event_id", "doc_text", "material"}，供调用方决定是否刷新事件向量；
+    失败返回 None。
+    """
     root = {
         "title": cluster["title"],
         "source": cluster["source"],
@@ -335,7 +364,7 @@ async def _synthesize_one(cluster: dict, client: httpx.AsyncClient) -> bool:
         "model": settings.LLM_MODEL,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": _build_user_prompt(articles, prev)},
+            {"role": "user", "content": _build_user_prompt(articles, prev, memory_block)},
         ],
         "thinking": {"type": "disabled"},
         "temperature": 0.2,
@@ -368,7 +397,7 @@ async def _synthesize_one(cluster: dict, client: httpx.AsyncClient) -> bool:
             )
     if not parsed:
         # 重试仍失败：保留旧事件信息（PRD 15.7），仅记录
-        return False
+        return None
 
     params = _build_update_params(cluster, parsed)
     # COALESCE 参数对齐：None 表示"不更新该列"
@@ -402,7 +431,13 @@ async def _synthesize_one(cluster: dict, client: httpx.AsyncClient) -> bool:
         (cluster["title"] or "")[:30], parsed["event_title"][:30],
         "" if params["material"] else " (无实质更新)",
     )
-    return True
+    return {
+        "event_id": params["id"],
+        "doc_text": event_memory.event_doc_text(
+            parsed["event_title"], parsed["event_summary"]
+        ),
+        "material": params["material"],
+    }
 
 
 async def synthesize_events() -> dict:
@@ -421,16 +456,99 @@ async def synthesize_events() -> dict:
     if not clusters:
         return {"enabled": True, "candidates": 0, "synthesized": 0}
 
+    memory_blocks, recalled = await _recall_memory(clusters)
+
     synthesized = 0
+    results: list[dict] = []
     async with httpx.AsyncClient() as client:
         for cluster in clusters:
-            if await _synthesize_one(cluster, client):
+            out = await _synthesize_one(
+                cluster, client, memory_blocks.get(str(cluster["id"]), "")
+            )
+            if out:
                 synthesized += 1
+                results.append(out)
+
+    embedded = await _refresh_event_embeddings(clusters, results)
 
     logger.info(
-        "Event synthesis done: %d/%d clusters synthesized", synthesized, len(clusters)
+        "Event synthesis done: %d/%d clusters synthesized (memory recalled %d, embedded %d)",
+        synthesized, len(clusters), recalled, embedded,
     )
-    return {"enabled": True, "candidates": len(clusters), "synthesized": synthesized}
+    return {
+        "enabled": True,
+        "candidates": len(clusters),
+        "synthesized": synthesized,
+        "memory_recalled": recalled,
+        "embedded": embedded,
+    }
+
+
+async def _recall_memory(clusters: list[dict]) -> tuple[dict[str, str], int]:
+    """为每个候选簇召回历史同类事件，返回 {event_id: prompt 片段} 与命中总数。
+
+    整批只调 1 次 Embedding API、只加载 1 次索引。任一环节失败都静默降级为「无记忆」，
+    不影响事件合成主流程。
+    """
+    if not settings.EVENT_MEMORY_ENABLED:
+        return {}, 0
+    try:
+        index = await event_memory.load_index()
+        if not index:
+            # 冷启动：库里还没有任何事件向量，本轮先只做写入
+            return {}, 0
+
+        queries = [event_memory.cluster_query_text(c) for c in clusters]
+        vectors = await event_memory.embed_texts(queries)
+
+        blocks: dict[str, str] = {}
+        total = 0
+        for cluster, vec in zip(clusters, vectors):
+            if not vec:
+                continue
+            cid = str(cluster["id"])
+            hits = index.recall(vec, exclude_ids={cid})
+            if not hits:
+                continue
+            blocks[cid] = event_memory.format_memory_block(hits)
+            total += len(hits)
+            logger.debug(
+                "Event memory recall for %s: %s",
+                cid, [(h.title[:20], round(h.similarity, 3)) for h in hits],
+            )
+        return blocks, total
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Event memory recall failed, degrading to no-memory: %s", e)
+        return {}, 0
+
+
+async def _refresh_event_embeddings(
+    clusters: list[dict], results: list[dict]
+) -> int:
+    """把本轮「内容有变化」或「尚无有效向量」的事件包重新向量化并落库。
+
+    无实质更新且已有当前模型向量的事件跳过，避免重复调用 Embedding API。
+    """
+    if not settings.EVENT_MEMORY_ENABLED or not results:
+        return 0
+    has_emb = {str(c["id"]): bool(c.get("has_embedding")) for c in clusters}
+    pending = [
+        r for r in results
+        if r["doc_text"] and (r["material"] or not has_emb.get(r["event_id"], False))
+    ]
+    if not pending:
+        return 0
+    try:
+        vectors = await event_memory.embed_texts([r["doc_text"] for r in pending])
+        pairs = [
+            (r["event_id"], vec)
+            for r, vec in zip(pending, vectors)
+            if vec
+        ]
+        return await event_memory.persist_embeddings(pairs)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Event memory embedding refresh failed: %s", e)
+        return 0
 
 
 _AUTO_STABLE_SQL = text("""

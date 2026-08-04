@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, SmallInteger, String, Text, func
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, REAL, SmallInteger, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -69,6 +69,10 @@ class News(Base):
     )
     # 事件版本：初始 1，has_material_update=true 时 +1（快照见 event_versions 表）
     event_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 事件记忆（方案B）：事件包语义向量，用于合成时召回「历史相似事件」注入 prompt。
+    # 仅聚合根有值；event_embedding_model 记录 provider/model/dim，变更时旧向量自动失效。
+    event_embedding: Mapped[list[float] | None] = mapped_column(ARRAY(REAL), nullable=True)
+    event_embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # P5: 去重指纹——持久化到 DB，评分前加载 7 天历史用于跨天旧闻识别
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     simhash_fingerprint: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)

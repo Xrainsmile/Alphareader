@@ -132,6 +132,20 @@ class TestBuildUserPrompt:
         prompt = _build_user_prompt(articles, prev)
         assert "旧标题" in prompt and "v2" in prompt and "旧变化" in prompt
 
+    def test_memory_block_injected_before_articles(self):
+        """历史同类事件应出现在报道列表之前，保证「本次新信息」离输出最近。"""
+        articles = [{"title": "t", "source": "s", "ai_score": 7,
+                     "ai_summary": "x", "catalyst_type": None}]
+        block = "【历史同类事件（仅作背景参照，不是本次报道内容）】\n1. [2026-05-01｜resolved｜v3] 旧事件"
+        prompt = _build_user_prompt(articles, None, block)
+        assert prompt.index("历史同类事件") < prompt.index("【报道1】")
+
+    def test_no_memory_block_when_empty(self):
+        articles = [{"title": "t", "source": "s", "ai_score": 7,
+                     "ai_summary": "x", "catalyst_type": None}]
+        prompt = _build_user_prompt(articles, None, "")
+        assert "历史同类事件" not in prompt
+
 
 # ── _parse_llm_response ──
 
@@ -263,6 +277,7 @@ def _make_cluster(event_version=None):
         "event_latest_change": None,
         "event_version": event_version,
         "event_article_count": None,
+        "has_embedding": False,
         "child_cnt": 2,
         "event_source_cnt": 3,
         "children": [
@@ -322,6 +337,7 @@ class TestSynthesizeEvents:
             ms.EVENT_SYNTH_WINDOW_HOURS = 12
             ms.EVENT_SYNTH_MIN_SOURCES = 2
             ms.EVENT_SYNTH_MAX_EVENTS = 10
+            ms.EVENT_MEMORY_ENABLED = False  # 记忆召回单独测试，此处隔离
 
             client = _mock_llm_client()
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=client)
@@ -357,6 +373,7 @@ class TestSynthesizeEvents:
             ms.EVENT_SYNTH_WINDOW_HOURS = 12
             ms.EVENT_SYNTH_MIN_SOURCES = 2
             ms.EVENT_SYNTH_MAX_EVENTS = 10
+            ms.EVENT_MEMORY_ENABLED = False  # 记忆召回单独测试，此处隔离
 
             client = _mock_llm_client(content=no_update_json)
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=client)
@@ -391,6 +408,7 @@ class TestSynthesizeEvents:
             ms.EVENT_SYNTH_WINDOW_HOURS = 12
             ms.EVENT_SYNTH_MIN_SOURCES = 2
             ms.EVENT_SYNTH_MAX_EVENTS = 10
+            ms.EVENT_MEMORY_ENABLED = False  # 记忆召回单独测试，此处隔离
 
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=bad_client)
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
