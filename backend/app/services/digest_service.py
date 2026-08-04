@@ -468,12 +468,17 @@ def build_wecom_digest_summary(structured: dict, period_label: str, digest_id: i
     icon = PERIOD_ICONS.get(period_label, "")
     title = PERIOD_LABELS.get(period_label, "简报")
     s = structured or {}
-    lines: list[str] = [f"{icon} {title} · AlphaReader"]
+    # 用空行分段，避免一整块密密麻麻；每条之间也留空行，便于手机阅读
+    lines: list[str] = [
+        f"{icon} {title} · AlphaReader",
+        "",  # 标题后空一行
+    ]
 
     summary = s.get("period_summary", "")
     if summary:
+        lines.append("📌 本时段概况")
         lines.append(summary)
-    lines.append("")
+        lines.append("")
 
     for label, key, limit in (
         ("🔥 必须知道", "must_know", 5),
@@ -481,16 +486,17 @@ def build_wecom_digest_summary(structured: dict, period_label: str, digest_id: i
     ):
         entries = s.get(key) or []
         if entries:
-            lines.append(f"—— {label} ——")
+            lines.append(label)
             for e in entries[:limit]:
                 lines.append(f"• {e.get('title', '')}")
                 if e.get("latest_change"):
-                    lines.append(f"  变化：{e['latest_change'][:120]}")
-            lines.append("")
+                    lines.append(f"　变化：{e['latest_change'][:120]}")
+                lines.append("")  # 每条之间空一行
+            # 去掉最后一个多余空行由下方统一处理
 
     upcoming = s.get("upcoming") or []
     if upcoming:
-        lines.append("—— ⏰ 接下来关注 ——")
+        lines.append("⏰ 接下来关注")
         for u in upcoming[:3]:
             prefix = f"{u.get('time', '')} " if u.get("time") else ""
             lines.append(f"• {prefix}{u.get('item', '')}")
@@ -500,8 +506,15 @@ def build_wecom_digest_summary(structured: dict, period_label: str, digest_id: i
     # 阶段简报无独立详情路由，全部内联展示在 Reports 页时间线；
     # 用 ?id=<digest_id> 深链，Reports 页打开时自动展开并定位到该条简报
     lines.append(f"📎 原文：{base}/#/pages/reports/index?id={digest_id}")
+    lines.append("")
     lines.append("⚠️ AI 生成，仅供参考，不构成投资建议。")
-    return "\n".join(lines)
+    # 压缩连续多余空行（最多保留一个空行），避免切分后段首/段尾空行浪费字节
+    out: list[str] = []
+    for ln in lines:
+        if ln == "" and out and out[-1] == "":
+            continue
+        out.append(ln)
+    return "\n".join(out)
 
 
 async def _push_digest_to_wecom(digest_id: int, structured: dict, period_label: str) -> None:
