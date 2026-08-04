@@ -9,7 +9,6 @@
     >
       <text class="pc-nav-text">Reports</text>
     </view>
-    <GateButton />
     <!-- News -->
     <view
       class="pc-nav-item"
@@ -18,6 +17,8 @@
     >
       <text class="pc-nav-text">News</text>
     </view>
+    <!-- 侧门「!」入口：放在 News 下方 -->
+    <GateButton />
     <!-- Stocks / SEPA：默认对外隐藏，解锁（gate_open）后显现 -->
     <view
       v-show="isOpen"
