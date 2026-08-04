@@ -94,45 +94,44 @@ async function onConfirm() {
   align-items: center;
 }
 
-/* ── 圆形「!」按钮 ── */
+/* ── 圆形「!」按钮（默认静态，仅点击时触发摇摆）── */
 .gate-btn {
   width: 40rpx;
   height: 40rpx;
   border-radius: 50%;
-  border: 2rpx solid var(--color-brand, #4285f4);
-  background: var(--color-bg-brand-light, #eef4ff);
+  border: 2rpx solid var(--color-text-hint, #c0c4cc);
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  /* 待机轻微呼吸，提示可点击 */
-  animation: gatePulse 2.2s ease-in-out infinite;
+  transition: border-color 0.2s, background-color 0.2s, color 0.2s;
 }
+.gate-btn:hover,
 .gate-hover {
-  opacity: 0.8;
+  border-color: var(--color-brand, #4285f4);
+  background: var(--color-bg-brand-light, #eef4ff);
 }
 .gate-mark {
   font-size: 28rpx;
   font-weight: 800;
-  color: var(--color-brand, #4285f4);
+  color: var(--color-text-hint, #c0c4cc);
   line-height: 1;
-  transform: translateY(-1rpx);
+  transition: color 0.2s;
+}
+.gate-btn:hover .gate-mark,
+.gate-hover .gate-mark {
+  color: var(--color-brand, #4285f4);
 }
 
-/* 点击：俏皮的左右摇摆 + 旋转（重启式动画）*/
+/* 点击：俏皮的左右摇摆（重启式动画）*/
 .gate-wobble {
   animation: gateWobble 0.6s ease;
+  border-color: var(--color-brand, #4285f4);
+  background: var(--color-bg-brand-light, #eef4ff);
 }
-
-@keyframes gatePulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(66, 133, 244, 0);
-  }
-  50% {
-    transform: scale(1.1);
-    box-shadow: 0 0 0 8rpx rgba(66, 133, 244, 0.18);
-  }
+.gate-wobble .gate-mark {
+  color: var(--color-brand, #4285f4);
 }
 
 @keyframes gateWobble {
@@ -153,10 +152,6 @@ async function onConfirm() {
   }
   .gate-mark {
     font-size: 16px;
-  }
-  @keyframes gatePulse {
-    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(66,133,244,0); }
-    50% { transform: scale(1.12); box-shadow: 0 0 0 5px rgba(66,133,244,0.18); }
   }
   @keyframes gateWobble {
     0%   { transform: rotate(0deg) translateX(0); }
