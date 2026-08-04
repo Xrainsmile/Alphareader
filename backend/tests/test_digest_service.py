@@ -270,7 +270,8 @@ class TestGenerateDigest:
     async def test_no_events_skip(self, db_session):
         with patch("app.services.digest_service.async_session", _SessionPatch(db_session)):
             result = await generate_digest("midday", date.today())
-        assert result["status"] == "skip"
+        # 无事件时仍生成 no-LLM 简报并落库/推送（PRD 跨简报对比），status 为 "ok"
+        assert result["status"] == "ok"
 
 
 # ── 跨简报对比机制（change_type / 重复剔除 / ongoing / links）──
@@ -376,13 +377,13 @@ class TestDigestEventLinks:
         assert links[0].section == "must_know"
         assert links[0].event_version == 1
 
-        # 第二轮：事件版本未前进（仍 v1）→ 被剔除 → 无候选 → skip
+        # 第二轮：事件版本未前进（仍 v1）→ 被剔除 → 无候选 → 仍生成 no-LLM 简报，status 为 "ok"
         with (
             patch("app.services.digest_service.stream_chat", side_effect=fake_stream),
             patch("app.services.digest_service.async_session", _SessionPatch(db_session)),
         ):
             r2 = await generate_digest("evening", date.today())
-        assert r2["status"] == "skip"
+        assert r2["status"] == "ok"
 
 
 def _SessionPatch(shared_session):

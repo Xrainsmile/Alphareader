@@ -692,6 +692,7 @@ class TestEdgeCases:
 
     def test_tencent_code_special_characters(self):
         """包含特殊字符的 ticker 转换（带交易所后缀）。"""
-        # 一些 ticker 可能有数字，非 NYSE 核心列表则默认 OQ
+        # 一些 ticker 可能有数字，非 NYSE 核心列表则默认 OQ；
+        # 但 "A" 为 Agilent（NYSE 上市，核心列表内），故为 .N
         assert _tencent_us_code("3M") == "us3M.OQ"
-        assert _tencent_us_code("A") == "usA.OQ"
+        assert _tencent_us_code("A") == "usA.N"

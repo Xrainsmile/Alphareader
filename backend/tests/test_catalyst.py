@@ -689,7 +689,8 @@ class TestCatalystAPI:
         items = resp.json()["data"]["items"]
         for item in items:
             assert item["futu_url"] is not None
-            assert "futunn.com" in item["futu_url"]
+            # A 股行情链接已切换至雪球（富途 A 股网页版已下线）
+            assert "xueqiu.com" in item["futu_url"]
 
     async def test_check_catalyst_hit(self, client, seed_catalyst_data, patch_catalyst_session):
         """查询命中的标的。"""
@@ -789,6 +790,7 @@ class TestCatalystAggregationPipeline:
                 catalyst_type=cat_type,
                 sentiment_score=sentiment,
                 published_at=datetime.now(timezone.utc),
+                created_at=datetime(2026, 3, 22, 10, 0, tzinfo=timezone.utc),
             )
             news_items.append(n)
             db_session.add(n)
@@ -901,17 +903,17 @@ class TestFutuUrlGeneration:
     def test_sz_stock(self):
         from app.api.v1.catalyst import _generate_futu_url
         url = _generate_futu_url("300750.SZ")
-        assert url == "https://www.futunn.com/stock/300750-SZ"
+        assert url == "https://xueqiu.com/S/SZ300750"
 
     def test_sh_stock(self):
         from app.api.v1.catalyst import _generate_futu_url
         url = _generate_futu_url("600519.SH")
-        assert url == "https://www.futunn.com/stock/600519-SH"
+        assert url == "https://xueqiu.com/S/SH600519"
 
     def test_bj_stock(self):
         from app.api.v1.catalyst import _generate_futu_url
         url = _generate_futu_url("430047.BJ")
-        assert url == "https://www.futunn.com/stock/430047-SZ"
+        assert url == "https://xueqiu.com/S/BJ430047"
 
 
 class TestCatalystStockItemSchema:
