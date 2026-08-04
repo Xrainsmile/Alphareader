@@ -34,7 +34,7 @@
 - **Reports 播客**：暂停（Azure 登录阻塞）。
 
 ## WeCom 推送（2026-08-03 上线）
-- 推 Reports 四时段 `news_digest`（早间/午间/傍晚/夜间）到企业微信群机器人 webhook（env `ALERT_WEBHOOK_URL`）。`notifier.send_report` 发 text（≤2000字节按行切分）；`digest_service.build_wecom_digest_summary` 拼摘要+原文链接 `https://www.alphareader.site/#/pages/briefing/detail?id=<digest_id>`；生成即推送。手动触发脚本 `scripts/push_latest_digest.py`。
+- 推 Reports 四时段 `news_digest`（早间/午间/傍晚/夜间）到企业微信群机器人 webhook（env `ALERT_WEBHOOK_URL`）。`notifier.send_report` 发 text（≤2000字节按行切分）；`digest_service.build_wecom_digest_summary` 拼摘要+原文链接。**原文链接指向 Reports 页 `https://www.alphareader.site/#/pages/reports/index`**（注意：`/pages/briefing/detail` 是**研报 daily_briefing** 详情页，news_digest 没有独立详情路由、全部内联在 Reports 时间线里，故不能用 digest_id 拼 briefing 链接）。手动触发脚本 `scripts/push_latest_digest.py`（复用同一函数）。
 
 ## 信源 / 回填
 - 富途 `_parse_futu` 必带 Referer；财联社(cls.cn)停用。

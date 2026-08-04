@@ -70,6 +70,7 @@
         <view
           v-for="(item, idx) in digestList"
           :key="item.id"
+          :id="'digest-' + item.id"
           class="timeline-item"
         >
           <!-- Timeline connector -->
@@ -332,7 +333,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
 import { fetchDigests, fetchBriefings } from '@/utils/api'
 import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
@@ -392,6 +393,8 @@ const digestList = ref([])
 const digestLoading = ref(false)
 const digestDays = ref(7)
 const expandedIds = reactive(new Set())
+// 深链：从企微推送 / ?id=<digest_id> 进入时，定位到对应简报
+const targetDigestId = ref(null)
 
 // ── Reports State（深度报告模块已暂停 2026-08-02）──
 // const reportsList = ref([])
@@ -425,6 +428,22 @@ function expandToggle(id) {
   } else {
     expandedIds.add(id)
   }
+}
+
+// 深链：从企微推送 ?id=<digest_id> 进入时，确保该简报在列表内、已展开，并滚动定位
+async function applyDigestDeepLink() {
+  if (targetDigestId.value == null) return
+  const id = Number(targetDigestId.value)
+  if (!digestList.value.some((d) => d.id === id) && digestDays.value < 30) {
+    // 超出默认 7 天窗口，扩大范围重试
+    digestDays.value = 30
+    const data = await fetchDigests(digestDays.value)
+    digestList.value = data || []
+  }
+  expandedIds.add(id)
+  await nextTick()
+  // H5 / 小程序均支持按 selector 滚动
+  uni.pageScrollTo({ selector: `#digest-${id}`, duration: 300 })
 }
 
 /** 简报事件卡 → 事件详情页（PRD 12.3） */
@@ -478,6 +497,8 @@ async function loadDigests() {
     if (digestList.value.length > 0 && expandedIds.size === 0) {
       expandedIds.add(digestList.value[0].id)
     }
+    // 深链定位：自动展开并滚动到对应简报
+    await applyDigestDeepLink()
   } catch (e) {
     console.warn('加载新闻概览失败:', e.message)
     digestList.value = []
@@ -594,11 +615,11 @@ const onShare = (item) => {
     navigator.share({
       title: item.title,
       text: item.summary,
-      url: window.location.origin + `/pages/reports/detail?id=${item.id}`
+      url: window.location.origin + `/pages/reports/index?id=${item.id}`
     }).catch(() => {})
   } else {
     uni.setClipboardData({
-      data: window.location.origin + `/pages/reports/detail?id=${item.id}`,
+      data: window.location.origin + `/pages/reports/index?id=${item.id}`,
       success: () => {
         uni.showToast({ title: '链接已复制', icon: 'none' })
       }
@@ -608,6 +629,12 @@ const onShare = (item) => {
 }
 
 onMounted(() => {
+  // 读取深链参数 ?id=<digest_id>（从企微推送链接进入时定位具体简报）
+  const pages = getCurrentPages()
+  const cur = pages[pages.length - 1]
+  const opts = (cur && (cur.$page?.options || cur.options)) || {}
+  if (opts.id) targetDigestId.value = opts.id
+
   // 默认展示 Reports（今日简报）时间轴，进入即加载
   if (activeTab.value === 'digest') {
     loadDigests()
