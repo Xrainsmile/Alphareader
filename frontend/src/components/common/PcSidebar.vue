@@ -69,7 +69,7 @@ function navTo(url, isTab) {
     width: 130px;
     height: 100vh;
     flex-shrink: 0;
-    padding: 24px 12px;
+    padding: 24px 16px;
     background: var(--color-bg-card);
     border-right: 1px solid var(--color-border);
     display: flex;

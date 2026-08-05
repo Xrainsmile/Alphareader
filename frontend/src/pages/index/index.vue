@@ -1954,7 +1954,11 @@ onReachBottom(() => {
    大屏 (≥1200px)
    ═══════════════════════════════════════════════════════════ */
 @media screen and (min-width: 1200px) {
-  /* 左导航(组件固定130px) : 中间内容(撑满) : 右侧TOP5(固定280px) ≈ 1:9 */
+  /* 左导航(组件固定130px) : 内容(撑满) : 右侧TOP5(固定280px) */
+  .pc-sidebar {
+    width: 130px;
+    flex: 0 0 auto;
+  }
   .pc-right-panel {
     display: flex;
     flex-direction: column;
