@@ -66,10 +66,10 @@ function navTo(url, isTab) {
   .pc-sidebar {
     position: sticky;
     top: 0;
-    width: 180px;
+    width: 130px;
     height: 100vh;
     flex-shrink: 0;
-    padding: 24px 16px;
+    padding: 24px 12px;
     background: var(--color-bg-card);
     border-right: 1px solid var(--color-border);
     display: flex;

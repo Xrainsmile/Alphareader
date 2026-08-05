@@ -273,20 +273,6 @@
     <!-- Footer -->
     <SiteFooter />
     </view><!-- /container -->
-
-    <!-- 右看板：栏目导航 -->
-    <view class="pc-right-panel">
-      <view class="right-section">
-        <text class="right-section-title">栏目导航</text>
-        <view v-for="t in rightTabs" :key="t.key" class="right-news-item" @click="switchTab(t.key)">
-          <IconSvg :name="t.iconName" class="right-news-rank" size="18px" />
-          <view class="right-news-body">
-            <text class="right-news-title">{{ t.label }}</text>
-            <text class="right-news-meta">{{ t.desc }}</text>
-          </view>
-        </view>
-      </view>
-    </view>
   </view><!-- /page-layout -->
 </template>
 
@@ -1219,6 +1205,15 @@ onMounted(() => {
    PC / Tablet 适配 (≥768px)
    ═══════════════════════════════════════════════════════════ */
 @media screen and (min-width: 768px) {
+  .page-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+  }
+  .container {
+    flex: 1;
+    min-width: 0;
+  }
   .dc-title { font-size: 22px; }
   .dc-range { font-size: 14px; }
   .dc-stats { font-size: 13px; }
@@ -1438,6 +1433,53 @@ onMounted(() => {
 }
 
 @media screen and (min-width: 1200px) {
+  /* ── 1:9 布局：导航栏(组件固定130px) : 内容区(撑满) ── */
+  .page-layout {
+    display: flex;
+    gap: 0;
+    max-width: 1600px;
+    margin: 0 auto;
+    align-items: flex-start;
+    min-height: calc(100vh - var(--window-top));
+  }
+  .container {
+    flex: 1;
+    max-width: none;
+    min-width: 0;
+  }
+
+  /* ── Tab bar ── */
+  .tab-bar { gap: 40px; padding: 18px 28px 0; }
+  .tab-text { font-size: 17px; }
+
+  /* ── Digest card 字号放大 ── */
+  .digest-card { padding: 32px 36px; margin: 26px 28px; max-width: none; }
+  .digest-title { font-size: 24px; }
+  .digest-time { font-size: 14px; }
+  .digest-meta { font-size: 14px; gap: 20px; }
+  .dc-title { font-size: 24px; }
+  .dc-range { font-size: 15px; }
+  .dc-stats { font-size: 14px; }
+  .dc-section-title { font-size: 17px; }
+  .dc-core-text { font-size: 16px; line-height: 1.65; }
+  .dc-mk-rank { font-size: 16px; min-width: 24px; }
+  .dc-mk-title { font-size: 16px; line-height: 1.55; }
+  .dc-mk-change { font-size: 15px; line-height: 1.6; }
+  .dc-mk-detail { font-size: 14px; }
+  .dc-watch-text { font-size: 15px; }
+  .dc-upcoming-text { font-size: 15px; }
+  .badge-text { font-size: 14px; }
+  .footer-stat { font-size: 14px; }
+
+  /* ── Briefing card 字号放大 ── */
+  .briefing-date-day { font-size: 19px; }
+  .briefing-preview { font-size: 16px; }
+  .card-title { font-size: 19px; }
+  .card-summary { font-size: 16px; }
+
+  /* ── Empty state ── */
+  .empty-text { font-size: 17px; }
+  .empty-hint { font-size: 14px; }
 }
 /* ── IconSvg 适配（替代 emoji）── */
 .badge-icon { flex: none; }

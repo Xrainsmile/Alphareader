@@ -1954,17 +1954,12 @@ onReachBottom(() => {
    大屏 (≥1200px)
    ═══════════════════════════════════════════════════════════ */
 @media screen and (min-width: 1200px) {
-  /* 三列比例 左导航:中间内容:右侧TOP5 = 2:14:4 */
-  .pc-sidebar {
-    width: auto;
-    flex: 2 1 0;
-    min-width: 0;
-  }
+  /* 左导航(组件固定130px) : 中间内容(撑满) : 右侧TOP5(固定280px) ≈ 1:9 */
   .pc-right-panel {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    flex: 4 1 0;
+    flex: 0 0 280px;
     min-width: 0;
     padding: 24px 16px;
     position: sticky;
@@ -1984,10 +1979,18 @@ onReachBottom(() => {
   .right-empty { padding: 20px 0; text-align: center; }
   .right-empty-text { font-size: 13px; color: var(--color-text-muted); }
   .container {
-    flex: 14 1 0;
+    flex: 1;
     max-width: none;
     min-width: 0;
   }
+
+  /* ── News 字号放大 ── */
+  :deep(.news-title) { font-size: 19px; line-height: 1.5; }
+  :deep(.news-summary) { font-size: 16px; margin-top: 6px; line-height: 1.65; }
+  :deep(.news-tag) { font-size: 14px; }
+  :deep(.news-why) { font-size: 14px; }
+  :deep(.score-num) { font-size: 17px; }
+  :deep(.related-item-title) { font-size: 17px; }
   :deep(.news-summary) {
     -webkit-line-clamp: 4;
     line-height: 1.65;
