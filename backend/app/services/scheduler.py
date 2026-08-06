@@ -1,7 +1,7 @@
 """定时调度器 — 基于 APScheduler 的周期性 Pipeline 执行。
 
 调度策略：
-  - 每 PIPELINE_INTERVAL_MINUTES 分钟执行一次（默认 15 分钟，即每小时 4 次）
+  - 每 PIPELINE_INTERVAL_MINUTES 分钟执行一次（默认 20 分钟，即每小时 3 次；须为 60 的约数保证整点间隔均匀）
   - 运行时间范围：PIPELINE_START_HOUR ~ PIPELINE_END_HOUR（默认全天 0~23）
   - 时区：Asia/Shanghai
 
@@ -669,7 +669,7 @@ async def _vcp_refresh_job(market: str):
 async def start_scheduler():
     """注册 Cron 定时任务并启动调度器。
 
-    - 每 PIPELINE_INTERVAL_MINUTES 分钟执行一次（默认 15 分钟）
+    - 每 PIPELINE_INTERVAL_MINUTES 分钟执行一次（默认 20 分钟，须为 60 的约数）
     - 运行时间范围：PIPELINE_START_HOUR ~ PIPELINE_END_HOUR
     - 启动时立即执行一次（next_run_time=now），不等待下一个调度点
     - max_instances=1 防止任务堆叠
@@ -719,12 +719,20 @@ async def _run_scheduler_jobs():
     end_h = settings.PIPELINE_END_HOUR
     interval = settings.PIPELINE_INTERVAL_MINUTES
 
+    # 防御：interval 必须是 60 的约数，否则 range(0,60,interval) 生成的分钟表达式
+    # 会出现不均匀间隔（如 25 → 0,25,50，整点处仅 10 分钟），并导致每天运行次数失真。
+    if 60 % interval != 0:
+        logger.warning(
+            "PIPELINE_INTERVAL_MINUTES=%s 不是 60 的约数，分钟表达式将不均匀！"
+            "请使用 15/20/30 等值（60 的约数）。", interval,
+        )
+
     # Build hour range: e.g. "7-23" means 7,8,...,23
     # If end_h == 24 (midnight), use 23 as the last hour (cron 0-23 range)
     cron_end = min(end_h, 23)
     hour_expr = f"{start_h}-{cron_end}"
 
-    # Build minute expression: e.g. interval=15 → "0,15,30,45"
+    # Build minute expression: e.g. interval=20 → "0,20,40"（须为 60 的约数，间隔均匀）
     minute_expr = ",".join(str(m) for m in range(0, 60, interval))
 
     # Register event listener for missed/error/executed events
