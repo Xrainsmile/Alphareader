@@ -141,12 +141,8 @@ async def generate_briefing_endpoint(
     payload: GenerateBriefingRequest,
     _admin: str | None = Depends(require_admin_key),
 ):
-    """手动触发生成分析报告（调试/补数据用）。需 X-Admin-Key（调 DeepSeek，防刷量）。"""
-    from app.services.briefing_service import generate_briefing
-
-    try:
-        result = await generate_briefing(payload.target_date)
-        return APIResponse(data=result)
-    except Exception as e:
-        logger.exception("Generate briefing failed: %s", e)
-        raise HTTPException(status_code=500, detail="研报生成失败，请稍后重试")
+    """每日研报模块已暂停（2026-08-06）：生成接口停用，不再调用 DeepSeek。"""
+    return APIResponse(
+        code=1,
+        message="每日研报模块已暂停（2026-08-06），生成接口已停用，不再调用 LLM",
+    )

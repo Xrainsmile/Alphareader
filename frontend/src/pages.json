@@ -60,15 +60,6 @@
       }
     },
     {
-      "path": "pages/briefing/detail",
-      "style": {
-        "navigationBarTitleText": "每日研报",
-        "navigationBarBackgroundColor": "#ffffff",
-        "navigationBarTextStyle": "black",
-        "backgroundColor": "#f0f2f5"
-      }
-    },
-    {
       "path": "pages/sepa/index",
       "style": {
         "navigationBarTitleText": "SEPA 训练",
