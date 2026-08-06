@@ -373,11 +373,12 @@ class ScoredNewsItem:
     - relevant_tickers: 相关股票代码列表（如 ['NVDA', 'AAPL']）
     """
     raw: RawNewsItem
-    original_id: int = 0  # 阶段一返回的原始 1-indexed id，翻译阶段用于跨批次对齐
     score: int
     reason: str
     summary: str
     tags: list[str]
+    # 阶段一返回的原始 1-indexed id，翻译阶段用于跨批次对齐（须置于非默认字段之后）
+    original_id: int = 0
     chinese_title: str = ""
     relevant_tickers: list[str] = field(default_factory=list)
     # 推荐理由：一句话告诉投资者"为什么该关注这条"（中文复用 reason，英文由 LLM 生成）
