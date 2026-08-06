@@ -34,8 +34,13 @@
 - **去重 deduplicator.py**：URL/SimHash/Embedding/事件聚合；P5 跨天旧闻。
 - **Reports 播客**：暂停（Azure 登录阻塞）。
 
+## 部署前自检（2026-08-06 事故教训）
+- **`python -m py_compile` 只查语法，捕获不到 dataclass/pydantic 字段顺序等装饰器执行期错误**（曾因给 `ScoredNewsItem` 在非默认字段前插入带默认值字段，导致生产 alpha-web 启动崩溃 `non-default argument follows default argument`）。改数据模型后必须再做一次真实 import 验证。
+- 改前端务必 `--build frontend`，改后端 `--build web`；部署后固定检查：`docker ps` 状态 + health 200 + `docker logs --since 90s | grep -iE 'error|traceback'`。
+- 弹窗类组件若被 sticky/transform 祖先包裹，`position:fixed` 会被层叠上下文困住 → 用 `<teleport to="body">`（项目仅 H5 构建，安全）。`SandboxPasswordModal.vue` 已如此处理，GateButton/Stocks/SEPA 共用。
+
 ## WeCom 推送（2026-08-03 上线）
-- 推 Reports 四时段 `news_digest`（早间/午间/傍晚/夜间）到企业微信群机器人 webhook（env `ALERT_WEBHOOK_URL`）。`notifier.send_report` 发 text（≤2000字节按行切分）；`digest_service.build_wecom_digest_summary` 拼摘要+原文链接。**原文链接指向 Reports 页 `https://www.alphareader.site/#/pages/reports/index`**（注意：`/pages/briefing/detail` 是**研报 daily_briefing** 详情页，news_digest 没有独立详情路由、全部内联在 Reports 时间线里，故不能用 digest_id 拼 briefing 链接）。手动触发脚本 `scripts/push_latest_digest.py`（复用同一函数）。
+- 推 Reports 两时段 `news_digest`（早报 08:30 / 傍晚报 18:30，午间与夜间已于 2026-08-06 移除；pipeline 间隔 25min）到企业微信群机器人 webhook（env `ALERT_WEBHOOK_URL`）。`notifier.send_report` 发 text（≤2000字节按行切分）；`digest_service.build_wecom_digest_summary` 拼摘要+原文链接。**原文链接指向 Reports 页 `https://www.alphareader.site/#/pages/reports/index`**（注意：`/pages/briefing/detail` 是**研报 daily_briefing** 详情页，news_digest 没有独立详情路由、全部内联在 Reports 时间线里，故不能用 digest_id 拼 briefing 链接）。手动触发脚本 `scripts/push_latest_digest.py`（复用同一函数）。
 
 ## 信源 / 回填
 - 富途 `_parse_futu` 必带 Referer；财联社(cls.cn)停用。

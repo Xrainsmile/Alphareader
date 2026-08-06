@@ -67,3 +67,6 @@ class PipelineRun(Base):
     by_source: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     score_distribution: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     errors: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
+    # 预筛统计：{shadow, total, drop, inherit, audit, drop_by_reason}
+    # 影子模式下用于量化「若启用预筛可节省多少 LLM 送评量」，此前只进日志、随容器重建丢失。
+    prefilter: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

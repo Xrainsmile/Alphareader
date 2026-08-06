@@ -70,14 +70,25 @@ DEFAULT_OFFICIAL_DOMAINS = [
 ]
 
 # 动作动词：明确的"发生了什么"
+# 2026-08-06 扩充：原词表仅覆盖公司财务/资本运作类动作，对地缘政治与宏观快讯几乎全盲
+# （「袭击」「干预」「达成」「加剧」均未收录），导致富途/Seeking Alpha 等快讯型信源
+# 的高分新闻 hard_signal_score=0 而被预筛误判为低价值。
 ACTION_VERBS = [
     "发布", "收购", "并购", "兼并", "裁员", "批准", "禁止", "上调", "下调", "降息",
     "加息", "涨停", "跌停", "上市", "退市", "起诉", "破产", "盈利", "亏损", "营收",
     "签约", "合作", "投资", "减持", "增持", "分红", "回购", "合并", "重组", "违约",
     "中标", "获批", "立案", "罚款", "警告", "停产", "扩产", "减产",
+    # 地缘 / 冲突类
+    "袭击", "空袭", "爆炸", "冲突", "停火", "封锁", "撤军", "扣押", "拦截",
+    "干预", "谈判", "洽谈", "达成", "签署", "中断", "恢复", "开放", "关闭",
+    # 宏观 / 市场表态类
+    "宣布", "声明", "表态", "要求", "承诺", "加征", "减征", "释放",
+    "暴涨", "暴跌", "走强", "走弱", "创新高", "创新低", "加剧", "放缓", "扩张",
     "acquire", "merge", "layoff", "approve", "ban", "raise", "cut", "launch",
     "sue", "bankrupt", "earn", "guidance", "buyback", "recall", "default",
     "ipo", "listing", "settlement",
+    "strike", "attack", "ceasefire", "blockade", "intervene", "negotiate",
+    "announce", "pledge", "halt", "resume", "seize", "surge", "plunge",
 ]
 ACTION_RE = re.compile("|".join(re.escape(w) for w in ACTION_VERBS), re.I)
 
@@ -120,13 +131,26 @@ PROMO_RE = re.compile("|".join(re.escape(w) for w in PROMO_MARKERS), re.I)
 VAGUE_MARKERS = ["业内人士认为", "分析称", "或", "可能", "有望", "预计", "猜测", "传言"]
 VAGUE_RE = re.compile("|".join(re.escape(w) for w in VAGUE_MARKERS), re.I)
 
+# 2026-08-06 扩充：原正则只认阿拉伯数字，「七艘货船」「三成」等中文计量被判为无数字。
 NUMBER_RE = re.compile(
-    r"\d[\d,\.]*\s*(%|％|亿|万|万亿|元|美元|欧元|英镑|\$|bn|mn|trn|k|m|b|percent|pts|点)?",
+    r"\d[\d,\.]*\s*(%|％|亿|万|万亿|元|美元|欧元|英镑|\$|bn|mn|trn|k|m|b|percent|pts|点)?"
+    r"|[一二三四五六七八九十百千万亿两]+\s*"
+    r"(%|％|成|倍|艘|架|家|个|亿|万|元|美元|人|次|年|月|日|天|点)",
     re.I,
 )
+
+# 机构后缀。2026-08-06 补齐「省/署/厅/协会/通讯社」等——原表缺「省」导致
+# 「日本财务省」这类主体识别不出（该条 LLM 实际给 8 分）。
+_ORG_SUFFIX = (
+    "公司|集团|银行|央行|政府|部|局|委员会|研究院|交易所|省|署|厅|办公室"
+    "|协会|通讯社|电视台|组织|基金|财团|大学|机构|管理局|监管局"
+)
+# 快讯主体前缀：「日本财务省：」「据俄新社：」「美国财长贝森特：」——
+# 快讯型信源普遍用「主体：内容」格式，冒号前即为明确主体。
+_LEAD_SUBJECT = r"^\s*(?:据)?[^：:\n]{2,14}[：:]"
 ENTITY_RE = re.compile(
-    r"[A-Z]{3,}|[\u4e00-\u9fff]{2,}(公司|集团|银行|央行|政府|部|局|委员会|研究院|交易所)",
-    re.I,
+    rf"[A-Z]{{3,}}|[\u4e00-\u9fff]{{2,}}(?:{_ORG_SUFFIX})|{_LEAD_SUBJECT}",
+    re.I | re.M,
 )
 
 
@@ -294,26 +318,48 @@ def classify_source(quality: SourceQuality | None, source: str = "", url: str = 
 # 评分函数
 # ───────────────────────────────────────────────────────────────────────────
 
-def has_minimum_information(item, patterns: list[str] | None = None) -> bool:
-    """内容完整性检查（零 token）。命中任一即视为低价值、可直接丢弃。"""
+# 标题达到该长度即视为「自足快讯」：标题本身已是一句完整新闻陈述，
+# 不因「标题==正文」而判低价值。依据 2026-08-06 影子数据：被误杀的 ≥6 分快讯
+# 标题长度普遍 ≥25，而真正的空洞标题多在 20 字符以内。
+SELF_CONTAINED_TITLE_MIN = 24
+
+# 低价值模式仅扫描标题 + 正文开头，避免 RSS 页脚（newsletter / podcast 订阅提示）
+# 污染正文有效的新闻。
+LOW_VALUE_SCAN_CHARS = 200
+
+
+def low_value_reason(item, patterns: list[str] | None = None) -> str | None:
+    """内容完整性检查（零 token）。返回命中的具体子规则名；None 表示通过。
+
+    返回细粒度原因而非布尔值，便于影子模式定位到底是哪条规则在误杀。
+    """
     patterns = patterns or (settings.PREFILTER_LOW_VALUE_PATTERNS or DEFAULT_LOW_VALUE_PATTERNS)
-    text = _text(item)
     title = (getattr(item, "title", "") or "").strip()
     content = (getattr(item, "content", "") or "").strip()
 
-    # 标题过短且正文为空
+    # 1) 标题过短且正文为空
     if len(title) < 8 and len(content) < 80:
-        return False
-    # 标题与正文基本相同（无信息增量）。
-    # 注意：快讯类信源（富途 / Seeking Alpha 等）常把标题当作全文，标题本身即有效新闻，
-    # 仅当同时缺乏任何硬信息信号（实体/数字/动作/政策）才判为低价值，避免误杀重点快讯。
+        return "内容不完整:标题过短且无正文"
+
+    # 2) 标题与正文基本相同（无信息增量）。
+    # 快讯类信源（富途 / Seeking Alpha 等）常把标题当作全文，标题本身即有效新闻：
+    #   - 标题足够长 → 自足快讯，直接放行；
+    #   - 标题较短 → 再看是否有硬信息信号（实体/数字/动作/政策）兜底。
     if title and content and title in content and len(content) - len(title) < 20:
-        if hard_signal_score(item) == 0:
-            return False
-    # 命中招聘 / 活动 / 播客 / 课程推广等明显非新闻模式
-    if any(re.search(p, text, re.I) for p in patterns):
-        return False
-    return True
+        if len(title) < SELF_CONTAINED_TITLE_MIN and hard_signal_score(item) == 0:
+            return "内容不完整:标题即全文且无硬信息信号"
+
+    # 3) 命中招聘 / 活动 / 播客 / 课程推广等明显非新闻模式
+    scan_text = f"{title} {content[:LOW_VALUE_SCAN_CHARS]}"
+    for p in patterns:
+        if re.search(p, scan_text, re.I):
+            return f"低价值模式:{p}"
+    return None
+
+
+def has_minimum_information(item, patterns: list[str] | None = None) -> bool:
+    """内容完整性检查（零 token）。False 表示低价值、可直接丢弃。"""
+    return low_value_reason(item, patterns) is None
 
 
 def hard_signal_score(item) -> int:
@@ -503,10 +549,11 @@ async def prefilter_news(
                 real_action = "score"
                 reasons.append("重大事件信号强制送评")
             else:
-                # 2) 内容完整性 / 低价值模式
-                if not has_minimum_information(it):
+                # 2) 内容完整性 / 低价值模式（记录命中的具体子规则，便于影子期定位误杀）
+                lv_reason = low_value_reason(it)
+                if lv_reason:
                     real_action = "drop"
-                    reasons.append("内容不完整/命中低价值模式")
+                    reasons.append(lv_reason)
                 # 3) 同事件新事实压缩
                 elif getattr(it, "related_to_url", None):
                     root = root_map.get(it.related_to_url)

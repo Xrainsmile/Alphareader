@@ -304,6 +304,20 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
     return stored, stored_urls
 
 
+def _count_drop_reasons(pref: PrefilterResult, shadow: bool) -> dict[str, int]:
+    """统计各预筛子规则导致 drop 的次数（影子模式看 shadow_action）。"""
+    counts: dict[str, int] = {}
+    for d in pref.decisions.values():
+        action = d.shadow_action if shadow else d.action
+        if action != "drop":
+            continue
+        for r in d.reasons:
+            # 只统计规则名，去掉「(标题相似度0.42)」这类可变后缀，避免键爆炸
+            key = r.split("(")[0].strip()
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 def _attach_prefilter_reasons(scored_items: list[ScoredNewsItem], pref: PrefilterResult) -> None:
     """将预筛决策原因写入评分结果，供落库审计。"""
     reason_by_url = {
@@ -483,6 +497,10 @@ async def run_pipeline() -> dict:
                     else len(pref.inherited)
                 ),
                 "audit": pref.audit_count,
+                # 各子规则命中次数，用于定位是哪条规则在丢弃/误杀
+                "drop_by_reason": _count_drop_reasons(
+                    pref, shadow=settings.PREFILTER_SHADOW_MODE
+                ),
             }
         except Exception as e:
             logger.warning("预筛执行失败，降级为不过滤（全部送评）: %s", e)
@@ -652,6 +670,7 @@ async def _save_pipeline_run(
                 by_source=by_source,
                 score_distribution=score_distribution,
                 errors=summary.get("errors", []),
+                prefilter=summary.get("prefilter", {}),
             )
             session.add(run)
             await session.commit()
