@@ -1154,9 +1154,8 @@ async def _run_scheduler_jobs():
     sc_next = sc_job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if sc_job and sc_job.next_run_time else "N/A"
     logger.info("Screener scheduled Mon-Fri 15:40 (next: %s)", sc_next)
 
-    # Digest jobs status
-    for label, desc in [("digest_morning", "08:30"), ("digest_midday", "12:15"),
-                        ("digest_evening", "18:15"), ("digest_night", "00:00")]:
+    # Digest jobs status（当前仅 2 个时段：早报 08:30 + 傍晚报 18:30）
+    for label, desc in [("digest_morning", "08:30"), ("digest_evening", "18:30")]:
         dj = scheduler.get_job(label)
         dn = dj.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if dj and dj.next_run_time else "N/A"
         logger.info("Digest %s scheduled daily %s (next: %s)", label, desc, dn)
