@@ -159,6 +159,32 @@ class Settings(BaseSettings):
         default_factory=lambda: ["富途新闻", "华尔街见闻", "Investing.com"]
     )
 
+    # ── 事件记忆召回约束（与"结果记忆"配套）──
+    # 仅召回 status 属于下列集合的历史事件（跳过 new/developing 进行中事件），
+    # 避免把未结束事件当"历史规律"。默认只取已结束(resolved)与已平息(stable)的。
+    EVENT_MEMORY_RECALL_STATUSES: list[str] = Field(
+        default_factory=lambda: ["stable", "resolved"]
+    )
+    # 写"通常/往往"类规律结论前，要求至少 N 个方向一致（同 outcome_type）的历史事件；
+    # 不足时 LLM 只能逐条引用、不得归纳"通常"。杜绝单样本臆断。
+    EVENT_MEMORY_MIN_PATTERN_COUNT: int = 2
+
+    # ── 事件级排序信号（纯规则，无需额外模型调用）──
+    # 合成时算出 impact/novelty/urgency/confidence/relevance 五个 0-10 信号，
+    # 派生 0-3 加分并入「重要」排序的 HN 重力公式，使 Reports 标为"必须知道"的
+    # 事件在 News 里也能靠前。关闭则退回原 根 ai_score + 信源加分 + 时间衰减。
+    EVENT_SIGNAL_BOOST_ENABLED: bool = True
+
+    # ── 事件级重大事件即时提醒（条件触发，不生成午报）──
+    # 早报/晚报保留即可，但高波动日中午的重大事件等到 18:30 偏晚；
+    # 满足全部条件时合成阶段即时推一条 1-2 条的短简讯（纯程序规则，不额外调 LLM）：
+    #   event_version 增加 且 ai_score >= MIN_AI_SCORE
+    #   且（官方来源 或 独立信源数 >= MIN_SOURCES）且 latest_change 非空
+    EVENT_ALERT_ENABLED: bool = True
+    EVENT_ALERT_MIN_AI_SCORE: int = 8
+    EVENT_ALERT_MIN_SOURCES: int = 2
+    EVENT_ALERT_MAX_ITEMS: int = 2
+
     # ── 调度器 — Pipeline 定时执行 ──
     PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）
     PIPELINE_END_HOUR: int = 23    # 结束小时（0-23）

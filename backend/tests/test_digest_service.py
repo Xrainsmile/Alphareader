@@ -18,13 +18,25 @@ import pytest
 from app.models.news import News
 from app.models.news_digest import NewsDigest
 from app.services.digest_service import (
-    _get_period_range,
+    GENERATION_TIME,
+    DEFAULT_WINDOW,
+    _TZ,
     _parse_briefing_json,
     _render_markdown,
     generate_digest,
 )
 
 _TZ_SH = None  # period range 内部自带时区
+
+
+def _period_bounds(label, d):
+    """复刻 generate_digest 在「无历史成功简报」时的首份窗口回退逻辑，
+    便于测试构造落在目标简报窗口内的种子事件。"""
+    gen_h, gen_m = GENERATION_TIME[label]
+    period_end = _TZ.localize(datetime.combine(d, time(gen_h, gen_m)))
+    ws_h, ws_m = DEFAULT_WINDOW[label]
+    period_start = _TZ.localize(datetime.combine(d, time(ws_h, ws_m)))
+    return period_start, period_end
 
 
 # ── _parse_briefing_json ──
@@ -122,26 +134,61 @@ class TestRenderMarkdown:
 
 
 class TestPeriodRange:
-    def test_midday_ends_at_1215(self):
-        """时段边界与调度时间一致（PRD 10.2）：午间截止 12:15 而非 12:00。"""
-        _, end = _get_period_range("midday", date(2026, 8, 2))
-        assert (end.hour, end.minute) == (12, 15)
+    @pytest.mark.asyncio
+    async def test_rolling_window_uses_previous_period_end(self, db_session):
+        """本份 period_start 必须等于上一份成功简报的 period_end（滚动窗口，无空档）。"""
+        prev_end = datetime.combine(date.today() - timedelta(days=1), time(18, 30))
+        db_session.add(NewsDigest(
+            digest_date=date.today() - timedelta(days=1), period_label="evening",
+            period_start=datetime.combine(date.today() - timedelta(days=1), time(8, 30)),
+            period_end=prev_end, news_count=5, content="上一版",
+            schema_version=2, structured_content={"period_summary": "prev"},
+        ))
+        await db_session.commit()
 
-    def test_evening_range(self):
-        start, end = _get_period_range("evening", date(2026, 8, 2))
-        assert (start.hour, start.minute) == (12, 15)
-        assert (end.hour, end.minute) == (18, 15)
+        with patch("app.services.digest_service.async_session", _SessionPatch(db_session)):
+            result = await generate_digest("morning", date.today())
+
+        assert result["status"] == "ok"
+        row = (
+            await db_session.execute(
+                __import__("sqlalchemy").select(NewsDigest).where(
+                    NewsDigest.digest_date == date.today(),
+                    NewsDigest.period_label == "morning",
+                )
+            )
+        ).scalar_one()
+        # 早报区间 = 上一份(前一日18:30) ~ 当日08:30，首尾相接
+        assert row.period_start == prev_end
+        assert row.period_end == datetime.combine(date.today(), time(8, 30))
+
+    @pytest.mark.asyncio
+    async def test_first_run_uses_default_window(self, db_session):
+        """首份简报（无历史）回退到 DEFAULT_WINDOW，不产生异常。"""
+        with patch("app.services.digest_service.async_session", _SessionPatch(db_session)):
+            result = await generate_digest("morning", date.today())
+        assert result["status"] == "ok"
+        row = (
+            await db_session.execute(
+                __import__("sqlalchemy").select(NewsDigest).where(
+                    NewsDigest.digest_date == date.today(),
+                    NewsDigest.period_label == "morning",
+                )
+            )
+        ).scalar_one()
+        # 首份早报退化到当天 00:00 起
+        assert row.period_start == datetime.combine(date.today(), time(0, 0))
 
 
 # ── generate_digest 主流程 ──
 
 
 async def _seed_event(db_session, title="事件根", with_child=False, updated=True,
-                      period_label="midday"):
+                      period_label="morning"):
     # 种子的发布/更新时间必须落在目标时段内，否则被时段过滤排除。
-    # 注意：SQLite 把 timestamptz 存为字符串做词法比较，种子必须与查询边界
+    # 注意：SQLite 把 timestamptz 存为字符串做词学比较，种子必须与查询边界
     # 保持同一时区后缀（CST），故不做 astimezone(UTC) 转换
-    start, _ = _get_period_range(period_label, date.today())
+    start, _ = _period_bounds(period_label, date.today())
     in_period = start + timedelta(hours=1)
     root = News(
         id=uuid.uuid4(), title=title, source="富途新闻",
@@ -197,7 +244,7 @@ class TestGenerateDigest:
             patch("app.services.digest_service.stream_chat", side_effect=fake_stream),
             patch("app.services.digest_service.async_session", _SessionPatch(db_session)),
         ):
-            result = await generate_digest("midday", date.today())
+            result = await generate_digest("morning", date.today())
 
         assert result["status"] == "ok"
         assert result["event_count"] == 1
@@ -215,14 +262,14 @@ class TestGenerateDigest:
             patch("app.services.digest_service.stream_chat", side_effect=fake_stream),
             patch("app.services.digest_service.async_session", _SessionPatch(db_session)),
         ):
-            result = await generate_digest("midday", date.today())
+            result = await generate_digest("morning", date.today())
 
         assert result["status"] == "ok"
         row = (
             await db_session.execute(
                 __import__("sqlalchemy").select(NewsDigest).where(
                     NewsDigest.digest_date == date.today(),
-                    NewsDigest.period_label == "midday",
+                    NewsDigest.period_label == "morning",
                 )
             )
         ).scalar_one()
@@ -234,16 +281,20 @@ class TestGenerateDigest:
 
     @pytest.mark.asyncio
     async def test_llm_failure_keeps_previous(self, db_session):
-        """LLM 失败不得覆盖上一版有效简报（PRD 15.8）。"""
+        """LLM 失败不得覆盖上一版有效简报（PRD 15.8）。
+
+        上一份成功简报（evening，period_end=当日08:30）存在；本份 evening 区间为
+        [08:30, 18:30)，种子事件落在窗口内 → 会真正调用 LLM（且失败）→ 保留上一版。
+        """
         db_session.add(NewsDigest(
-            digest_date=date.today(), period_label="midday",
-            period_start=datetime.combine(date.today(), time(8, 30)),
-            period_end=datetime.combine(date.today(), time(12, 15)),
+            digest_date=date.today(), period_label="evening",
+            period_start=datetime.combine(date.today(), time(0, 0)),
+            period_end=datetime.combine(date.today(), time(8, 30)),
             news_count=10, content="上一版有效简报",
             schema_version=2,
             structured_content={"period_summary": "旧"},
         ))
-        await _seed_event(db_session)
+        await _seed_event(db_session, period_label="evening")
 
         async def fail_stream(messages, **kw):
             return "这不是JSON"
@@ -252,7 +303,7 @@ class TestGenerateDigest:
             patch("app.services.digest_service.stream_chat", side_effect=fail_stream),
             patch("app.services.digest_service.async_session", _SessionPatch(db_session)),
         ):
-            result = await generate_digest("midday", date.today())
+            result = await generate_digest("evening", date.today())
 
         assert result["status"] == "error"
         assert result["reason"] == "llm_failed_kept_previous"
@@ -260,7 +311,7 @@ class TestGenerateDigest:
             await db_session.execute(
                 __import__("sqlalchemy").select(NewsDigest).where(
                     NewsDigest.digest_date == date.today(),
-                    NewsDigest.period_label == "midday",
+                    NewsDigest.period_label == "evening",
                 )
             )
         ).scalar_one()
@@ -269,7 +320,7 @@ class TestGenerateDigest:
     @pytest.mark.asyncio
     async def test_no_events_skip(self, db_session):
         with patch("app.services.digest_service.async_session", _SessionPatch(db_session)):
-            result = await generate_digest("midday", date.today())
+            result = await generate_digest("evening", date.today())
         # 无事件时仍生成 no-LLM 简报并落库/推送（PRD 跨简报对比），status 为 "ok"
         assert result["status"] == "ok"
 
@@ -369,7 +420,7 @@ class TestDigestEventLinks:
             patch("app.services.digest_service.stream_chat", side_effect=fake_stream),
             patch("app.services.digest_service.async_session", _SessionPatch(db_session)),
         ):
-            r1 = await generate_digest("midday", date.today())
+            r1 = await generate_digest("morning", date.today())
 
         assert r1["status"] == "ok"
         links = (await db_session.execute(sa_select(DigestEventLink))).scalars().all()

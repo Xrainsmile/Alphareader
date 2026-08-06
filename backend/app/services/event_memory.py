@@ -75,6 +75,12 @@ class MemoryHit:
     version: int
     seen_at: datetime | None
     similarity: float
+    # 结果记忆：让 LLM 判断"通常多久落地/是否常被证伪"时有真实结局依据
+    outcome_type: str | None = None
+    final_outcome: str | None = None
+    watch_result: str | None = None
+    resolved_at: datetime | None = None
+    duration_hours: int | None = None
 
 
 class EventMemoryIndex:
@@ -131,6 +137,11 @@ class EventMemoryIndex:
                 version=m["version"],
                 seen_at=m["seen_at"],
                 similarity=sim,
+                outcome_type=m.get("outcome_type"),
+                final_outcome=m.get("final_outcome"),
+                watch_result=m.get("watch_result"),
+                resolved_at=m.get("resolved_at"),
+                duration_hours=m.get("duration_hours"),
             ))
             if len(hits) >= top_k:
                 break
@@ -140,11 +151,14 @@ class EventMemoryIndex:
 _LOAD_INDEX_SQL = text("""
     SELECT id, event_title, event_summary, event_status, event_version,
            COALESCE(event_first_seen_at, created_at) AS seen_at,
-           event_embedding
+           event_embedding,
+           event_outcome_type, event_final_outcome, event_watch_result,
+           event_resolved_at, event_duration_hours
     FROM news
     WHERE related_to_id IS NULL
       AND event_embedding IS NOT NULL
       AND event_embedding_model = :tag
+      AND event_status IN :statuses
       AND created_at >= :cutoff
     ORDER BY created_at DESC
     LIMIT :limit
@@ -157,6 +171,7 @@ async def load_index() -> EventMemoryIndex | None:
     async with async_session() as session:
         result = await session.execute(_LOAD_INDEX_SQL, {
             "tag": embedding_tag(),
+            "statuses": tuple(settings.EVENT_MEMORY_RECALL_STATUSES),
             "cutoff": cutoff,
             "limit": settings.EVENT_MEMORY_MAX_CANDIDATES,
         })
@@ -177,6 +192,11 @@ async def load_index() -> EventMemoryIndex | None:
             "status": r["event_status"] or "",
             "version": int(r["event_version"] or 1),
             "seen_at": r["seen_at"],
+            "outcome_type": r["event_outcome_type"],
+            "final_outcome": r["event_final_outcome"],
+            "watch_result": r["event_watch_result"],
+            "resolved_at": r["event_resolved_at"],
+            "duration_hours": r["event_duration_hours"],
         })
         vectors.append(vec)
 
@@ -229,14 +249,83 @@ async def persist_embeddings(pairs: list[tuple[str, list[float]]]) -> int:
     return len(rows)
 
 
+_OUTCOME_LABELS = {
+    "confirmed": "已确认/落地",
+    "reversed": "被证伪/反转",
+    "delayed": "延期",
+    "cancelled": "取消/搁置",
+    "unknown": "结局未记录",
+}
+
+
+def _format_outcome(m: MemoryHit) -> str:
+    """把单条命中的结局字段渲染成一行可读文本；无信息返回空串。"""
+    label = _OUTCOME_LABELS.get(m.outcome_type or "unknown", "结局未记录")
+    parts = [label]
+    if m.resolved_at:
+        parts.append(f"结束于 {m.resolved_at.strftime('%Y-%m-%d')}")
+    if m.duration_hours is not None:
+        parts.append(f"持续约 {m.duration_hours}h")
+    extra = []
+    if m.final_outcome:
+        extra.append(m.final_outcome)
+    if m.watch_result:
+        extra.append(f"观察点: {m.watch_result}")
+    s = " | ".join(parts)
+    if extra:
+        s += "；" + "；".join(extra)
+    return s
+
+
+def summarize_pattern_evidence(hits: list[MemoryHit]) -> dict:
+    """统计召回事件的结局方向，判断是否足以支撑"通常/规律"类归纳。
+
+    仅把非 unknown 的 outcome_type 计入；当某方向出现次数 ≥ EVENT_MEMORY_MIN_PATTERN_COUNT
+    时认为"方向一致、可归纳"。用于 prompt 护栏，杜绝单样本或方向分散时臆断规律。
+    """
+    counts: dict[str, int] = {}
+    for h in hits:
+        t = h.outcome_type or "unknown"
+        counts[t] = counts.get(t, 0) + 1
+    known = {k: v for k, v in counts.items() if k != "unknown"}
+    consistent = max(known, key=known.get) if known else None
+    has_pattern = bool(consistent and known[consistent] >= settings.EVENT_MEMORY_MIN_PATTERN_COUNT)
+    return {
+        "counts": counts,
+        "consistent_outcome": consistent,
+        "has_pattern": has_pattern,
+    }
+
+
 def format_memory_block(hits: list[MemoryHit]) -> str:
-    """把召回结果渲染成 prompt 片段。空结果返回空串（调用方不注入该段）。"""
+    """把召回结果渲染成 prompt 片段。空结果返回空串（调用方不注入该段）。
+
+    渲染原则：
+      - 声明这是背景参照，严禁当作新事实写进标题/摘要/变化（对齐合成 Prompt 硬约束）；
+      - 展示首次出现时间、状态、版本与「结局」（outcome_type/最终结果/观察点兑现/持续时长），
+        让模型判断"这类事件通常如何演进"时有真实结果依据；
+      - 当结局方向不足以支撑归纳时，显式提醒"逐条引用、勿写通常"，封堵单样本臆断；
+      - 摘要截断到 EVENT_MEMORY_SUMMARY_CHARS，避免污染主事件输入 token。
+    """
     if not hits:
         return ""
     chars = settings.EVENT_MEMORY_SUMMARY_CHARS
+    ev = summarize_pattern_evidence(hits)
     lines = [
         "【历史同类事件（仅作背景参照，不是本次报道内容）】",
     ]
+    if ev["has_pattern"]:
+        label = _OUTCOME_LABELS.get(ev["consistent_outcome"], ev["consistent_outcome"])
+        n = ev["counts"].get(ev["consistent_outcome"], 0)
+        lines.append(
+            f"（已召回 {len(hits)} 个，其中 {n} 个结局「{label}」方向一致，"
+            f"可据此归纳该类事件的典型走向；仍须以本次报道事实为准。）"
+        )
+    else:
+        lines.append(
+            f"（已召回 {len(hits)} 个历史同类事件，但结局方向不一致或不足 "
+            f"{settings.EVENT_MEMORY_MIN_PATTERN_COUNT} 个一致，请逐条引用、勿臆断“通常/往往”规律。）"
+        )
     for i, h in enumerate(hits, 1):
         when = h.seen_at.strftime("%Y-%m-%d") if h.seen_at else "时间未知"
         summary = (h.summary or "").replace("\n", " ")[:chars]
@@ -244,4 +333,7 @@ def format_memory_block(hits: list[MemoryHit]) -> str:
             f"{i}. [{when}｜{h.status or 'unknown'}｜v{h.version}] {h.title}"
             + (f"　{summary}…" if summary else "")
         )
+        outcome = _format_outcome(h)
+        if outcome:
+            lines.append(f"   结局: {outcome}")
     return "\n".join(lines)

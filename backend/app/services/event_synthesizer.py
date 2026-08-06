@@ -30,6 +30,9 @@ from sqlalchemy import text
 from app.config import settings
 from app.database import async_session
 from app.services import event_memory
+from app.services.notifier import send_report
+from app.services.prefilter import is_official_source
+from app.utils.event_signals import compute_event_signals
 
 logger = logging.getLogger("alphareader.event_synth")
 
@@ -63,18 +66,31 @@ SYSTEM_PROMPT = """你是一位资深金融主编。多家媒体报道了同一�
    stable（近期无重要新增）/ resolved（基本结束或结论明确）。
 8. has_material_update：出现新事实、新数据、新确认、新政策、新时间表或重要分歧 → true；
    仅重复转述、评论、标题变化或相同信息再传播 → false。
+9. final_outcome：仅当 status="resolved" 时必填（30~80 字），用一句话说明事件最终结果
+   （落地/失败/延期/反转子结论等）；非 resolved 时空字符串。
+10. outcome_type：仅当 status="resolved" 时必填，取其一：
+    confirmed（如期落地/确认）/ reversed（被证伪或结论反转）/ delayed（延期）/ cancelled（取消或搁置）/ unknown（无法判定）。
+11. watch_result：仅当 status="resolved" 时填写（20~60 字），说明此前 watch_next 列出的
+    观察点最终是否兑现；非 resolved 时空字符串。
 
 # 历史同类事件的使用规则
-若输入包含【历史同类事件】，那是数据库中过去发生过的相似事件，仅供你判断这一类事件的
-演进规律（通常多久落地、是否常被证伪、关键验证节点在哪里）。
+若输入包含【历史同类事件】，那是数据库中过去发生过的相似事件，其中可能带有「结局」信息
+（结局类型、最终结果、观察点兑现情况、持续时长）。这些信息仅供你判断这一类事件的演进规律
+（通常多久落地、是否常被证伪、关键验证节点在哪里），不可当作本次事件的事实。
 严禁把历史事件中的主体、数字、时间写进 event_title / event_summary / latest_change——
 这三个字段只能来自本次报道。仅当确有参考价值时，可在 why_important 或 watch_next 中
 体现该规律，且不得点名具体历史事件。若历史事件与本次无关，直接忽略。
+⚠️ 规律归纳纪律：
+  - 若召回的历史事件结局方向不一、或不足 2 个方向一致（同 outcome_type），
+    不得写出"通常/一般/往往"类归纳，只能逐条引用作为背景参照；
+  - 即便有 ≥2 个一致结局，也只能在 why_important / watch_next 中谨慎体现，
+    并始终以本次报道事实为准；禁止臆造"该类事件 100% 会…"等过度推断。
 
 # 输出约束
 只输出原始 JSON，不要任何额外文字：
 {"event_title": "...", "event_summary": "...", "latest_change": "...", "why_important": "...",
- "uncertainty": "...", "watch_next": "...", "status": "new", "has_material_update": true}"""
+ "uncertainty": "...", "watch_next": "...", "status": "new", "has_material_update": true,
+ "final_outcome": "", "outcome_type": "", "watch_result": ""}"""
 
 
 def _ts_key(a: dict) -> str:
@@ -191,6 +207,11 @@ def _parse_llm_response(raw: str) -> dict | None:
     status = str(data.get("status") or "").strip()
     if status not in _EVENT_STATUS_VALUES:
         status = ""
+    outcome_type = str(data.get("outcome_type") or "").strip().lower()
+    if outcome_type and outcome_type not in {
+        "confirmed", "reversed", "delayed", "cancelled", "unknown"
+    }:
+        outcome_type = ""
     return {
         "event_title": title[:512],
         "event_summary": summary,
@@ -200,6 +221,9 @@ def _parse_llm_response(raw: str) -> dict | None:
         "watch_next": str(data.get("watch_next") or "").strip(),
         "status": status,
         "has_material_update": hmu,
+        "final_outcome": str(data.get("final_outcome") or "").strip(),
+        "outcome_type": outcome_type,
+        "watch_result": str(data.get("watch_result") or "").strip(),
     }
 
 
@@ -244,7 +268,8 @@ async def _find_candidate_clusters(
         SELECT p.id, p.title, p.source, p.ai_summary, p.ai_score,
                p.catalyst_type, p.created_at, p.published_at,
                p.event_title, p.event_summary, p.event_latest_change,
-               p.event_version, p.event_article_count,
+               p.event_version, p.event_article_count, p.is_highlight,
+               p.event_last_alerted_version,
                (p.event_embedding IS NOT NULL
                 AND p.event_embedding_model = :emb_tag) AS has_embedding,
                a.child_cnt, a.event_source_cnt, a.children
@@ -301,9 +326,43 @@ def _build_update_params(cluster: dict, parsed: dict) -> dict:
         if is_first:
             first_seen = cluster.get("published_at") or cluster.get("created_at")
             params["first_seen_at"] = first_seen
+        # 结果记忆回流：事件进入 resolved / stable（且本次有实质更新）时，
+        # 记录结束时间与持续时长；resolved 额外回流结局字段供"历史规律"判断。
+        if status in ("stable", "resolved"):
+            first_seen = (
+                cluster.get("event_first_seen_at")
+                or cluster.get("published_at")
+                or cluster.get("created_at")
+            )
+            duration_hours = None
+            if isinstance(first_seen, datetime):
+                duration_hours = int(
+                    (datetime.now(timezone.utc) - first_seen).total_seconds() // 3600
+                )
+            params["event_resolved_at"] = datetime.now(timezone.utc)
+            params["event_duration_hours"] = duration_hours
+            if status == "resolved":
+                params["event_outcome_type"] = parsed.get("outcome_type") or None
+                params["event_final_outcome"] = parsed.get("final_outcome") or None
+                params["event_watch_result"] = parsed.get("watch_result") or None
     # 无实质更新：只更新 article_count/source_count（增量闸门），不动内容与版本
     params["is_first"] = is_first
     params["material"] = is_first or parsed["has_material_update"]
+
+    # 事件级排序信号：用既有字段 + 程序规则算 5 个 0-10 信号，每次合成都刷新。
+    # 无需额外模型调用，直接并入 News「重要」排序（见 app/utils/event_signals.py）。
+    signals = compute_event_signals(
+        ai_score=cluster.get("ai_score") or 0,
+        is_highlight=bool(cluster.get("is_highlight")),
+        status=parsed.get("status") or "",
+        source_count=source_count,
+        uncertainty_text=parsed.get("uncertainty") or "",
+        watch_next_text=parsed.get("watch_next") or "",
+        has_material_update=parsed["has_material_update"],
+        outcome_type=parsed.get("outcome_type") or "",
+    )
+    for _k, _v in signals.items():
+        params[f"event_{_k}"] = _v
     return params
 
 
@@ -320,6 +379,16 @@ _UPDATE_SQL = text("""
         event_status = COALESCE(:status, event_status),
         event_version = COALESCE(:version, event_version),
         event_first_seen_at = COALESCE(:first_seen_at, event_first_seen_at),
+        event_outcome_type = COALESCE(:event_outcome_type, event_outcome_type),
+        event_final_outcome = COALESCE(:event_final_outcome, event_final_outcome),
+        event_watch_result = COALESCE(:event_watch_result, event_watch_result),
+        event_resolved_at = COALESCE(:event_resolved_at, event_resolved_at),
+        event_duration_hours = COALESCE(:event_duration_hours, event_duration_hours),
+        event_impact = COALESCE(:event_impact, event_impact),
+        event_novelty = COALESCE(:event_novelty, event_novelty),
+        event_urgency = COALESCE(:event_urgency, event_urgency),
+        event_confidence = COALESCE(:event_confidence, event_confidence),
+        event_relevance = COALESCE(:event_relevance, event_relevance),
         event_last_updated_at = CASE WHEN :material THEN :now ELSE event_last_updated_at END
     WHERE id = :id
 """)
@@ -416,6 +485,16 @@ async def _synthesize_one(
         "first_seen_at": params.get("first_seen_at"),
         "material": params["material"],
         "now": params["now"],
+        "event_outcome_type": params.get("event_outcome_type"),
+        "event_final_outcome": params.get("event_final_outcome"),
+        "event_watch_result": params.get("event_watch_result"),
+        "event_resolved_at": params.get("event_resolved_at"),
+        "event_duration_hours": params.get("event_duration_hours"),
+        "event_impact": params.get("event_impact"),
+        "event_novelty": params.get("event_novelty"),
+        "event_urgency": params.get("event_urgency"),
+        "event_confidence": params.get("event_confidence"),
+        "event_relevance": params.get("event_relevance"),
     }
     async with async_session() as session:
         await session.execute(_UPDATE_SQL, row)
@@ -440,6 +519,64 @@ async def _synthesize_one(
     }
 
 
+def _cluster_has_official_source(cluster: dict) -> bool:
+    """簇内任一信源为官方/权威信源即视为「官方来源」。"""
+    sources = [cluster.get("source")] + [
+        c.get("source") for c in cluster.get("children", [])
+    ]
+    return any(is_official_source(s) for s in sources if s)
+
+
+def _maybe_collect_alert(cluster: dict, out: dict, alerts: list[dict]) -> None:
+    """按条件筛选重大事件即时提醒候选（纯程序规则，不额外调 LLM）。
+
+    条件：event_version 增加（material 写入新版本）
+          且 ai_score >= EVENT_ALERT_MIN_AI_SCORE
+          且（官方来源 或 独立信源数 >= EVENT_ALERT_MIN_SOURCES）
+          且 latest_change 非空
+          且 本次 version 高于已推送版本（去重）
+    """
+    if not out.get("version"):  # 非实质更新（仅 article_count 累加）不触发
+        return
+    ai = float(cluster.get("ai_score") or 0)
+    if ai < settings.EVENT_ALERT_MIN_AI_SCORE:
+        return
+    official = _cluster_has_official_source(cluster)
+    if not (official or (out.get("source_count") or 0) >= settings.EVENT_ALERT_MIN_SOURCES):
+        return
+    latest = out.get("latest_change") or ""
+    if not latest.strip():
+        return
+    last_alerted = int(cluster.get("event_last_alerted_version") or 0)
+    if out["version"] <= last_alerted:
+        return
+    alerts.append({
+        "event_id": cluster["id"],
+        "version": out["version"],
+        "title": out.get("event_title") or cluster.get("title") or "",
+        "latest_change": latest,
+        "ai_score": ai,
+        "source_count": out.get("source_count", 1),
+        "official": official,
+    })
+
+
+def _build_major_event_alert_text(items: list[dict], total: int) -> str:
+    """拼接即时重大事件短简讯：每条 1-2 行，最多 2 条，附 Reports 链接。"""
+    lines = ["🚨 重大事件提醒（即时）"]
+    for it in items:
+        src = "官方确认" if it["official"] else f"{it['source_count']} 家独立信源"
+        lines.append(
+            f"\n【{it['title']}】\n"
+            f"变化：{it['latest_change']}\n"
+            f"评分 {int(it['ai_score'])} · {src}"
+        )
+    if total > len(items):
+        lines.append(f"\n…另有 {total - len(items)} 条重大变化，详见 Reports")
+    lines.append(f"\n📎 {settings.SITE_BASE_URL}/#/pages/reports/index")
+    return "\n".join(lines)
+
+
 async def synthesize_events() -> dict:
     """主入口：扫描候选事件簇并逐个合成。返回统计 dict。"""
     if not settings.EVENT_SYNTH_ENABLED:
@@ -460,6 +597,7 @@ async def synthesize_events() -> dict:
 
     synthesized = 0
     results: list[dict] = []
+    alerts: list[dict] = []  # 满足条件的重大事件即时提醒候选
     async with httpx.AsyncClient() as client:
         for cluster in clusters:
             out = await _synthesize_one(
@@ -468,6 +606,30 @@ async def synthesize_events() -> dict:
             if out:
                 synthesized += 1
                 results.append(out)
+                _maybe_collect_alert(cluster, out, alerts)
+
+    # 重大事件即时提醒：合成阶段条件触发，推送 1-2 条短简讯（不再生成午报）。
+    # 去重：仅当本次写入的 event_version 高于已推送版本才提醒，避免重复推送。
+    if alerts and settings.EVENT_ALERT_ENABLED:
+        alerts.sort(key=lambda a: a["ai_score"], reverse=True)
+        top = alerts[: settings.EVENT_ALERT_MAX_ITEMS]
+        text = _build_major_event_alert_text(top, len(alerts))
+        try:
+            async with async_session() as session:
+                for a in top:
+                    await session.execute(
+                        text(
+                            "UPDATE news SET event_last_alerted_version = :v WHERE id = :id"
+                        ),
+                        {"v": a["version"], "id": a["event_id"]},
+                    )
+                await session.commit()
+        except Exception as e:  # 去重落库失败不影响提醒本身
+            logger.warning("Failed to record event alert versions: %s", e)
+        try:
+            await send_report(text)
+        except Exception as e:
+            logger.warning("Failed to send major-event alert: %s", e)
 
     embedded = await _refresh_event_embeddings(clusters, results)
 

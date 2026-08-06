@@ -418,11 +418,11 @@ async def _trend_screener_job():
 async def _digest_job(period_label: str):
     """新闻概览摘要生成任务 — 收集指定时段新闻并调用 DeepSeek 总结。
 
-    四个时段：
-      - morning (08:30): 收集 00:00~08:30 新闻
-      - midday  (12:15): 收集 08:30~12:15 新闻
-      - evening (18:15): 收集 12:15~18:15 新闻
-      - night   (00:00): 收集 18:15~24:00 新闻（次日凌晨触发）
+    采用滚动窗口（见 digest_service.GENERATION_TIME），相邻简报首尾相接、无时间空档：
+      - morning (08:30): 区间 = 上一份成功简报 period_end(~前一日18:30) ~ 当日08:30
+      - evening (18:30): 区间 = 当日08:30 ~ 当日18:30
+    调度时间若调整，区间会自动衔接，不会产生缝隙（修复此前 08:30~12:15 与
+    18:15~24:00 两段长期无人覆盖的问题）。
     """
     try:
         logger.info("Digest job [%s] triggered at %s", period_label, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -850,7 +850,7 @@ async def _run_scheduler_jobs():
     )
 
     # ── 新闻概览 Digest（每天 2 个时段：早报 08:30 + 傍晚报 18:30，控制 LLM 成本）──
-    # 08:30 早报：收集 00:00~08:30
+    # 滚动窗口：早报区间 = 上一份成功简报(~前一日18:30) ~ 当日08:30
     scheduler.add_job(
         _digest_job,
         args=["morning"],
@@ -866,7 +866,7 @@ async def _run_scheduler_jobs():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
-    # 18:30 傍晚报：收集 08:30~18:30
+    # 18:30 傍晚报：区间 = 当日08:30 ~ 当日18:30（与上一份早报首尾相接）
     scheduler.add_job(
         _digest_job,
         args=["evening"],

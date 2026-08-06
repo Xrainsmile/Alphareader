@@ -25,10 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.auth import require_api_key
+from app.config import settings
 from app.database import get_db
 from app.models.event_version import EventVersion
 from app.models.news import News
 from app.schemas.response import APIResponse, PaginatedResponse
+from app.utils.event_signals import event_signal_boost, event_signal_sql
 from app.utils.ranking import calculate_ranking_score, gravity_sql_expression
 
 logger = logging.getLogger("alphareader.api.events")
@@ -67,6 +69,12 @@ def _serialize_event(n: News, child_cnt: int, source_cnt: int,
         "ranking_score": ranking_score,
         "is_highlight": bool(n.is_highlight),
         "tags": n.tags,
+        # 事件级排序信号（0-10，纯规则计算，见 app/utils/event_signals.py）
+        "event_impact": n.event_impact,
+        "event_novelty": n.event_novelty,
+        "event_urgency": n.event_urgency,
+        "event_confidence": n.event_confidence,
+        "event_relevance": n.event_relevance,
         # 报道总数 vs 独立信源数（同一媒体多篇只计 1）
         "article_count": child_cnt + 1,
         "source_count": source_cnt,
@@ -183,6 +191,11 @@ async def list_events(
                 f"+ LEAST(COALESCE({event_src_sql}, 0) * {EVENT_BOOST_PER_SOURCE}, "
                 f"{EVENT_BOOST_MAX})"
             )
+            if settings.EVENT_SIGNAL_BOOST_ENABLED:
+                # 事件级排序信号加分：impact/novelty/urgency/confidence/relevance，
+                # 由既有字段 + 程序规则算出（见 app/utils/event_signals.py），
+                # 使 Reports 标为"必须知道"的事件在 News 里也靠前。NULL 安全。
+                boost_sql += f" + {event_signal_sql()}"
             event_time_sql = (
                 "GREATEST(published_at, "
                 "COALESCE(event_last_updated_at, published_at), "
@@ -242,6 +255,11 @@ async def list_events(
         ranking_score = None
         if sort == EventSortMode.IMPORTANT:
             boost = min(source_count * EVENT_BOOST_PER_SOURCE, EVENT_BOOST_MAX)
+            if settings.EVENT_SIGNAL_BOOST_ENABLED:
+                boost += event_signal_boost(
+                    n.event_impact, n.event_novelty, n.event_urgency,
+                    n.event_confidence, n.event_relevance,
+                )
             effective_pub = n.event_last_updated_at or n.published_at
             if child_max_pub and (effective_pub is None or child_max_pub > effective_pub):
                 effective_pub = child_max_pub

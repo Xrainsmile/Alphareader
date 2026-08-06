@@ -73,6 +73,30 @@ class News(Base):
     # 仅聚合根有值；event_embedding_model 记录 provider/model/dim，变更时旧向量自动失效。
     event_embedding: Mapped[list[float] | None] = mapped_column(ARRAY(REAL), nullable=True)
     event_embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # ── 事件结果记忆（让"历史规律"有据可依）──
+    # LLM 判定事件结束(resolved)或自动平息(stable)时回流：
+    #   outcome_type: confirmed/reversed/delayed/cancelled/unknown（unknown=未记录/仍在进行）
+    #   final_outcome: 最终结果的自然语言摘要
+    #   watch_result: 此前 watch_next 观察点是否最终兑现
+    #   resolved_at: 结束时间；duration_hours: 从首现到结束的小时数（"通常多久落地"依据）
+    # 召回记忆时仅取 stable/resolved（见 event_memory.EVENT_MEMORY_RECALL_STATUSES），
+    # 避免把未结束事件当"历史规律"，也避免空洞历史误导归纳。
+    event_outcome_type: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    event_final_outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_watch_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    event_duration_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # ── 事件级排序信号（方案：纯规则计算，无需额外模型调用）──
+    # 每次事件合成时由既有字段 + 程序规则算出，0-10；用于 News「重要」排序加分。
+    event_impact: Mapped[int | None] = mapped_column(Integer, nullable=True)      # 本轮变化是否重大（重要性）
+    event_novelty: Mapped[int | None] = mapped_column(Integer, nullable=True)     # 本轮变化是否新鲜 / 是否仍在演进
+    event_urgency: Mapped[int | None] = mapped_column(Integer, nullable=True)     # 当前紧迫性
+    event_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 确定性（含官方确认/多源交叉验证）
+    event_relevance: Mapped[int | None] = mapped_column(Integer, nullable=True)   # 用户是否需要行动
+    # 重大事件即时提醒去重：已为哪个 event_version 推送过提醒（避免重复推送同一版本）
+    event_last_alerted_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # P5: 去重指纹——持久化到 DB，评分前加载 7 天历史用于跨天旧闻识别
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     simhash_fingerprint: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)

@@ -9,7 +9,7 @@
         <!-- 移动端：侧门「!」入口（桌面端由左侧导航承载，此处隐藏）-->
         <GateButton class="gate-mobile-only" />
       </view>
-      <text class="reports-subtitle">新闻概览 · 每日复盘</text>
+      <text class="reports-subtitle">阶段简报 · 事件追踪</text>
       <!-- 移动端解锁后：Stocks / SEPA 入口（原生 tabBar 已默认隐藏）-->
       <view v-if="isOpen" class="gate-reveal-mobile">
         <view class="gate-reveal-chip" @click="goHidden('stocks')">Stocks</view>
@@ -17,40 +17,10 @@
       </view>
     </view>
 
-    <!-- Tab Bar -->
-    <view class="tab-bar">
-      <view
-        class="tab-item"
-        :class="{ active: activeTab === 'digest' }"
-        @click="switchTab('digest')"
-      >
-        <text class="tab-text">Reports</text>
-      </view>
-      <!-- 每日研报 tab 已暂停（2026-08-06）：模块注释掉，不再展示
-      <view
-        class="tab-item"
-        :class="{ active: activeTab === 'briefing' }"
-        @click="switchTab('briefing')"
-      >
-        <text class="tab-text">每日研报</text>
-      </view>
-      -->
-      <!-- 深度报告 tab 已暂停（2026-08-02）：模块注释掉
-      <view
-        class="tab-item"
-        :class="{ active: activeTab === 'reports' }"
-        @click="switchTab('reports')"
-      >
-        <text class="tab-text">深度报告</text>
-      </view>
-      -->
-      <view class="tab-indicator" :style="{ left: tabIndicatorLeft, width: '100%' }"></view>
-    </view>
-
     <!-- ═══════════════════════════════════════════
-         Tab 1: 新闻概览（时间轴）
+         新闻概览（时间轴）— 阶段简报
          ═══════════════════════════════════════════ -->
-    <view v-if="activeTab === 'digest'" class="digest-tab">
+    <view class="digest-tab">
       <!-- Loading -->
       <EmptyState
         v-if="digestLoading"
@@ -163,115 +133,6 @@
       </view>
     </view>
 
-    <!-- ═══════════════════════════════════════════
-         Tab 2: 每日研报（AI 市场分析）— 模块已暂停（2026-08-06）
-         ═══════════════════════════════════════════ -->
-    <view v-if="false /* 每日研报模块已暂停 2026-08-06 */" class="briefing-tab">
-      <!-- Loading -->
-      <EmptyState
-        v-if="briefingLoading"
-        text="加载中..."
-        mobile-padding="120rpx 0"
-        desktop-padding="60px 0"
-      />
-
-      <!-- Empty -->
-      <EmptyState
-        v-if="!briefingLoading && briefingList.length === 0"
-        text="暂无研报数据"
-        mobile-padding="120rpx 0"
-        desktop-padding="60px 0"
-      />
-
-      <!-- Briefing List -->
-      <view v-if="!briefingLoading && briefingList.length > 0" class="briefing-list">
-        <view
-          v-for="item in briefingList"
-          :key="item.id"
-          class="briefing-card"
-          @click="goBriefingDetail(item.id)"
-        >
-          <!-- Card Header -->
-          <view class="briefing-card-header">
-            <view class="briefing-date-group">
-              <text class="briefing-date-day">{{ formatBriefingDay(item.briefing_date) }}</text>
-              <text class="briefing-date-weekday">{{ formatBriefingWeekday(item.briefing_date) }}</text>
-            </view>
-            <view class="briefing-status" :class="'status-' + item.status">
-              <text class="status-dot">●</text>
-              <text class="status-text">{{ statusLabel(item.status) }}</text>
-            </view>
-          </view>
-
-          <!-- Preview Content (first ~100 chars) -->
-          <text class="briefing-preview">{{ getPreview(item.content) }}</text>
-
-          <!-- Card Footer: meta stats -->
-          <view class="briefing-card-footer">
-            <view class="meta-tags">
-              <text class="meta-tag tag-sentiment" v-if="item.meta && item.meta.market_sentiment"><IconSvg name="dot" :color="sentimentColor(item.meta.market_sentiment)" class="meta-dot" size="10px" /> {{ item.meta.market_sentiment }}</text>
-              <text class="meta-tag tag-s" v-if="item.meta && item.meta.tier_s"><IconSvg name="target" class="meta-ico" size="13px" /> {{ item.meta.tier_s }}</text>
-              <text class="meta-tag tag-a" v-if="item.meta && item.meta.tier_a"><IconSvg name="clipboard" class="meta-ico" size="13px" /> {{ item.meta.tier_a }}</text>
-              <text class="meta-tag tag-x" v-if="item.meta && item.meta.tier_x"><IconSvg name="warning" class="meta-ico" size="13px" /> {{ item.meta.tier_x }}</text>
-            </view>
-            <text class="briefing-gen-time" v-if="item.generation_sec"><IconSvg name="clock" class="meta-ico" size="12px" /> {{ item.generation_sec.toFixed(1) }}s</text>
-          </view>
-        </view>
-      </view>
-
-      <!-- Load more -->
-      <view v-if="!briefingLoading && briefingList.length > 0 && briefingDays < 30" class="load-more" @click="loadMoreBriefings">
-        <text class="load-more-text">加载更多</text>
-      </view>
-    </view>
-
-    <!-- ═══════════════════════════════════════════
-         Tab 3: 复盘（原有 Reports 列表）— 深度报告模块已暂停（2026-08-02）
-         ═══════════════════════════════════════════ -->
-    <view v-if="false /* 深度报告模块已暂停 2026-08-02 */" class="reports-tab">
-      <!-- Reports List -->
-      <view class="reports-list">
-        <view
-          v-for="item in reportsList"
-          :key="item.id"
-          class="report-card"
-          @click="goDetail(item.id)"
-        >
-          <view class="card-text">
-            <text class="card-title">{{ item.title }}</text>
-            <text class="card-summary">{{ item.summary }}</text>
-            <view class="card-bottom">
-              <text class="card-date">{{ formatDate(item.date) }}</text>
-              <view class="card-actions">
-                <view class="action-btn" @click.stop="onShare(item)">
-                  <text class="action-icon">↗</text>
-                </view>
-              </view>
-            </view>
-          </view>
-          <view class="card-cover" v-if="item.cover">
-            <image class="cover-img" :src="item.cover" mode="aspectFill" lazy-load />
-          </view>
-        </view>
-      </view>
-
-      <!-- Empty State -->
-      <EmptyState
-        v-if="!reportsLoading && reportsList.length === 0"
-        text="暂无复盘报告"
-        mobile-padding="120rpx 0"
-        desktop-padding="60px 0"
-      />
-
-      <!-- Loading State -->
-      <EmptyState
-        v-if="reportsLoading"
-        text="加载中..."
-        mobile-padding="120rpx 0"
-        desktop-padding="60px 0"
-      />
-    </view>
-
     <!-- Footer -->
     <SiteFooter />
     </view><!-- /container -->
@@ -279,23 +140,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
-// 每日研报模块已暂停（2026-08-06）：import { fetchBriefings } from '@/utils/api'
 import { fetchDigests } from '@/utils/api'
-import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
-// 深度报告模块已暂停（2026-08-02）：import { rawReports } from '@/data/reports'
+import { renderMarkdown } from '@/utils/markdown'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PcSidebar from '@/components/common/PcSidebar.vue'
-import IconSvg from '@/components/common/IconSvg.vue'
 import GateButton from '@/components/common/GateButton.vue'
 import { useGate } from '@/utils/useGate'
-import { listTagStyle, listTagStyleMobile, formatDate } from '@/utils/formatters'
-
-// ── Tab State ──
-// 默认「Reports」：用户打开产品首先看到最新阶段简报（PRD 4.2）
-const activeTab = ref('digest')
+import { listTagStyle, listTagStyleMobile } from '@/utils/formatters'
 
 // ── 侧门（gate）：Stocks / SEPA 对外隐藏，解锁后显现 ──
 const { isOpen } = useGate()
@@ -306,34 +160,6 @@ function goHidden(kind) {
   uni.navigateTo({ url })
 }
 
-// ── 右看板：栏目导航 ──
-const rightTabs = [
-  { key: 'digest', iconName: 'news', label: 'Reports', desc: '过去几小时发生了什么' },
-  // 每日研报 已暂停（2026-08-06）：{ key: 'briefing', iconName: 'briefing', label: '每日研报', desc: 'AI 市场分析' },
-  // 深度报告 已暂停（2026-08-02）：{ key: 'reports', iconName: 'clipboard', label: '深度报告', desc: '历史复盘与专题' },
-]
-
-// ── Tab indicator position（每日研报/深度报告均暂停，仅剩 digest 一栏）──
-const tabIndicatorLeft = computed(() => {
-  return '0%'
-})
-
-function switchTab(tab) {
-  activeTab.value = tab
-  // 首次切换时懒加载
-  if (tab === 'digest' && digestList.value.length === 0 && !digestLoading.value) {
-    loadDigests()
-  }
-  // 每日研报 已暂停（2026-08-06）：懒加载分支已停用
-  // if (tab === 'briefing' && briefingList.value.length === 0 && !briefingLoading.value) {
-  //   loadBriefings()
-  // }
-  // 深度报告 已暂停（2026-08-02）
-  // if (tab === 'reports' && reportsList.value.length === 0 && !reportsLoading.value) {
-  //   loadReports()
-  // }
-}
-
 // ── Digest State ──
 const digestList = ref([])
 const digestLoading = ref(false)
@@ -341,15 +167,6 @@ const digestDays = ref(7)
 const expandedIds = reactive(new Set())
 // 深链：从企微推送 / ?id=<digest_id> 进入时，定位到对应简报
 const targetDigestId = ref(null)
-
-// ── Reports State（深度报告模块已暂停 2026-08-02）──
-// const reportsList = ref([])
-// const reportsLoading = ref(false)
-
-// ── Briefing State（每日研报模块已暂停 2026-08-06）──
-// const briefingList = ref([])
-// const briefingLoading = ref(true)
-// const briefingDays = ref(7)
 
 // Markdown tag styles (from shared formatters)
 // 按屏宽选择字号体系：PC 15px 正文 / 移动端 13px，均对齐 news 页面
@@ -408,40 +225,6 @@ function goEventDetail(eventId) {
   uni.navigateTo({ url: `/pages/events/detail?id=${eventId}` })
 }
 
-const CONFIDENCE_LABELS = { high: '高可信', medium: '中可信', low: '低可信' }
-function confidenceLabel(c) {
-  return CONFIDENCE_LABELS[c] || c
-}
-
-// ── Icon helpers（替代 emoji）──
-function periodIconName(label) {
-  return { morning: 'sunrise', midday: 'sun', evening: 'sunset', night: 'moon' }[label] || 'sun'
-}
-function sentimentColor(s) {
-  if (!s) return '#9ca3af'
-  const t = String(s)
-  if (t.includes('乐观') || t.includes('看多') || t.includes('偏多')) return '#16a34a'
-  if (t.includes('悲观') || t.includes('看空') || t.includes('偏空')) return '#dc2626'
-  if (t.includes('中性') || t.includes('震荡')) return '#d97706'
-  return '#9ca3af'
-}
-
-function formatDigestDate(item) {
-  const d = new Date(item.period_start)
-  const month = d.getMonth() + 1
-  const day = d.getDate()
-  // 从 period_end 提取结束时间
-  const endD = new Date(item.period_end)
-  const startH = String(d.getHours()).padStart(2, '0')
-  const startM = String(d.getMinutes()).padStart(2, '0')
-  const endH = String(endD.getHours()).padStart(2, '0')
-  const endM = String(endD.getMinutes()).padStart(2, '0')
-  const endStr = endH === '00' && endM === '00' ? '24:00' : `${endH}:${endM}`
-  return `${month}月${day}日 ${startH}:${startM}~${endStr}`
-}
-
-// formatDate imported from formatters.js
-
 // ── Data Loading ──
 
 async function loadDigests() {
@@ -468,121 +251,6 @@ async function loadMoreDigests() {
   await loadDigests()
 }
 
-// ── Briefing Helpers（每日研报模块已暂停 2026-08-06，整段停用）──
-
-// function formatBriefingDay(dateStr) {
-//   const d = new Date(dateStr)
-//   return `${d.getMonth() + 1}月${d.getDate()}日`
-// }
-//
-// function formatBriefingWeekday(dateStr) {
-//   const d = new Date(dateStr)
-//   const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-//   return days[d.getDay()]
-// }
-
-// statusLabel → reportStatusLabel（reportStatusLabel 导入已移除）
-// const statusLabel = reportStatusLabel
-
-// function getPreview(content) {
-//   if (!content) return '暂无内容'
-//   const plain = content
-//     .replace(/#{1,6}\s/g, '')
-//     .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
-//     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-//     .replace(/[-*]\s/g, '')
-//     .replace(/\n+/g, ' ')
-//     .trim()
-//   return plain.length > 120 ? plain.slice(0, 120) + '...' : plain
-// }
-
-// function goBriefingDetail(id) {
-//   uni.navigateTo({ url: `/pages/briefing/detail?id=${id}` })
-// }
-
-// ── Briefing Data Loading（已暂停）──
-
-// async function loadBriefings() {
-//   briefingLoading.value = true
-//   try {
-//     const data = await fetchBriefings(briefingDays.value)
-//     briefingList.value = data || []
-//   } catch (e) {
-//     console.warn('加载研报失败:', e.message)
-//     briefingList.value = []
-//   } finally {
-//     briefingLoading.value = false
-//   }
-// }
-
-// async function loadMoreBriefings() {
-//   briefingDays.value = Math.min(briefingDays.value + 7, 30)
-//   await loadBriefings()
-// }
-
-// 深度报告模块已暂停（2026-08-02），以下函数注释掉
-// 从 Mock 数据生成 fallback 列表
-// function getLocalReports() {
-//   return rawReports.map((raw, idx) => {
-//     const { meta } = parseFrontMatter(raw)
-//     return {
-//       id: idx,
-//       sync_id: `local-${idx}`,
-//       title: meta.title || '无标题',
-//       date: meta.date || '',
-//       cover: meta.cover || '',
-//       summary: meta.summary || '',
-//       _isLocal: true
-//     }
-//   })
-// }
-//
-// async function loadReports() {
-//   reportsLoading.value = true
-//   try {
-//     const data = await fetchReportsList()
-//     if (data && data.length > 0) {
-//       reportsList.value = data
-//     } else {
-//       reportsList.value = getLocalReports()
-//     }
-//   } catch (e) {
-//     console.warn('API 不可用，使用本地数据:', e.message)
-//     reportsList.value = getLocalReports()
-//   } finally {
-//     reportsLoading.value = false
-//   }
-// }
-
-// 深度报告模块已暂停（2026-08-02），goDetail 不再使用
-// const goDetail = (id) => {
-//   const item = reportsList.value.find(r => r.id === id)
-//   if (item && item._isLocal) {
-//     uni.navigateTo({ url: `/pages/reports/detail?idx=${id}` })
-//   } else {
-//     uni.navigateTo({ url: `/pages/reports/detail?id=${id}` })
-//   }
-// }
-
-const onShare = (item) => {
-  // #ifdef H5
-  if (navigator.share) {
-    navigator.share({
-      title: item.title,
-      text: item.summary,
-      url: window.location.origin + `/pages/reports/index?id=${item.id}`
-    }).catch(() => {})
-  } else {
-    uni.setClipboardData({
-      data: window.location.origin + `/pages/reports/index?id=${item.id}`,
-      success: () => {
-        uni.showToast({ title: '链接已复制', icon: 'none' })
-      }
-    })
-  }
-  // #endif
-}
-
 onMounted(() => {
   // 读取深链参数 ?id=<digest_id>（从企微推送链接进入时定位具体简报）
   const pages = getCurrentPages()
@@ -590,19 +258,12 @@ onMounted(() => {
   const opts = (cur && (cur.$page?.options || cur.options)) || {}
   if (opts.id) targetDigestId.value = opts.id
 
-  // 默认展示 Reports（今日简报）时间轴，进入即加载
-  if (activeTab.value === 'digest') {
-    loadDigests()
-  }
-  // 每日研报模块已暂停（2026-08-06）：loadBriefings() 不再调用
+  // 进入即加载阶段简报时间轴
+  loadDigests()
 })
 </script>
 
 <style scoped>
-.reports-container {
-  min-height: 100vh;
-}
-
 /* ── Header ── */
 .reports-header {
   padding: 36rpx 0 16rpx;
@@ -644,41 +305,6 @@ onMounted(() => {
   margin-top: 6rpx;
   letter-spacing: 1rpx;
   display: block;
-}
-
-/* ── Tab Bar ── */
-.tab-bar {
-  display: flex;
-  position: relative;
-  border-bottom: 1rpx solid var(--color-border-light);
-  margin-bottom: 8rpx;
-}
-.tab-item {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24rpx 0;
-  cursor: pointer;
-}
-.tab-text {
-  font-size: 30rpx;
-  color: var(--color-text-muted);
-  font-weight: 500;
-  transition: color 0.2s;
-}
-.tab-item.active .tab-text {
-  color: var(--color-text-primary);
-  font-weight: 700;
-}
-.tab-indicator {
-  position: absolute;
-  bottom: 0;
-  width: 33.33%;
-  height: 4rpx;
-  background: var(--color-brand);
-  border-radius: 2rpx;
-  transition: left 0.25s ease;
 }
 
 /* ═══════════════════════════════════
@@ -828,243 +454,6 @@ onMounted(() => {
 .load-more-text {
   font-size: 26rpx;
   color: var(--color-brand);
-  font-weight: 500;
-}
-
-/* ═══════════════════════════════════
-   Briefing Tab — 每日研报卡片列表
-   ═══════════════════════════════════ */
-.briefing-tab {
-  padding-bottom: 20rpx;
-}
-
-.briefing-list {
-  display: flex;
-  flex-direction: column;
-  gap: 20rpx;
-}
-
-.briefing-card {
-  background: var(--color-bg-hover);
-  border-radius: 16rpx;
-  padding: 28rpx;
-  border: 1rpx solid var(--color-border-light);
-  cursor: pointer;
-  transition: box-shadow 0.15s, transform 0.15s;
-}
-
-.briefing-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16rpx;
-}
-
-.briefing-date-group {
-  display: flex;
-  align-items: baseline;
-  gap: 12rpx;
-}
-
-.briefing-date-day {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  font-family: var(--font-display);
-}
-
-.briefing-date-weekday {
-  font-size: 24rpx;
-  color: var(--color-text-muted);
-  font-weight: 500;
-}
-
-.briefing-status {
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
-  padding: 4rpx 16rpx;
-  border-radius: 20rpx;
-}
-.status-ok {
-  background: var(--color-bg-success-soft);
-}
-.status-failed {
-  background: var(--color-bg-danger-light);
-}
-.status-empty {
-  background: var(--color-bg-neutral-soft);
-}
-.status-dot {
-  font-size: 14rpx;
-}
-.status-ok .status-dot {
-  color: var(--color-down);
-}
-.status-failed .status-dot {
-  color: var(--color-up);
-}
-.status-empty .status-dot {
-  color: var(--color-text-placeholder);
-}
-.status-text {
-  font-size: 22rpx;
-  font-weight: 500;
-}
-.status-ok .status-text {
-  color: var(--color-success-text);
-}
-.status-failed .status-text {
-  color: var(--color-danger-dark);
-}
-.status-empty .status-text {
-  color: var(--color-text-muted);
-}
-
-.briefing-preview {
-  font-size: 25rpx;
-  color: var(--color-text-tertiary);
-  line-height: 1.65;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.briefing-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 16rpx;
-  padding-top: 16rpx;
-  border-top: 1rpx solid var(--color-border-light);
-}
-
-.meta-tags {
-  display: flex;
-  gap: 12rpx;
-  flex-wrap: wrap;
-}
-
-.meta-tag {
-  font-size: 22rpx;
-  color: var(--color-brand);
-  background: var(--color-bg-info-soft);
-  padding: 4rpx 14rpx;
-  border-radius: 8rpx;
-  font-weight: 500;
-}
-.tag-sentiment {
-  color: var(--color-text-tertiary);
-  background: var(--color-border-light);
-}
-.tag-s {
-  color: var(--color-warning);
-  background: var(--color-bg-warning-light);
-}
-.tag-a {
-  color: var(--color-brand);
-  background: var(--color-bg-info-soft);
-}
-.tag-x {
-  color: var(--color-danger-dark);
-  background: var(--color-bg-danger-light);
-}
-
-.briefing-gen-time {
-  font-size: 22rpx;
-  color: var(--color-text-placeholder);
-  font-family: var(--font-sans);
-}
-
-/* ═══════════════════════════════════
-   Reports Tab
-   ═══════════════════════════════════ */
-.reports-tab {
-  padding-bottom: 20rpx;
-}
-
-.reports-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.report-card {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  padding: 28rpx 0;
-  border-bottom: 1rpx solid var(--color-border-light);
-  cursor: pointer;
-  gap: 24rpx;
-}
-
-.card-text {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-}
-
-.card-cover {
-  width: 112rpx;
-  height: 112rpx;
-  border-radius: 12rpx;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.cover-img {
-  width: 100%;
-  height: 100%;
-}
-.card-title {
-  font-size: 30rpx;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-family: var(--font-sans);
-}
-.card-summary {
-  font-size: 25rpx;
-  color: var(--color-text-hint);
-  line-height: 1.6;
-  margin-top: 12rpx;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.card-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 16rpx;
-}
-.card-date {
-  font-size: 24rpx;
-  color: var(--color-text-placeholder);
-  font-family: var(--font-sans);
-}
-.card-actions {
-  display: flex;
-  align-items: center;
-}
-.action-btn {
-  width: 52rpx;
-  height: 52rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: background-color 0.15s;
-}
-.action-icon {
-  font-size: 28rpx;
-  color: var(--color-text-placeholder);
   font-weight: 500;
 }
 
@@ -1232,21 +621,6 @@ onMounted(() => {
     margin-top: 4px;
   }
 
-  /* Tab Bar */
-  .tab-bar {
-    border-bottom-width: 1px;
-    margin-bottom: 4px;
-  }
-  .tab-item {
-    padding: 16px 0;
-  }
-  .tab-text {
-    font-size: 15px;
-  }
-  .tab-indicator {
-    height: 2px;
-  }
-
   /* Timeline */
   .timeline-rail {
     width: 24px;
@@ -1319,109 +693,7 @@ onMounted(() => {
     font-size: 14px;
   }
 
-  /* Briefing */
-  .briefing-list {
-    gap: 12px;
-  }
-  .briefing-card {
-    padding: 20px 24px;
-    border-radius: 12px;
-    border-width: 1px;
-  }
-  .briefing-card:hover {
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-    transform: translateY(-1px);
-  }
-  .briefing-card-header {
-    margin-bottom: 12px;
-  }
-  .briefing-date-group {
-    gap: 8px;
-  }
-  .briefing-date-day {
-    font-size: 17px;
-  }
-  .briefing-date-weekday {
-    font-size: 13px;
-  }
-  .briefing-status {
-    gap: 4px;
-    padding: 2px 10px;
-    border-radius: 12px;
-  }
-  .status-dot {
-    font-size: 8px;
-  }
-  .status-text {
-    font-size: 13px;
-  }
-  .briefing-preview {
-    font-size: 15px;
-    line-height: 1.7;
-  }
-  .briefing-card-footer {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top-width: 1px;
-  }
-  .meta-tags {
-    gap: 8px;
-  }
-  .meta-tag {
-    font-size: 13px;
-    padding: 2px 8px;
-    border-radius: 4px;
-  }
-  .briefing-gen-time {
-    font-size: 13px;
-  }
-
   /* Reports */
-  .reports-list {
-    margin-top: 8px;
-  }
-  .report-card {
-    padding: 20px 0;
-    border-bottom: 1px solid var(--color-border-light);
-    gap: 20px;
-    transition: background-color 0.15s;
-  }
-  .report-card:hover {
-    background-color: var(--color-bg-hover);
-  }
-  .card-cover {
-    width: 70px;
-    height: 70px;
-    border-radius: 8px;
-  }
-  .card-text {
-    padding: 0 16px;
-  }
-  .card-title {
-    font-size: 17px;
-    line-height: 1.4;
-  }
-  .card-summary {
-    font-size: 15px;
-    margin-top: 8px;
-    line-height: 1.5;
-  }
-  .card-bottom {
-    margin-top: 12px;
-  }
-  .card-date {
-    font-size: 13px;
-  }
-  .action-btn {
-    width: 28px;
-    height: 28px;
-  }
-  .action-btn:hover {
-    background: var(--color-border);
-  }
-  .action-icon {
-    font-size: 14px;
-  }
 }
 
 @media screen and (min-width: 1200px) {
@@ -1438,21 +710,13 @@ onMounted(() => {
   .dc-mk-detail { font-size: 16px; }
   .dc-watch-text { font-size: 18px; }
   .dc-upcoming-text { font-size: 18px; }
-  .briefing-date-day { font-size: 22px; }
-  .briefing-preview { font-size: 19px; }
-  .card-title { font-size: 22px; }
-  .card-summary { font-size: 19px; }
   .reports-title { font-size: 32px; }
 }
 /* ── IconSvg 适配（替代 emoji）── */
 .badge-icon { flex: none; }
 .right-news-rank { flex: none; color: var(--color-brand); }
 .sb-ico,
-.sb-ico-sm,
-.meta-ico { flex: none; margin-right: 3px; }
-.meta-dot { flex: none; margin-right: 3px; }
-.meta-tag { display: inline-flex; align-items: center; }
-.briefing-gen-time { display: inline-flex; align-items: center; gap: 3px; }
+.sb-ico-sm { flex: none; margin-right: 3px; }
 .sb-changed-text,
 .sb-event-change,
 .sb-event-watch { display: inline-flex; align-items: center; }

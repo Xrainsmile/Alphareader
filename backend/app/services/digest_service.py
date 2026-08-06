@@ -75,13 +75,19 @@ worth_watching 3-8 条；cross_event_signals 没有明确共同信号时返回�
 本时段发生实质更新；RESOLVED=本时段正式结束或结论明确。ONGOING（持续事件无实质更新）
 已由程序层处理，不要放入 must_know/worth_watching。"""
 
-# 时段配置：label → (start_hour, start_minute, end_hour, end_minute)
-# 边界与调度时间一致（12:15/18:15 生成，统计区间截止到生成点，PRD 10.2）
-PERIOD_CONFIG = {
-    "morning": (0, 0, 8, 30),     # 00:00 ~ 08:30
-    "midday":  (8, 30, 12, 15),   # 08:30 ~ 12:15
-    "evening": (12, 15, 18, 15),  # 12:15 ~ 18:15
-    "night":   (18, 15, 23, 59),  # 18:15 ~ 24:00 (用 23:59:59 表示当天结束)
+# 简报采用「滚动窗口」：每份简报统计区间 = (上一份成功简报的 period_end, 本份计划生成时刻]
+# 这样相邻简报区间首尾相接，无论调度时间怎么调都不会产生时间空档
+# （修复：旧 PERIOD_CONFIG 固定窗口导致 08:30~12:15 与 18:15~24:00 两段长期无人覆盖）。
+# GENERATION_TIME: label → 该简报的计划生成时刻（须与 scheduler 的 CronTrigger 对齐）
+GENERATION_TIME = {
+    "morning": (8, 30),    # 早报：计划 08:30 生成 → 区间 = 上一份(~前一日18:30) ~ 当日08:30
+    "evening": (18, 30),   # 晚报：计划 18:30 生成 → 区间 = 当日08:30 ~ 当日18:30
+}
+# 首份简报（无任何成功历史）时的默认窗口起点，仅首次运行会用到；
+# 之后由滚动逻辑接管，相邻区间首尾相接。
+DEFAULT_WINDOW = {
+    "morning": (0, 0),     # 首份早报退化到当天 00:00 起
+    "evening": (8, 30),    # 首份晚报退化到当天 08:30 起
 }
 
 PERIOD_LABELS = {
@@ -104,18 +110,8 @@ _FETCH_EVENT_LIMIT = 60
 _FINAL_EVENT_LIMIT = 20
 
 
-def _get_period_range(period_label: str, target_date: date) -> tuple[datetime, datetime]:
-    """根据 period_label 和日期，返回 (start_dt, end_dt) 时区感知时间。"""
-    sh, sm, eh, em = PERIOD_CONFIG[period_label]
-
-    start_dt = _TZ.localize(datetime.combine(target_date, time(sh, sm, 0)))
-
-    if eh == 23 and em == 59:
-        end_dt = _TZ.localize(datetime.combine(target_date + timedelta(days=1), time(0, 0, 0)))
-    else:
-        end_dt = _TZ.localize(datetime.combine(target_date, time(eh, em, 0)))
-
-    return start_dt, end_dt
+# _get_period_range 已移除：简报统计区间改由 generate_digest 基于 GENERATION_TIME
+# 与上一份成功简报的 period_end 计算（滚动窗口），固定窗口 PERIOD_CONFIG 不再使用。
 
 
 async def _fetch_period_events(
@@ -215,9 +211,13 @@ async def _fetch_period_events(
 
 
 async def _load_previous_digest(
-    period_start: datetime,
+    before_dt: datetime,
 ) -> tuple[NewsDigest | None, dict]:
-    """加载上一份结构化简报及其事件链接（跨简报对比机制）。
+    """加载「上一份成功简报」及其事件链接（跨简报对比机制 + 滚动窗口起点）。
+
+    before_dt 传本份简报的 period_end；返回 period_end 严格早于 before_dt 的
+    最近一份成功简报（structured_content 非空、schema_version==2）。
+    它的 period_end 即本份简报的 period_start，保证相邻区间首尾相接、无空档。
 
     返回 (上一份简报, {event_id_str: {"version": int|None, "section": str}})。
     无对比基准（首份 v2 简报）时返回 (None, {})。
@@ -228,7 +228,7 @@ async def _load_previous_digest(
                 select(NewsDigest)
                 .where(
                     NewsDigest.schema_version == 2,
-                    NewsDigest.period_end <= period_start,
+                    NewsDigest.period_end < before_dt,
                     NewsDigest.structured_content.isnot(None),
                 )
                 .order_by(NewsDigest.period_end.desc())
@@ -326,13 +326,14 @@ async def _build_ongoing_updates(
 
 def _build_digest_prompt(
     events: list[dict],
-    period_label: str,
-    target_date: date,
+    period_start: datetime,
+    period_end: datetime,
     prev_summary: str | None = None,
 ) -> str:
     """构建 user prompt：上份简报对比基准（如有）+ 时段内事件列表。"""
-    sh, sm, eh, em = PERIOD_CONFIG[period_label]
-    end_display = "24:00" if period_label == "night" else f"{eh:02d}:{em:02d}"
+    sh, sm = period_start.hour, period_start.minute
+    eh, em = period_end.hour, period_end.minute
+    disp_date = period_end.date()
     parts: list[str] = []
     if prev_summary:
         parts.append(
@@ -340,7 +341,7 @@ def _build_digest_prompt(
             + prev_summary
         )
     header = (
-        f"以下是 {target_date} {sh:02d}:{sm:02d}~{end_display} "
+        f"以下是 {disp_date} {sh:02d}:{sm:02d}~{eh:02d}:{em:02d} "
         f"时段内的 {len(events)} 个事件（已去重聚合、已剔除无版本前进的重复事件）：\n"
     )
     lines = []
@@ -611,19 +612,27 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
     Returns:
         {"status": "ok"/"skip"/"error", ...}
     """
-    if target_date is None:
-        now = datetime.now(_TZ)
-        if period_label == "night" and now.hour < 1:
-            target_date = (now - timedelta(days=1)).date()
-        else:
-            target_date = now.date()
-
-    if period_label not in PERIOD_CONFIG:
+    if period_label not in GENERATION_TIME:
         raise ValueError(f"Invalid period_label: {period_label}")
+    if target_date is None:
+        target_date = datetime.now(_TZ).date()
 
-    period_start, period_end = _get_period_range(period_label, target_date)
+    # 本份 period_end = 该 label 的计划生成时刻（与 scheduler CronTrigger 对齐）
+    gen_h, gen_m = GENERATION_TIME[period_label]
+    period_end = _TZ.localize(datetime.combine(target_date, time(gen_h, gen_m)))
+
+    # 滚动窗口：本份 period_start = 上一份「成功」简报的 period_end
+    # （无成功历史时退回该 label 的默认窗口起点，仅首份简报会用到；
+    #  此后相邻简报区间首尾相接、永不产生空档，且会自动回填漏跑的时段）
+    prev_digest, prev_links = await _load_previous_digest(period_end)
+    if prev_digest is not None:
+        period_start = prev_digest.period_end
+    else:
+        ws_h, ws_m = DEFAULT_WINDOW[period_label]
+        period_start = _TZ.localize(datetime.combine(target_date, time(ws_h, ws_m)))
+
     logger.info(
-        "Generating digest: %s %s (%s ~ %s)",
+        "Generating digest (rolling window): %s %s (%s ~ %s)",
         target_date, period_label, period_start, period_end,
     )
 
@@ -631,8 +640,7 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
         period_start, period_end
     )
 
-    # 跨简报对比：加载上一份简报事件链接，剔除版本未前进的重复事件
-    prev_digest, prev_links = await _load_previous_digest(period_start)
+    # 跨简报对比：剔除版本未前进的重复事件（prev_links 已在上一步取得）
     events, quiet_from_filter = _filter_repeated_events(events, prev_links)
     # 持续事件判定使用完整候选集（不过早截断），避免活跃事件被误判为 ongoing
     ongoing_updates, quiet_from_stale = await _build_ongoing_updates(events, prev_links)
@@ -699,7 +707,7 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
         }
 
     user_prompt = _build_digest_prompt(
-        events, period_label, target_date,
+        events, period_start, period_end,
         prev_summary=(prev_digest.structured_content or {}).get("period_summary")
         if prev_digest else None,
     )

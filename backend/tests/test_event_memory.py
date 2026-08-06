@@ -20,6 +20,7 @@ from app.services.event_memory import (
     cluster_query_text,
     event_doc_text,
     format_memory_block,
+    summarize_pattern_evidence,
 )
 
 
@@ -56,6 +57,8 @@ class _Cfg:
     EVENT_MEMORY_MAX_SIM = 0.67
     EVENT_MEMORY_TOP_K = 3
     EVENT_MEMORY_SUMMARY_CHARS = 60
+    EVENT_MEMORY_MIN_PATTERN_COUNT = 2
+    EVENT_MEMORY_RECALL_STATUSES = ["stable", "resolved"]
 
 
 # ── 召回阈值 ──
@@ -157,6 +160,75 @@ class TestFormatMemoryBlock:
         with patch.object(event_memory, "settings", _Cfg):
             block = format_memory_block(hits)
         assert block.count("摘") == _Cfg.EVENT_MEMORY_SUMMARY_CHARS
+
+    def test_renders_outcome_when_present(self):
+        """结果记忆：resolved 且带 outcome 时，记忆块应展示真实结局。"""
+        hits = [MemoryHit(
+            event_id="a", title="某公司被调查", summary="监管介入后股价下跌",
+            status="resolved", version=3,
+            seen_at=datetime(2026, 5, 12, tzinfo=timezone.utc), similarity=0.71,
+            outcome_type="confirmed", final_outcome="处罚落地", watch_result="观察点已兑现",
+            resolved_at=datetime(2026, 5, 20, tzinfo=timezone.utc), duration_hours=192,
+        )]
+        with patch.object(event_memory, "settings", _Cfg):
+            block = format_memory_block(hits)
+        assert "已确认/落地" in block
+        assert "处罚落地" in block
+        assert "观察点已兑现" in block
+        assert "持续约 192h" in block
+
+    def test_pattern_guardrail_insufficient_consistency(self):
+        """结局方向不一致（confirmed vs reversed）→ 提醒逐条引用、勿写通常。"""
+        hits = [
+            MemoryHit("a", "t", "s", "resolved", 1,
+                      datetime(2026, 1, 1, tzinfo=timezone.utc), 0.6, outcome_type="confirmed"),
+            MemoryHit("b", "t", "s", "resolved", 1,
+                      datetime(2026, 1, 1, tzinfo=timezone.utc), 0.6, outcome_type="reversed"),
+        ]
+        with patch.object(event_memory, "settings", _Cfg):
+            block = format_memory_block(hits)
+        assert "逐条引用" in block
+        assert "勿臆断" in block
+
+    def test_pattern_guardrail_consistent_allows_summary(self):
+        """两个方向一致（confirmed）→ 允许归纳典型走向。"""
+        hits = [
+            MemoryHit("a", "t", "s", "resolved", 1,
+                      datetime(2026, 1, 1, tzinfo=timezone.utc), 0.6, outcome_type="confirmed"),
+            MemoryHit("b", "t", "s", "resolved", 1,
+                      datetime(2026, 1, 1, tzinfo=timezone.utc), 0.6, outcome_type="confirmed"),
+        ]
+        with patch.object(event_memory, "settings", _Cfg):
+            block = format_memory_block(hits)
+        assert "方向一致" in block
+
+
+class TestPatternEvidence:
+    def test_single_event_no_pattern(self):
+        hits = [MemoryHit("a", "t", "s", "resolved", 1, None, 0.6, outcome_type="confirmed")]
+        with patch.object(event_memory, "settings", _Cfg):
+            ev = summarize_pattern_evidence(hits)
+        assert ev["has_pattern"] is False
+
+    def test_two_consistent_has_pattern(self):
+        hits = [
+            MemoryHit("a", "t", "s", "resolved", 1, None, 0.6, outcome_type="confirmed"),
+            MemoryHit("b", "t", "s", "resolved", 1, None, 0.6, outcome_type="confirmed"),
+        ]
+        with patch.object(event_memory, "settings", _Cfg):
+            ev = summarize_pattern_evidence(hits)
+        assert ev["has_pattern"] is True
+        assert ev["consistent_outcome"] == "confirmed"
+
+    def test_unknown_outcome_not_counted(self):
+        """outcome_type=unknown 的结局不计入方向一致性判断。"""
+        hits = [
+            MemoryHit("a", "t", "s", "resolved", 1, None, 0.6, outcome_type="unknown"),
+            MemoryHit("b", "t", "s", "resolved", 1, None, 0.6, outcome_type="unknown"),
+        ]
+        with patch.object(event_memory, "settings", _Cfg):
+            ev = summarize_pattern_evidence(hits)
+        assert ev["has_pattern"] is False
 
 
 # ── 与合成主流程的集成 ──

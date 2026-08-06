@@ -236,6 +236,33 @@ class TestBuildUpdateParams:
         assert params["article_count"] == 5
         assert params["source_count"] == 4  # 去重后 4 个独立信源（根与子报道来源各不相同）
 
+    def test_event_signals_computed_and_in_range(self):
+        # 纯规则算出的 5 个事件级排序信号应出现且落在 0-10
+        params = _build_update_params(_cluster(event_version=None), {
+            "event_title": "t", "event_summary": "s", "latest_change": "首次",
+            "why_important": "w", "uncertainty": "", "watch_next": "关注今晚决议",
+            "status": "developing", "has_material_update": True,
+        })
+        for k in ("event_impact", "event_novelty", "event_urgency",
+                  "event_confidence", "event_relevance"):
+            assert k in params, f"{k} 缺失"
+            assert 0 <= params[k] <= 10, f"{k}={params[k]} 越界"
+
+    def test_event_signals_rewards_must_know_event(self):
+        # 高 ai_score + 高亮 + 实质进展 + 有 watch_next 的事件应拿到正向加分
+        from app.utils.event_signals import event_signal_boost
+        params = _build_update_params(_cluster(event_version=2), {
+            "event_title": "t", "event_summary": "s", "latest_change": "新确认",
+            "why_important": "w", "uncertainty": "", "watch_next": "等待官方公告",
+            "status": "developing", "has_material_update": True,
+        })
+        boost = event_signal_boost(
+            params["event_impact"], params["event_novelty"],
+            params["event_urgency"], params["event_confidence"],
+            params["event_relevance"],
+        )
+        assert boost > 0.0
+
     def test_material_update_increments_version(self):
         params = _build_update_params(_cluster(event_version=2), {
             "event_title": "t", "event_summary": "s", "latest_change": "新确认",
@@ -257,6 +284,38 @@ class TestBuildUpdateParams:
         assert "event_title" not in params
         assert params["material"] is False
         assert params["article_count"] == 5  # 计数仍更新（增量闸门）
+
+    def test_resolved_captures_outcome_and_duration(self):
+        """事件被 LLM 判定 resolved 时，结果记忆字段（结局/结束时间/时长）一并回流。"""
+        cluster = _cluster(event_version=2)
+        cluster["published_at"] = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        params = _build_update_params(cluster, {
+            "event_title": "t", "event_summary": "s", "latest_change": "结案",
+            "why_important": "w", "uncertainty": "", "watch_next": "",
+            "status": "resolved", "has_material_update": True,
+            "final_outcome": "处罚落地", "outcome_type": "confirmed", "watch_result": "兑现",
+        })
+        assert params["status"] == "resolved"
+        assert params["event_outcome_type"] == "confirmed"
+        assert params["event_final_outcome"] == "处罚落地"
+        assert params["event_watch_result"] == "兑现"
+        assert params["event_resolved_at"] is not None
+        assert params["event_duration_hours"] is not None  # 首现→结束的小时数
+
+    def test_stable_records_resolution_time_only(self):
+        """事件自动平息为 stable 时记录结束时间/时长，但不写 outcome（仍在进行/结局未定）。"""
+        cluster = _cluster(event_version=2)
+        cluster["published_at"] = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        params = _build_update_params(cluster, {
+            "event_title": "t", "event_summary": "s", "latest_change": "暂歇",
+            "why_important": "w", "uncertainty": "", "watch_next": "",
+            "status": "stable", "has_material_update": True,
+            "final_outcome": "", "outcome_type": "", "watch_result": "",
+        })
+        assert params["status"] == "stable"
+        assert params["event_resolved_at"] is not None
+        assert params["event_duration_hours"] is not None
+        assert "event_outcome_type" not in params  # 非 resolved 不写结局字段
 
 
 # ── synthesize_events 主流程 ──
@@ -465,3 +524,81 @@ class TestAutoStabilize:
         assert stale.event_status == "stable"
         assert fresh.event_status == "developing"  # 近期有更新，保持
         assert resolved.event_status == "resolved"  # 不依赖时间自动判定
+
+
+# ── 重大事件即时提醒（条件触发，纯程序规则）──
+
+
+class TestMajorEventAlert:
+    def _cluster(self, last_alerted=0, ai_score=9, source="Reuters"):
+        return {
+            "id": "00000000-0000-0000-0000-0000000000a1",
+            "ai_score": ai_score,
+            "source": source,
+            "children": [],
+            "event_last_alerted_version": last_alerted,
+        }
+
+    def _out(self, version=2, source_count=3, latest="宣布超预期降息50bp"):
+        return {
+            "version": version,
+            "event_title": "美联储紧急降息",
+            "source_count": source_count,
+            "latest_change": latest,
+        }
+
+    def test_qualifying_event_collected(self):
+        a = []
+        _maybe_collect_alert(self._cluster(), self._out(), a)
+        assert len(a) == 1
+        assert a[0]["event_id"] == "00000000-0000-0000-0000-0000000000a1"
+        assert a[0]["ai_score"] == 9
+
+    def test_low_ai_score_skipped(self):
+        a = []
+        _maybe_collect_alert(self._cluster(ai_score=5), self._out(version=1), a)
+        assert a == []
+
+    def test_no_material_update_skipped(self):
+        a = []
+        _maybe_collect_alert(self._cluster(), {"version": None}, a)
+        assert a == []
+
+    def test_already_alerted_version_skipped(self):
+        # 已为 version=2 推送过，本次仍是 2 → 不重复推送
+        a = []
+        _maybe_collect_alert(self._cluster(last_alerted=2), self._out(version=2), a)
+        assert a == []
+
+    def test_higher_version_realerts(self):
+        # 已推送到 2，本次 3 → 重新提醒
+        a = []
+        _maybe_collect_alert(self._cluster(last_alerted=2), self._out(version=3), a)
+        assert len(a) == 1
+
+    def test_missing_latest_change_skipped(self):
+        a = []
+        _maybe_collect_alert(self._cluster(), self._out(latest=""), a)
+        assert a == []
+
+    def test_official_source_or_enough_sources(self):
+        # 单信源 + 非官方 → 不满足；官方单信源 → 满足
+        lone = self._cluster(source="某自媒体")
+        a_lone = []
+        _maybe_collect_alert(lone, self._out(source_count=1), a_lone)
+        assert a_lone == []
+        official = self._cluster(source="SEC")
+        a_off = []
+        _maybe_collect_alert(official, self._out(source_count=1), a_off)
+        assert len(a_off) == 1
+        assert a_off[0]["official"] is True
+
+    def test_alert_text_format(self):
+        a = []
+        _maybe_collect_alert(self._cluster(), self._out(), a)
+        text = _build_major_event_alert_text(a, len(a))
+        assert "🚨 重大事件提醒" in text
+        assert "美联储紧急降息" in text
+        assert "宣布超预期降息50bp" in text
+        assert "评分 9" in text
+        assert "alphareader.site" in text
