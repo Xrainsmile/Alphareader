@@ -1988,13 +1988,13 @@ onReachBottom(() => {
     min-width: 0;
   }
 
-  /* ── News 字号放大 ── */
-  :deep(.news-title) { font-size: 19px; line-height: 1.5; }
-  :deep(.news-summary) { font-size: 16px; margin-top: 6px; line-height: 1.65; }
-  :deep(.news-tag) { font-size: 14px; }
-  :deep(.news-why) { font-size: 14px; }
-  :deep(.score-num) { font-size: 17px; }
-  :deep(.related-item-title) { font-size: 17px; }
+  /* ── News 字号放大（再次上调 ~20%）── */
+  :deep(.news-title) { font-size: 22px; line-height: 1.55; }
+  :deep(.news-summary) { font-size: 19px; margin-top: 6px; line-height: 1.7; }
+  :deep(.news-tag) { font-size: 16px; }
+  :deep(.news-why) { font-size: 16px; }
+  :deep(.score-num) { font-size: 20px; }
+  :deep(.related-item-title) { font-size: 20px; }
   :deep(.news-summary) {
     -webkit-line-clamp: 4;
     line-height: 1.65;

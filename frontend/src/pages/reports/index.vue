@@ -1424,24 +1424,24 @@ onMounted(() => {
 }
 
 @media screen and (min-width: 1200px) {
-  /* ── Reports 字号放大 ── */
-  .digest-card { padding: 28px 32px; margin: 24px 28px; max-width: none; }
-  .dc-title { font-size: 23px; }
-  .dc-range { font-size: 15px; }
-  .dc-stats { font-size: 14px; }
-  .dc-section-title { font-size: 16px; }
-  .dc-core-text { font-size: 16px; line-height: 1.65; }
-  .dc-mk-rank { font-size: 16px; min-width: 24px; }
-  .dc-mk-title { font-size: 16px; line-height: 1.55; }
-  .dc-mk-change { font-size: 15px; line-height: 1.6; }
-  .dc-mk-detail { font-size: 14px; }
-  .dc-watch-text { font-size: 15px; }
-  .dc-upcoming-text { font-size: 15px; }
-  .briefing-date-day { font-size: 19px; }
-  .briefing-preview { font-size: 16px; }
-  .card-title { font-size: 19px; }
-  .card-summary { font-size: 16px; }
-  .reports-title { font-size: 28px; }
+  /* ── Reports 字号放大（再次上调 ~20%）── */
+  .digest-card { padding: 32px 36px; margin: 28px 32px; max-width: none; }
+  .dc-title { font-size: 27px; }
+  .dc-range { font-size: 17px; }
+  .dc-stats { font-size: 16px; }
+  .dc-section-title { font-size: 19px; }
+  .dc-core-text { font-size: 19px; line-height: 1.7; }
+  .dc-mk-rank { font-size: 19px; min-width: 28px; }
+  .dc-mk-title { font-size: 19px; line-height: 1.6; }
+  .dc-mk-change { font-size: 18px; line-height: 1.65; }
+  .dc-mk-detail { font-size: 16px; }
+  .dc-watch-text { font-size: 18px; }
+  .dc-upcoming-text { font-size: 18px; }
+  .briefing-date-day { font-size: 22px; }
+  .briefing-preview { font-size: 19px; }
+  .card-title { font-size: 22px; }
+  .card-summary { font-size: 19px; }
+  .reports-title { font-size: 32px; }
 }
 /* ── IconSvg 适配（替代 emoji）── */
 .badge-icon { flex: none; }
