@@ -474,10 +474,14 @@ def build_wecom_digest_summary(structured: dict, period_label: str, digest_id: i
         "",  # 标题后空一行
     ]
 
-    summary = s.get("period_summary", "")
-    if summary:
-        lines.append("📌 本时段概况")
-        lines.append(summary)
+    # 核心变化（跨事件共同信号）——与 Reports 页「核心变化」对齐，取代旧「本时段概况」
+    signals = s.get("cross_event_signals") or []
+    if signals:
+        lines.append("💡 核心变化")
+        for sig in signals:
+            t = sig.get("title", "")
+            if t:
+                lines.append(f"• {t}")
         lines.append("")
 
     for label, key, limit in (
@@ -493,6 +497,17 @@ def build_wecom_digest_summary(structured: dict, period_label: str, digest_id: i
                     lines.append(f"　变化：{e['latest_change'][:120]}")
                 lines.append("")  # 每条之间空一行
             # 去掉最后一个多余空行由下方统一处理
+
+    # 持续关注 = 持续事件(ongoing_updates) + 此前关注暂无进展(quiet_topics)，与 Reports 页对齐
+    ongoing = (s.get("ongoing_updates") or []) + (s.get("quiet_topics") or [])
+    if ongoing:
+        lines.append("👁 持续关注")
+        for e in ongoing:
+            title = e.get("title", "")
+            note = e.get("note", "")
+            line = f"• {title}" + (f" · {note}" if note else "")
+            lines.append(line)
+        lines.append("")
 
     upcoming = s.get("upcoming") or []
     if upcoming:
