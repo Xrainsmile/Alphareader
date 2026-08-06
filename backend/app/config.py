@@ -149,6 +149,16 @@ class Settings(BaseSettings):
     # 权威/一手信源域名片段
     PREFILTER_OFFICIAL_DOMAINS: list[str] = Field(default_factory=list)
 
+    # ── 评分年龄闸（Step 2.5）──
+    # 漏洞：旧逻辑对所有 published_at >24h 的新闻一刀切不送 LLM，导致 LLM 评分 Prompt 中
+    # "1—7天轻度降权""旧事件首次披露关键数据按新增内容评分""官方/监管公告正常评分"等规则
+    # 全部失效。改为分源规则：快讯媒体（实时快讯流，旧闻重复度高）>24h 才拦截；其余信源
+    # 走 7 天或更长窗口，由 LLM 时效规则轻度降权。
+    # 下列为"快讯媒体"信源名（命中即 >24h 拦截）。可用 .env 的 JSON 数组覆盖。
+    AGE_GATE_FAST_NEWS_SOURCES: list[str] = Field(
+        default_factory=lambda: ["富途新闻", "华尔街见闻", "Investing.com"]
+    )
+
     # ── 调度器 — Pipeline 定时执行 ──
     PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）
     PIPELINE_END_HOUR: int = 23    # 结束小时（0-23）

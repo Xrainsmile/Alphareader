@@ -39,6 +39,23 @@ from app.utils.deduplicator import NewsDeduplicator
 
 logger = logging.getLogger("alphareader.pipeline")
 
+
+def _is_old_event_followup_with_new_fact(item) -> bool:
+    """旧事件带新事实 → 放行送评（与 prefilter 的"同事件新事实"判定对齐，零 token）。
+
+    去重器对跨源同类报道会打 related_to_url（事件聚合）。这类子报道若带来新数字/动作/
+    政策/结果信号，应按 LLM 评分 Prompt 的"旧事件首次披露关键数据/正式进展按新增内容评分"
+    正常送评；否则 prefilter 会继承根评分、不浪费 LLM token。
+    """
+    if not getattr(item, "related_to_url", None):
+        return False
+    text = f"{getattr(item, 'title', '') or ''} {getattr(item, 'content', '') or ''}"
+    return bool(
+        prefilter_module.NUMBER_RE.search(text)
+        or prefilter_module.ACTION_RE.search(text)
+        or prefilter_module.POLICY_RE.search(text)
+    )
+
 # 新闻最大年龄（天）：published_at 超过此天数的文章视为过时，跳过处理
 # 防止 RSS 返回全量历史文章（如 OpenAI Blog 一次返回数百篇从2016年至今的文章）
 MAX_NEWS_AGE_DAYS = 7
@@ -435,20 +452,44 @@ async def run_pipeline() -> dict:
         await _save_pipeline_run(started_at, t0, summary, by_source, score_distribution)
         return summary
 
-    # Step 2.5: 评分年龄闸 — published_at 超过 24h 的条目不送 LLM 评分。
-    # LLM 评分规则对 >24h 旧闻本就封顶 3 分（必低于入库阈值），送评纯属浪费 token；
-    # 直接标记 seen（永远不会被采用，避免每轮重抓重去重）。published_at 缺失的放行。
-    age_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    # Step 2.5: 评分年龄闸（分源规则，与 LLM 评分时效 Prompt 对齐）
+    # 旧逻辑：所有 published_at >24h 一刀切不送 LLM，导致 Prompt 中"1—7天轻度降权"
+    # "旧事件首次披露关键数据按新增内容评分""官方/监管公告正常评分"等规则全部失效。
+    # 新逻辑（分源放行，>7天旧闻已由 Step 1.5 全局拦截，此处只处理 24h~7天 窗口）：
+    #   * 无发布时间                          → 正常送评
+    #   * 距抓取 ≤24h                         → 正常送评
+    #   * 官方/权威信源（监管/交易所/公司公告） → 7天内继续送评
+    #   * 旧事件带新事实（related_to 子报道且有新数字/动作/政策信号）→ 正常送评
+    #   * 快讯媒体（实时快讯流，旧闻重复度高） → >24h 拦截（省 token）
+    #   * 其余（普通文章 1—7天）              → 正常送评（LLM 轻度降权）
+    # 注：已评分过的 URL 由 _mark_urls_as_seen 标记，不会每轮重复送评。
+    now = datetime.now(timezone.utc)
+    cutoff_24h = now - timedelta(hours=24)
+    fast_news = {s.lower() for s in settings.AGE_GATE_FAST_NEWS_SOURCES}
     gated_urls: list[str] = []
     scoring_items: list = []
     for item in unique_items:
-        if item.published_at and item.published_at < age_cutoff:
-            gated_urls.append(item.url)
-        else:
-            scoring_items.append(item)
+        if not item.published_at:
+            scoring_items.append(item)              # 无发布时间：放行
+            continue
+        if item.published_at >= cutoff_24h:
+            scoring_items.append(item)              # ≤24h：正常
+            continue
+        # 超过 24h 的旧闻：按信源/事件类型决定
+        if prefilter_module.is_official_source(item.source, item.url):
+            scoring_items.append(item)              # 官方/权威：7天内继续送评
+            continue
+        if _is_old_event_followup_with_new_fact(item):
+            scoring_items.append(item)              # 旧事件带新事实：放行
+            continue
+        if (item.source or "").lower() in fast_news:
+            gated_urls.append(item.url)             # 快讯媒体：>24h 拦截
+            continue
+        scoring_items.append(item)                  # 普通文章 1—7天：送评（轻度降权）
     if gated_urls:
         logger.info(
-            "Age-gate: skipped LLM scoring for %d/%d items published >24h ago",
+            "Age-gate (source rule): skipped LLM scoring for %d/%d items "
+            "(fast-news published >24h ago)",
             len(gated_urls), len(unique_items),
         )
         await _mark_urls_as_seen(gated_urls)
