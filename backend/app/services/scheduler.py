@@ -1079,38 +1079,39 @@ async def _run_scheduler_jobs():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
-    # ── 每日综合分析报告（工作日 09:00 盘前 + 16:00 盘后）──
+    # ── 每日综合分析报告（已暂停 2026-08-06：前端不再展示，停止新增生成与 LLM 计算）──
+    # 历史数据保留在 DailyBriefing 表，API 仍可读取；仅停用定时生成 pipeline。
     # 09:00 盘前研报：基于隔夜新闻 + 前一日选股结果
-    scheduler.add_job(
-        _briefing_job,
-        trigger=CronTrigger(
-            day_of_week="mon-fri",
-            hour="9",
-            minute="0",
-            timezone=settings.TIMEZONE,
-        ),
-        id="daily_briefing_0900",
-        name=f"Daily Briefing AM (Mon-Fri 09:00 {settings.TIMEZONE})",
-        replace_existing=True,
-        max_instances=1,
-        misfire_grace_time=MISFIRE_GRACE_TIME,
-    )
+    # scheduler.add_job(
+    #     _briefing_job,
+    #     trigger=CronTrigger(
+    #         day_of_week="mon-fri",
+    #         hour="9",
+    #         minute="0",
+    #         timezone=settings.TIMEZONE,
+    #     ),
+    #     id="daily_briefing_0900",
+    #     name=f"Daily Briefing AM (Mon-Fri 09:00 {settings.TIMEZONE})",
+    #     replace_existing=True,
+    #     max_instances=1,
+    #     misfire_grace_time=MISFIRE_GRACE_TIME,
+    # )
 
     # 16:00 盘后研报：基于全天新闻 + 当日选股结果
-    scheduler.add_job(
-        _briefing_job,
-        trigger=CronTrigger(
-            day_of_week="mon-fri",
-            hour="16",
-            minute="0",
-            timezone=settings.TIMEZONE,
-        ),
-        id="daily_briefing",
-        name=f"Daily Briefing PM (Mon-Fri 16:00 {settings.TIMEZONE})",
-        replace_existing=True,
-        max_instances=1,
-        misfire_grace_time=MISFIRE_GRACE_TIME,
-    )
+    # scheduler.add_job(
+    #     _briefing_job,
+    #     trigger=CronTrigger(
+    #         day_of_week="mon-fri",
+    #         hour="16",
+    #         minute="0",
+    #         timezone=settings.TIMEZONE,
+    #     ),
+    #     id="daily_briefing",
+    #     name=f"Daily Briefing PM (Mon-Fri 16:00 {settings.TIMEZONE})",
+    #     replace_existing=True,
+    #     max_instances=1,
+    #     misfire_grace_time=MISFIRE_GRACE_TIME,
+    # )
 
     # ── 事件状态每日维护：developing 且无实质更新超 EVENT_STABLE_AFTER_HOURS → stable ──
     # 每天 04:00 运行（非关键路径）；resolved 不依赖时间自动判定。
@@ -1160,12 +1161,8 @@ async def _run_scheduler_jobs():
         dn = dj.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if dj and dj.next_run_time else "N/A"
         logger.info("Digest %s scheduled daily %s (next: %s)", label, desc, dn)
 
-    # Daily Briefing status
-    bj_am = scheduler.get_job("daily_briefing_0900")
-    bn_am = bj_am.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if bj_am and bj_am.next_run_time else "N/A"
-    bj_pm = scheduler.get_job("daily_briefing")
-    bn_pm = bj_pm.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if bj_pm and bj_pm.next_run_time else "N/A"
-    logger.info("Daily Briefing scheduled Mon-Fri 09:00 (next: %s) & 16:00 (next: %s)", bn_am, bn_pm)
+    # Daily Briefing status（已暂停 2026-08-06）
+    logger.info("Daily Briefing scheduled PAUSED (2026-08-06): Mon-Fri 09:00 & 16:00 jobs disabled; historical data retained")
 
     # Catalyst Aggregation status
     cat_am = scheduler.get_job("catalyst_0845")

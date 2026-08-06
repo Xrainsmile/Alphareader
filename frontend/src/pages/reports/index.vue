@@ -9,7 +9,7 @@
         <!-- 移动端：侧门「!」入口（桌面端由左侧导航承载，此处隐藏）-->
         <GateButton class="gate-mobile-only" />
       </view>
-      <text class="reports-subtitle">每日研报 · 新闻概览 · 每日复盘</text>
+      <text class="reports-subtitle">新闻概览 · 每日复盘</text>
       <!-- 移动端解锁后：Stocks / SEPA 入口（原生 tabBar 已默认隐藏）-->
       <view v-if="isOpen" class="gate-reveal-mobile">
         <view class="gate-reveal-chip" @click="goHidden('stocks')">Stocks</view>
@@ -26,6 +26,7 @@
       >
         <text class="tab-text">Reports</text>
       </view>
+      <!-- 每日研报 tab 已暂停（2026-08-06）：模块注释掉，不再展示
       <view
         class="tab-item"
         :class="{ active: activeTab === 'briefing' }"
@@ -33,6 +34,7 @@
       >
         <text class="tab-text">每日研报</text>
       </view>
+      -->
       <!-- 深度报告 tab 已暂停（2026-08-02）：模块注释掉
       <view
         class="tab-item"
@@ -42,7 +44,7 @@
         <text class="tab-text">深度报告</text>
       </view>
       -->
-      <view class="tab-indicator" :style="{ left: tabIndicatorLeft, width: '50%' }"></view>
+      <view class="tab-indicator" :style="{ left: tabIndicatorLeft, width: '100%' }"></view>
     </view>
 
     <!-- ═══════════════════════════════════════════
@@ -162,9 +164,9 @@
     </view>
 
     <!-- ═══════════════════════════════════════════
-         Tab 2: 每日研报（AI 市场分析）
+         Tab 2: 每日研报（AI 市场分析）— 模块已暂停（2026-08-06）
          ═══════════════════════════════════════════ -->
-    <view v-if="activeTab === 'briefing'" class="briefing-tab">
+    <view v-if="false /* 每日研报模块已暂停 2026-08-06 */" class="briefing-tab">
       <!-- Loading -->
       <EmptyState
         v-if="briefingLoading"
@@ -279,7 +281,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
-import { fetchDigests, fetchBriefings } from '@/utils/api'
+// 每日研报模块已暂停（2026-08-06）：import { fetchBriefings } from '@/utils/api'
+import { fetchDigests } from '@/utils/api'
 import { parseFrontMatter, renderMarkdown } from '@/utils/markdown'
 // 深度报告模块已暂停（2026-08-02）：import { rawReports } from '@/data/reports'
 import SiteFooter from '@/components/common/SiteFooter.vue'
@@ -288,7 +291,7 @@ import PcSidebar from '@/components/common/PcSidebar.vue'
 import IconSvg from '@/components/common/IconSvg.vue'
 import GateButton from '@/components/common/GateButton.vue'
 import { useGate } from '@/utils/useGate'
-import { listTagStyle, listTagStyleMobile, formatDate, reportStatusLabel } from '@/utils/formatters'
+import { listTagStyle, listTagStyleMobile, formatDate } from '@/utils/formatters'
 
 // ── Tab State ──
 // 默认「Reports」：用户打开产品首先看到最新阶段简报（PRD 4.2）
@@ -306,15 +309,13 @@ function goHidden(kind) {
 // ── 右看板：栏目导航 ──
 const rightTabs = [
   { key: 'digest', iconName: 'news', label: 'Reports', desc: '过去几小时发生了什么' },
-  { key: 'briefing', iconName: 'briefing', label: '每日研报', desc: 'AI 市场分析' },
+  // 每日研报 已暂停（2026-08-06）：{ key: 'briefing', iconName: 'briefing', label: '每日研报', desc: 'AI 市场分析' },
   // 深度报告 已暂停（2026-08-02）：{ key: 'reports', iconName: 'clipboard', label: '深度报告', desc: '历史复盘与专题' },
 ]
 
-// ── Tab indicator position (2 tabs: digest / briefing；深度报告已暂停) ──
+// ── Tab indicator position（每日研报/深度报告均暂停，仅剩 digest 一栏）──
 const tabIndicatorLeft = computed(() => {
-  if (activeTab.value === 'digest') return '0%'
-  if (activeTab.value === 'briefing') return '50%'
-  return '100%' // 防御：reports 已禁用
+  return '0%'
 })
 
 function switchTab(tab) {
@@ -323,9 +324,10 @@ function switchTab(tab) {
   if (tab === 'digest' && digestList.value.length === 0 && !digestLoading.value) {
     loadDigests()
   }
-  if (tab === 'briefing' && briefingList.value.length === 0 && !briefingLoading.value) {
-    loadBriefings()
-  }
+  // 每日研报 已暂停（2026-08-06）：懒加载分支已停用
+  // if (tab === 'briefing' && briefingList.value.length === 0 && !briefingLoading.value) {
+  //   loadBriefings()
+  // }
   // 深度报告 已暂停（2026-08-02）
   // if (tab === 'reports' && reportsList.value.length === 0 && !reportsLoading.value) {
   //   loadReports()
@@ -344,10 +346,10 @@ const targetDigestId = ref(null)
 // const reportsList = ref([])
 // const reportsLoading = ref(false)
 
-// ── Briefing State ──
-const briefingList = ref([])
-const briefingLoading = ref(true)
-const briefingDays = ref(7)
+// ── Briefing State（每日研报模块已暂停 2026-08-06）──
+// const briefingList = ref([])
+// const briefingLoading = ref(true)
+// const briefingDays = ref(7)
 
 // Markdown tag styles (from shared formatters)
 // 按屏宽选择字号体系：PC 15px 正文 / 移动端 13px，均对齐 news 页面
@@ -466,58 +468,57 @@ async function loadMoreDigests() {
   await loadDigests()
 }
 
-// ── Briefing Helpers ──
+// ── Briefing Helpers（每日研报模块已暂停 2026-08-06，整段停用）──
 
-function formatBriefingDay(dateStr) {
-  const d = new Date(dateStr)
-  return `${d.getMonth() + 1}月${d.getDate()}日`
-}
+// function formatBriefingDay(dateStr) {
+//   const d = new Date(dateStr)
+//   return `${d.getMonth() + 1}月${d.getDate()}日`
+// }
+//
+// function formatBriefingWeekday(dateStr) {
+//   const d = new Date(dateStr)
+//   const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+//   return days[d.getDay()]
+// }
 
-function formatBriefingWeekday(dateStr) {
-  const d = new Date(dateStr)
-  const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-  return days[d.getDay()]
-}
+// statusLabel → reportStatusLabel（reportStatusLabel 导入已移除）
+// const statusLabel = reportStatusLabel
 
-// statusLabel → reportStatusLabel, sentimentEmoji imported from formatters.js
-const statusLabel = reportStatusLabel
+// function getPreview(content) {
+//   if (!content) return '暂无内容'
+//   const plain = content
+//     .replace(/#{1,6}\s/g, '')
+//     .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+//     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+//     .replace(/[-*]\s/g, '')
+//     .replace(/\n+/g, ' ')
+//     .trim()
+//   return plain.length > 120 ? plain.slice(0, 120) + '...' : plain
+// }
 
-function getPreview(content) {
-  if (!content) return '暂无内容'
-  // 去除 Markdown 标记，取前 120 个字符
-  const plain = content
-    .replace(/#{1,6}\s/g, '')
-    .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/[-*]\s/g, '')
-    .replace(/\n+/g, ' ')
-    .trim()
-  return plain.length > 120 ? plain.slice(0, 120) + '...' : plain
-}
+// function goBriefingDetail(id) {
+//   uni.navigateTo({ url: `/pages/briefing/detail?id=${id}` })
+// }
 
-function goBriefingDetail(id) {
-  uni.navigateTo({ url: `/pages/briefing/detail?id=${id}` })
-}
+// ── Briefing Data Loading（已暂停）──
 
-// ── Briefing Data Loading ──
+// async function loadBriefings() {
+//   briefingLoading.value = true
+//   try {
+//     const data = await fetchBriefings(briefingDays.value)
+//     briefingList.value = data || []
+//   } catch (e) {
+//     console.warn('加载研报失败:', e.message)
+//     briefingList.value = []
+//   } finally {
+//     briefingLoading.value = false
+//   }
+// }
 
-async function loadBriefings() {
-  briefingLoading.value = true
-  try {
-    const data = await fetchBriefings(briefingDays.value)
-    briefingList.value = data || []
-  } catch (e) {
-    console.warn('加载研报失败:', e.message)
-    briefingList.value = []
-  } finally {
-    briefingLoading.value = false
-  }
-}
-
-async function loadMoreBriefings() {
-  briefingDays.value = Math.min(briefingDays.value + 7, 30)
-  await loadBriefings()
-}
+// async function loadMoreBriefings() {
+//   briefingDays.value = Math.min(briefingDays.value + 7, 30)
+//   await loadBriefings()
+// }
 
 // 深度报告模块已暂停（2026-08-02），以下函数注释掉
 // 从 Mock 数据生成 fallback 列表
@@ -593,7 +594,7 @@ onMounted(() => {
   if (activeTab.value === 'digest') {
     loadDigests()
   }
-  loadBriefings()
+  // 每日研报模块已暂停（2026-08-06）：loadBriefings() 不再调用
 })
 </script>
 
