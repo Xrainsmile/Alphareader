@@ -1,34 +1,37 @@
 <template>
-  <view v-if="visible" class="pwd-overlay" @click.self="$emit('update:visible', false)">
-    <view class="pwd-card">
-      <view class="pwd-header">
-        <text class="pwd-icon">🔒</text>
-        <text class="pwd-title">访问验证</text>
-        <text class="pwd-desc">模拟仓为私密内容，请输入访问密码</text>
-      </view>
-      <view class="pwd-input-wrap" :class="{ 'pwd-input-error': error }">
-        <input
-          class="pwd-input"
-          type="text"
-          :password="true"
-          placeholder="请输入密码"
-          :value="password"
-          :focus="visible"
-          @input="$emit('update:password', $event.detail.value)"
-          @confirm="$emit('confirm')"
-        />
-      </view>
-      <text v-if="error" class="pwd-error-text">密码错误，请重试</text>
-      <view class="pwd-actions">
-        <view class="pwd-btn pwd-btn-cancel" @click="$emit('update:visible', false)">
-          <text class="pwd-btn-text cancel-text">取消</text>
+  <!-- 传送到 body：脱离侧栏/页头的层叠上下文，保证弹窗永远置顶（仅 H5 构建） -->
+  <teleport to="body">
+    <view v-if="visible" class="pwd-overlay" @click.self="$emit('update:visible', false)">
+      <view class="pwd-card">
+        <view class="pwd-header">
+          <text class="pwd-icon">🔒</text>
+          <text class="pwd-title">访问验证</text>
+          <text class="pwd-desc">模拟仓为私密内容，请输入访问密码</text>
         </view>
-        <view class="pwd-btn pwd-btn-confirm" @click="$emit('confirm')">
-          <text class="pwd-btn-text confirm-text">确认</text>
+        <view class="pwd-input-wrap" :class="{ 'pwd-input-error': error }">
+          <input
+            class="pwd-input"
+            type="text"
+            :password="true"
+            placeholder="请输入密码"
+            :value="password"
+            :focus="visible"
+            @input="$emit('update:password', $event.detail.value)"
+            @confirm="$emit('confirm')"
+          />
+        </view>
+        <text v-if="error" class="pwd-error-text">密码错误，请重试</text>
+        <view class="pwd-actions">
+          <view class="pwd-btn pwd-btn-cancel" @click="$emit('update:visible', false)">
+            <text class="pwd-btn-text cancel-text">取消</text>
+          </view>
+          <view class="pwd-btn pwd-btn-confirm" @click="$emit('confirm')">
+            <text class="pwd-btn-text confirm-text">确认</text>
+          </view>
         </view>
       </view>
     </view>
-  </view>
+  </teleport>
 </template>
 
 <script setup>
@@ -51,7 +54,8 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  /* 已 teleport 到 body，处于根层叠上下文；取足够高的层级兜底 */
+  z-index: 99999;
   animation: fadeIn 0.2s ease;
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
