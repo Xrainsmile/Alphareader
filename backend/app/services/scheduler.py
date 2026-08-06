@@ -841,8 +841,8 @@ async def _run_scheduler_jobs():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
-    # ── 新闻概览 Digest（每天 4 个时段，全天候运行）──
-    # 08:30 早间：收集 00:00~08:30
+    # ── 新闻概览 Digest（每天 2 个时段：早报 08:30 + 傍晚报 18:30，控制 LLM 成本）──
+    # 08:30 早报：收集 00:00~08:30
     scheduler.add_job(
         _digest_job,
         args=["morning"],
@@ -858,49 +858,17 @@ async def _run_scheduler_jobs():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
-    # 12:15 午间：收集 08:30~12:15（避开高峰时段 9:00~12:00 的 2 倍价格）
-    scheduler.add_job(
-        _digest_job,
-        args=["midday"],
-        trigger=CronTrigger(
-            hour="12",
-            minute="15",
-            timezone=settings.TIMEZONE,
-        ),
-        id="digest_midday",
-        name=f"News Digest Midday (12:15 {settings.TIMEZONE})",
-        replace_existing=True,
-        max_instances=1,
-        misfire_grace_time=MISFIRE_GRACE_TIME,
-    )
-
-    # 18:15 傍晚：收集 12:00~18:15（避开高峰时段 14:00~18:00 的 2 倍价格）
+    # 18:30 傍晚报：收集 08:30~18:30
     scheduler.add_job(
         _digest_job,
         args=["evening"],
         trigger=CronTrigger(
             hour="18",
-            minute="15",
+            minute="30",
             timezone=settings.TIMEZONE,
         ),
         id="digest_evening",
-        name=f"News Digest Evening (18:15 {settings.TIMEZONE})",
-        replace_existing=True,
-        max_instances=1,
-        misfire_grace_time=MISFIRE_GRACE_TIME,
-    )
-
-    # 00:00 夜间：收集 18:00~24:00（次日凌晨触发）
-    scheduler.add_job(
-        _digest_job,
-        args=["night"],
-        trigger=CronTrigger(
-            hour="0",
-            minute="0",
-            timezone=settings.TIMEZONE,
-        ),
-        id="digest_night",
-        name=f"News Digest Night (00:00 {settings.TIMEZONE})",
+        name=f"News Digest Evening (18:30 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,

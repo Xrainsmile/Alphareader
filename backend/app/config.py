@@ -152,7 +152,7 @@ class Settings(BaseSettings):
     # ── 调度器 — Pipeline 定时执行 ──
     PIPELINE_START_HOUR: int = 0   # 起始小时（全天运行覆盖英文信源不同时区）
     PIPELINE_END_HOUR: int = 23    # 结束小时（0-23）
-    PIPELINE_INTERVAL_MINUTES: int = 15  # 执行间隔（分钟），每小时 0/15/30/45 触发
+    PIPELINE_INTERVAL_MINUTES: int = 25  # 执行间隔（分钟），每 25 分钟触发一次以控制 LLM 调用成本
 
     # ── 告警 — Pipeline 失败时的 Webhook 通知 ──
     # 支持：飞书/钉钉/企业微信/Slack/通用（根据 URL 自动识别平台）
