@@ -38,6 +38,10 @@ Thumbs.db
 # Postgres data
 pgdata/
 
+# Local-only config & agent memory (never push to Git)
+.codebuddy/
+.github/workflows/
+
 # Debug scripts (prevent accidental commits)
 backend/debug_*.py
 
