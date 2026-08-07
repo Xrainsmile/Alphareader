@@ -155,18 +155,18 @@ class TestTwoStageScoring:
 
         call_count = {"score": 0, "translate": 0}
 
-        async def fake_call(payload, headers, client):
+        async def fake_call(payload, headers, client, **kwargs):
             system_msg = payload["messages"][0]["content"]
-            if "仅对每条新闻进行评分" in system_msg:
+            if "不做标题或摘要翻译" in system_msg:
                 # 阶段一：评分
                 call_count["score"] += 1
                 raw = json.dumps([
                     {"id": i, "score": 8, "is_highlight": False,
-                     "reason": f"理由{i}", "tags": [], "relevant_tickers": []}
+                     "tags": [], "relevant_tickers": []}
                     for i in range(1, 4)
                 ], ensure_ascii=False)
                 return raw, "ok", "", None
-            elif "精通中英双语金融翻译" in system_msg:
+            elif "输入为已通过评分阈值的英文财经新闻" in system_msg:
                 # 阶段二：翻译
                 call_count["translate"] += 1
                 raw = json.dumps([
@@ -203,7 +203,8 @@ class TestTwoStageScoring:
         assert call_count["translate"] == 1
         assert len(result.scored) == 3
         for si in result.scored:
-            assert si.reason != ""  # 阶段一输出
+            assert si.score == 8  # 阶段一输出
+            assert si.reason == ""  # Prompt 已不再要求 LLM 生成 reason
             assert si.chinese_title != ""  # 阶段二输出
             assert si.summary != ""  # 阶段二输出
             assert si.why_it_matters != ""  # 阶段二输出
@@ -215,18 +216,18 @@ class TestTwoStageScoring:
 
         translate_input_items = {"titles": []}
 
-        async def fake_call(payload, headers, client):
+        async def fake_call(payload, headers, client, **kwargs):
             system_msg = payload["messages"][0]["content"]
-            if "仅对每条新闻进行评分" in system_msg:
+            if "不做标题或摘要翻译" in system_msg:
                 # 2条高分，2条低分
                 raw = json.dumps([
-                    {"id": 1, "score": 8, "is_highlight": False, "reason": "高", "tags": [], "relevant_tickers": []},
-                    {"id": 2, "score": 3, "is_highlight": False, "reason": "低", "tags": [], "relevant_tickers": []},
-                    {"id": 3, "score": 7, "is_highlight": False, "reason": "高", "tags": [], "relevant_tickers": []},
-                    {"id": 4, "score": 2, "is_highlight": False, "reason": "低", "tags": [], "relevant_tickers": []},
+                    {"id": 1, "score": 8, "is_highlight": False, "tags": [], "relevant_tickers": []},
+                    {"id": 2, "score": 3, "is_highlight": False, "tags": [], "relevant_tickers": []},
+                    {"id": 3, "score": 7, "is_highlight": False, "tags": [], "relevant_tickers": []},
+                    {"id": 4, "score": 2, "is_highlight": False, "tags": [], "relevant_tickers": []},
                 ], ensure_ascii=False)
                 return raw, "ok", "", None
-            elif "精通中英双语金融翻译" in system_msg:
+            elif "输入为已通过评分阈值的英文财经新闻" in system_msg:
                 # 翻译阶段只收到通过阈值的条目
                 user_msg = payload["messages"][1]["content"]
                 for title in ["Test News 1", "Test News 2", "Test News 3", "Test News 4"]:
@@ -273,15 +274,15 @@ class TestTwoStageScoring:
         """翻译阶段失败时，评分结果仍保留（只是没有翻译字段）。"""
         items = [_make_en_item(i) for i in range(1, 3)]
 
-        async def fake_call(payload, headers, client):
+        async def fake_call(payload, headers, client, **kwargs):
             system_msg = payload["messages"][0]["content"]
-            if "仅对每条新闻进行评分" in system_msg:
+            if "不做标题或摘要翻译" in system_msg:
                 raw = json.dumps([
-                    {"id": i, "score": 8, "is_highlight": False, "reason": "ok", "tags": [], "relevant_tickers": []}
+                    {"id": i, "score": 8, "is_highlight": False, "tags": [], "relevant_tickers": []}
                     for i in range(1, 3)
                 ], ensure_ascii=False)
                 return raw, "ok", "", None
-            elif "精通中英双语金融翻译" in system_msg:
+            elif "输入为已通过评分阈值的英文财经新闻" in system_msg:
                 return None, "api_error", "translate failed", None
             return None, "api_error", "unknown", None
 
@@ -309,7 +310,7 @@ class TestTwoStageScoring:
         assert len(result.scored) == 2
         for si in result.scored:
             assert si.score == 8  # 评分保留
-            assert si.reason == "ok"  # reason 保留
+            assert si.reason == ""  # Prompt 已不再要求 LLM 生成 reason
             assert si.chinese_title == ""  # 翻译失败，无翻译
             assert si.summary == ""
 
@@ -320,13 +321,13 @@ class TestTwoStageScoring:
 
         call_count = {"n": 0}
 
-        async def fake_call(payload, headers, client):
+        async def fake_call(payload, headers, client, **kwargs):
             call_count["n"] += 1
             system_msg = payload["messages"][0]["content"]
-            # 单阶段 prompt 包含"每条新闻都必须翻译"
-            assert "每条新闻都必须翻译" in system_msg
+            # 单阶段 prompt（SYSTEM_PROMPT_EN）同时要求评分与翻译
+            assert "并生成简体中文标题" in system_msg
             raw = json.dumps([{
-                "id": 1, "score": 8, "is_highlight": False, "reason": "ok",
+                "id": 1, "score": 8, "is_highlight": False,
                 "chinese_title": "测试标题", "chinese_summary": "测试摘要",
                 "tags": [], "relevant_tickers": [], "why_it_matters": "理由",
             }], ensure_ascii=False)

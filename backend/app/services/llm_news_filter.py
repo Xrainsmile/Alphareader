@@ -126,7 +126,6 @@ SYSTEM_PROMPT_CN = """你是财经新闻分析师。请根据输入文本评估�
 - `id`：输入 id
 - `score`：0—10整数
 - `is_highlight`：布尔值
-- `reason`：30字以内，说明评分依据
 - `summary`：80字以内，概括主体、事件和关键数据
 - `why_it_matters`：40字以内，点明对盈利、估值、供需、政策或市场预期的具体影响；原文有量化对比或预期差时优先写入
 - `tags`：3—5个字符串，包含板块、公司及事件定性
@@ -184,7 +183,6 @@ SYSTEM_PROMPT_EN = """你是一位财经新闻分析师兼中英金融翻译。�
 - `id`
 - `score`：0—10整数
 - `is_highlight`
-- `reason`：30字以内中文
 - `chinese_title`：30字以内
 - `chinese_summary`：80字以内
 - `why_it_matters`：40字以内，说明对盈利、估值、供需、政策或市场预期的具体影响
@@ -230,7 +228,6 @@ SYSTEM_PROMPT_EN_SCORE = """你是财经新闻分析师。请仅评估每条英�
 - `id`
 - `score`：0—10整数
 - `is_highlight`
-- `reason`：30字以内中文
 - `tags`：3—5个中文标签
 - `relevant_tickers`：字符串数组，仅提取输入中明确出现的代码
 
@@ -375,6 +372,11 @@ class ScoredNewsItem:
     """
     raw: RawNewsItem
     score: int
+    # ⚠️ DEPRECATED（2026-08-07 token 优化）：评分 Prompt 已不再要求 LLM 生成 reason。
+    # 该字段无任何生产消费方——不落库（News 无 reason 列）、不展示、Reports/事件合成/
+    # 预筛审计均不读取（预筛用的是独立的 prefilter_reason）。保留仅为兼容历史构造点，
+    # 实际取值恒为 ""（解析器仍容忍读取，模型不再输出即自然为空）。请勿新增依赖。
+    # 注：不能给默认值——其后的 summary/tags 无默认值，会触发 dataclass 字段顺序错误。
     reason: str
     summary: str
     tags: list[str]
@@ -382,7 +384,7 @@ class ScoredNewsItem:
     original_id: int = 0
     chinese_title: str = ""
     relevant_tickers: list[str] = field(default_factory=list)
-    # 推荐理由：一句话告诉投资者"为什么该关注这条"（中文复用 reason，英文由 LLM 生成）
+    # 推荐理由：一句话告诉投资者"为什么该关注这条"（中英文均由 LLM 直接生成）
     why_it_matters: str = ""
     # P2 ③：两层筛选——LLM 显式判定是否为"重点推荐"（信息流 vs 重点推荐）
     is_highlight: bool = False
@@ -645,7 +647,7 @@ def _parse_response_detailed(
 
             why_raw = item.get("why_it_matters", "")
             why_it_matters = str(why_raw)[:256] if isinstance(why_raw, str) else ""
-            # P3 ①：英文也读 reason（不再硬编码空），与中文对称
+            # DEPRECATED：Prompt 已不再要求 reason，此处仅容忍旧格式，缺失时自然为 ""
             reason_raw = item.get("reason", "")
             reason = str(reason_raw)[:256] if isinstance(reason_raw, str) else ""
 
@@ -662,6 +664,7 @@ def _parse_response_detailed(
                 is_highlight=is_highlight,
             ))
         else:
+            # DEPRECATED：Prompt 已不再要求 reason，此处仅容忍旧格式，缺失时自然为 ""
             reason_raw = item.get("reason", "")
             reason = str(reason_raw)[:256] if isinstance(reason_raw, str) else ""
             # P3 ①：中文也读 summary（prompt 现在要求了，不再依赖解析器读空字段）
@@ -1144,7 +1147,7 @@ async def _score_en_two_stage(
 ) -> BatchResult:
     """P3 ②：英文两阶段评分。
 
-    阶段一：用 EN_SCORE_PROMPT 评分（不翻译），得到 score/reason/tags/tickers/is_highlight。
+    阶段一：用 EN_SCORE_PROMPT 评分（不翻译），得到 score/tags/tickers/is_highlight。
             通过阈值的条目构建 ScoredNewsItem（翻译字段为空）。
     阶段二：把通过阈值的条目重新组 batch，用 EN_TRANSLATE_PROMPT 翻译，
             补充 chinese_title/summary/why_it_matters。

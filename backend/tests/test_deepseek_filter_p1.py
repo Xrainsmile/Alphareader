@@ -156,7 +156,7 @@ class TestFilterBatchWithBisect:
 
         call_seq = []
 
-        async def fake_call(payload, headers, client):
+        async def fake_call(payload, headers, client, **kwargs):
             # 依据 payload 里的 user prompt 判断有没有 bad item
             user_msg = payload["messages"][1]["content"]
             has_bad = items[bad_idx].title in user_msg
@@ -199,7 +199,7 @@ class TestFilterBatchWithBisect:
         """开关关闭 → 老行为：整批丢弃，dropped=len(batch)。"""
         items = _make_items(4)
 
-        async def fake_call(payload, headers, client):
+        async def fake_call(payload, headers, client, **kwargs):
             return None, "content_risk", "hit", None
 
         mock_settings = MagicMock()
@@ -228,7 +228,7 @@ class TestFilterBatchWithBisect:
         """无 content_risk 时不应走二分。"""
         items = _make_items(3)
 
-        async def fake_call(payload, headers, client):
+        async def fake_call(payload, headers, client, **kwargs):
             raw = json.dumps([
                 {"id": i, "score": 8, "reason": "ok", "summary": "s", "tags": [], "relevant_tickers": []}
                 for i in range(1, 4)
