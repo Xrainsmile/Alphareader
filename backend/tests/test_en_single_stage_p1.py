@@ -47,8 +47,9 @@ def test_single_stage_prompt_reuses_score_rubric():
         assert frag in p, frag
     # 单阶段自己会翻译，不应保留「不做翻译」的限制句
     assert "不做标题或摘要翻译" not in p
-    # 条件输出规则
-    assert "score < 6：id、score" in p
+    # 中性输出结构（消除「低分=少输出」带来的评分抬高激励）
+    assert "评分必须完全独立于输出字段" in p
+    assert "translate" in p
     assert "chinese_title" in p and "is_highlight" in p
 
 
