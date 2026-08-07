@@ -410,8 +410,9 @@ async def _synthesize_one(
 ) -> dict | None:
     """对单个事件簇调用 LLM 合成并回写聚合根（含版本快照）。
 
-    成功返回 {"event_id", "doc_text", "material"}，供调用方决定是否刷新事件向量；
-    失败返回 None。
+    成功返回 {"event_id", "doc_text", "material", "version", "source_count",
+    "latest_change", "event_title"}，供调用方决定是否刷新事件向量、
+    以及 _maybe_collect_alert 做重大事件即时提醒筛选；失败返回 None。
     """
     root = {
         "title": cluster["title"],
@@ -516,6 +517,12 @@ async def _synthesize_one(
             parsed["event_title"], parsed["event_summary"]
         ),
         "material": params["material"],
+        # 重大事件即时提醒需要这些字段；此前漏传导致 _maybe_collect_alert
+        # 在 `if not out.get("version"): return` 处永远提前返回，提醒功能实际失效。
+        "version": params.get("version"),
+        "source_count": params["source_count"],
+        "latest_change": params.get("latest_change"),
+        "event_title": params.get("event_title"),
     }
 
 
