@@ -64,6 +64,44 @@ _TICKER_HK = re.compile(r"^\d{5}$")         # 港股 5 位
 _TICKER_US = re.compile(r"^[A-Z]{3,5}(\.[A-Z])?$")  # 美股 3-5 位字母，可选 .X 后缀（如 BRK.B）
 _TICKER_HK_SHORT = re.compile(r"^\d{4}$")   # 港股 4 位（补 0 兼容）
 
+# ── 程序化 ticker 提取（替换 LLM 的 relevant_tickers 任务，P0）──
+# 仅识别文本中明确出现的证券代码，避免把普通英文大写词误判为美股 ticker。
+# 优先级：$TICKER / 交易所:TICKER / 后缀式(AAPL.O, 600519.SH, 00700.HK) / 纯数字(A股6位, 港股5位带前导0)
+# 纯英文 3-5 字母必须带 ticker 上下文（如 $、(、: 或 stock/shares 等）才识别。
+_RE_TICKER_DOLLAR = re.compile(r"\$([A-Z]{1,5}(?:\.[A-Z]{1,2})?)")
+_RE_TICKER_EXCHANGE = re.compile(
+    r"\b(?:nasdaq|nyse|amex|shse|szse|sse|hkex|lse|hk|sh|sz|to|tse)\s*[:：]\s*([A-Z]{1,5}(?:\.[A-Z]{1,2})?)",
+    re.IGNORECASE,
+)
+# 后缀式：字母.市场（AAPL.O） 或 数字.市场（600519.SH / 00700.HK）
+_RE_TICKER_SUFFIX = re.compile(
+    r"\b([A-Z]{1,5}\.(?:O|N|L|A|B|H|SH|SZ|HK|US|T|TO|LN|PA))\b"
+    r"|\b(\d{4,6}\.(?:SH|SZ|HK|US|BJ|SS|TO))\b"
+)
+_RE_TICKER_A_BARE = re.compile(r"\b(\d{6})\b")        # 纯 A 股 6 位
+_RE_TICKER_HK_BARE = re.compile(r"\b(0\d{4})\b")     # 纯港股 5 位（带前导 0，如 00700）
+_RE_TICKER_US_BARE = re.compile(r"\b([A-Z]{3,5})\b")  # 纯英文 3-5 字母（需上下文）
+
+# 后缀剥离：AAPL.O / 600519.SH / 00700.HK → 核心代码
+_RE_TICKER_SUFFIX_STRIP = re.compile(
+    r"\.(O|N|L|A|B|H|SH|SZ|HK|US|T|TO|LN|PA|SS|BJ)$", re.IGNORECASE
+)
+
+# 纯英文 ticker 的上下文词（token 后接这些词才视为代码）
+_TICKER_CONTEXT_WORDS = (
+    "stock", "stocks", "share", "shares", "adr", "etf", "ticker",
+    "inc", "corp", "ltd", "co", "plc", "group", "holdings",
+    "technologies", "closed", "rose", "fell", "gained", "dropped",
+    "surged", "slumped", "rallied", "declined", "jumped", "tumbled",
+    "up", "down",
+)
+# 纯英文 ticker 黑名单：交易所名 / 常见非 ticker 缩略语，避免误判
+_TICKER_BLOCKLIST = {
+    "NASDAQ", "NYSE", "AMEX", "LSE", "HKEX", "SHSE", "SZSE", "SSE", "TSE",
+    "GDP", "CPI", "CEO", "CFO", "CTO", "API", "SDK", "IPO", "ETF",
+    "USA", "UK", "EU", "FED", "SEC", "FDA", "DOJ",
+}
+
 
 # ── 中文新闻评分的 System Prompt ──
 # Minervini SEPA / O'Neil CAN SLIM 预期差评分框架
@@ -127,7 +165,7 @@ SYSTEM_PROMPT_CN = """你是财经新闻分析师。请根据输入文本评估�
 
 - **score 0—4**：仅 `id`、`score`
 - **score 5**：`id`、`score`、`tags`（3—5个，可空数组 `[]`）
-- **score 6—7**：`id`、`score`、`summary`、`why_it_matters`、`tags`、`relevant_tickers`
+- **score 6—7**：`id`、`score`、`summary`、`why_it_matters`、`tags`
 - **score 8—10**：在 6—7 基础上额外输出 `is_highlight: true`
 
 字段定义：
@@ -138,12 +176,10 @@ SYSTEM_PROMPT_CN = """你是财经新闻分析师。请根据输入文本评估�
 - `summary`：80字以内，概括主体、事件和关键数据
 - `why_it_matters`：40字以内，点明对盈利、估值、供需、政策或市场预期的具体影响；原文有量化对比或预期差时优先写入
 - `tags`：3—5个字符串，包含板块、公司及事件定性
-- `relevant_tickers`：字符串数组
 
 约束：
 
 - 所有判断须忠于原文，禁止补写原文没有的数据或预期。
-- `relevant_tickers` 只提取正文明确出现的代码；A股保留6位，港股保留5位及前导零，无代码返回 `[]`。
 - 输出前检查 JSON 合法、条数和 id 一致。低分条目允许只含 `id`、`score`。"""
 
 # ── 英文新闻评分+翻译的 System Prompt ──
@@ -179,7 +215,6 @@ SYSTEM_PROMPT_EN = """你是一位财经新闻分析师兼中英金融翻译。�
 - 常见公司名使用通行中文译名；缺少通行译名的品牌、产品型号及金融缩写可保留英文。
 - 使用专业金融表达，如：Beat=超预期，Miss=不及预期，Guidance=业绩指引，Revenue=营收，Buyback=回购，Yield=收益率。
 - 标题过短时，可依据可见正文生成描述性标题；信息不足时采用保守直译，禁止编造。
-- 股票代码只放入 `relevant_tickers`。
 
 ## 输出要求
 
@@ -193,7 +228,7 @@ SYSTEM_PROMPT_EN = """你是一位财经新闻分析师兼中英金融翻译。�
 
 - **score 0—4**：仅 `id`、`score`
 - **score 5**：`id`、`score`、`tags`（3—5个中文标签，可空数组 `[]`）
-- **score 6—7**：`id`、`score`、`chinese_title`、`chinese_summary`、`why_it_matters`、`tags`、`relevant_tickers`
+- **score 6—7**：`id`、`score`、`chinese_title`、`chinese_summary`、`why_it_matters`、`tags`
 - **score 8—10**：在 6—7 基础上额外输出 `is_highlight: true`
 
 字段定义：
@@ -205,9 +240,8 @@ SYSTEM_PROMPT_EN = """你是一位财经新闻分析师兼中英金融翻译。�
 - `chinese_summary`：80字以内
 - `why_it_matters`：40字以内，说明对盈利、估值、供需、政策或市场预期的具体影响
 - `tags`：3—5个中文标签
-- `relevant_tickers`：字符串数组
 
-所有判断须忠于原文。代码仅提取输入中明确出现的内容；美股保留字母代码，港股保留5位及前导零，无代码返回 `[]`。低分条目允许只含 `id`、`score`。"""
+所有判断须忠于原文。低分条目允许只含 `id`、`score`。"""
 
 
 # ── P3 ②：英文两阶段评分 — 阶段一（仅评分，不翻译）──
@@ -247,7 +281,7 @@ SYSTEM_PROMPT_EN_SCORE = """你是财经新闻分析师。请仅评估每条英�
 
 - **score 0—4**：仅 `id`、`score`
 - **score 5**：`id`、`score`、`tags`（3—5个中文标签，可空数组 `[]`）
-- **score 6—10**：`id`、`score`、`tags`、`relevant_tickers`、`is_highlight`
+- **score 6—10**：`id`、`score`、`tags`、`is_highlight`
 
 字段定义：
 
@@ -255,7 +289,6 @@ SYSTEM_PROMPT_EN_SCORE = """你是财经新闻分析师。请仅评估每条英�
 - `score`：0—10整数
 - `is_highlight`：布尔值，仅 8—10 分输出
 - `tags`：3—5个中文标签
-- `relevant_tickers`：字符串数组，仅提取输入中明确出现的代码
 
 不得输出翻译、Markdown、解释或思考过程。低分条目允许只含 `id`、`score`。"""
 
@@ -384,6 +417,75 @@ def _clean_tickers(raw_list) -> list[str]:
     return list(dict.fromkeys(cleaned))[:5]
 
 
+def _add_extracted_ticker(found: set, raw: str | None) -> None:
+    """规范化并加入结果集合（去重由 set 保证）。"""
+    if not raw:
+        return
+    core = _RE_TICKER_SUFFIX_STRIP.sub("", raw.strip())
+    v = _validate_ticker(core)
+    if v:
+        found.add(v)
+
+
+def _us_token_has_context(text: str, start: int, end: int) -> bool:
+    """判断裸英文 ticker 是否带 ticker 上下文（前导 $/(/: 或后接 标点/上下文词）。"""
+    before = text[max(0, start - 2):start].rstrip()
+    if before.endswith(("$", "(", ":")):
+        return True
+    after = text[end:end + 40]
+    # 紧邻标点（如 NVDA) / NVDA's / NVDA( ）
+    if re.match(r"^[\'\"()]", after):
+        return True
+    # 空格后接括号/引号（如 NVDA ( ）
+    if re.match(r"^[\s]+[\'\"(]", after):
+        return True
+    # 后接 ticker 上下文词（如 NVDA stock / TSLA rose）
+    if re.match(r"^[\s]*(" + "|".join(_TICKER_CONTEXT_WORDS) + r")\b", after, re.IGNORECASE):
+        return True
+    return False
+
+
+def extract_tickers_from_text(title: str, content: str) -> list[str]:
+    """从新闻标题+正文程序化提取明确出现的证券代码。
+
+    替代 LLM 的 relevant_tickers 任务，避免为低分新闻浪费 completion token。
+    仅识别显式代码（优先级从高到低）：
+      - $NVDA / NASDAQ: NVDA / NYSE: JPM
+      - AAPL.O（美股后缀）/ 600519.SH / 300750.SZ / 00700.HK（市场后缀）
+      - 纯数字 600519（A股6位）/ 00700（港股5位带前导0）
+      - 纯英文 3-5 字母（仅当该 token 带 ticker 上下文，避免误判普通大写词）
+    返回规范化后的 ticker 列表（上限 5）。
+    """
+    text = f"{title or ''}\n{content or ''}"
+    found: set[str] = set()
+
+    # 1) 强上下文：$TICKER / 交易所: TICKER
+    for m in _RE_TICKER_DOLLAR.finditer(text):
+        _add_extracted_ticker(found, m.group(1))
+    for m in _RE_TICKER_EXCHANGE.finditer(text):
+        _add_extracted_ticker(found, m.group(1))
+
+    # 2) 后缀式：AAPL.O / 600519.SH / 00700.HK
+    for m in _RE_TICKER_SUFFIX.finditer(text):
+        _add_extracted_ticker(found, m.group(1) or m.group(2))
+
+    # 3) 纯数字：A股6位 / 港股5位(带前导0)
+    for m in _RE_TICKER_A_BARE.finditer(text):
+        _add_extracted_ticker(found, m.group(1))
+    for m in _RE_TICKER_HK_BARE.finditer(text):
+        _add_extracted_ticker(found, m.group(1))
+
+    # 4) 纯英文 3-5 字母：仅该 token 自身带 ticker 上下文才识别
+    for m in _RE_TICKER_US_BARE.finditer(text):
+        tok = m.group(1)
+        if tok in _TICKER_BLOCKLIST:
+            continue
+        if _us_token_has_context(text, m.start(), m.end()):
+            _add_extracted_ticker(found, tok)
+
+    return list(found)[:5]
+
+
 # ═══════════════════════════════════════════════════════════════
 # 数据结构
 # ═══════════════════════════════════════════════════════════════
@@ -394,7 +496,7 @@ class ScoredNewsItem:
     - raw: 原始新闻数据
     - score: AI 评分（0-10）
     - chinese_title: 英文新闻翻译后的中文标题（中文新闻为空）
-    - relevant_tickers: 相关股票代码列表（如 ['NVDA', 'AAPL']）
+    - relevant_tickers: 相关股票代码列表（如 ['NVDA', 'AAPL']），由 extract_tickers_from_text 程序化提取，不再由 LLM 返回
     """
     raw: RawNewsItem
     score: int
@@ -621,7 +723,8 @@ def _parse_response_detailed(
         idx0 = idx1 - 1
         raw_item = batch[idx0]
         tags = _ensure_string_list(item.get("tags"), max_items=5)
-        tickers = _clean_tickers(item.get("relevant_tickers"))
+        # P0：relevant_tickers 不再由 LLM 返回，改为从原始标题+正文程序化提取
+        tickers = extract_tickers_from_text(raw_item.title, raw_item.content)
 
         # P2 ③：is_highlight 严格类型校验（只接受 bool；字符串 "true"/"false" 也兼容）
         raw_highlight = item.get("is_highlight", False)
@@ -1173,7 +1276,8 @@ async def _score_en_two_stage(
 ) -> BatchResult:
     """P3 ②：英文两阶段评分。
 
-    阶段一：用 EN_SCORE_PROMPT 评分（不翻译），得到 score/tags/tickers/is_highlight。
+    阶段一：用 EN_SCORE_PROMPT 评分（不翻译），得到 score/tags/is_highlight。
+            relevant_tickers 由 extract_tickers_from_text 从文本程序化提取（不依赖 LLM）。
             通过阈值的条目构建 ScoredNewsItem（翻译字段为空）。
     阶段二：把通过阈值的条目重新组 batch，用 EN_TRANSLATE_PROMPT 翻译，
             补充 chinese_title/summary/why_it_matters。

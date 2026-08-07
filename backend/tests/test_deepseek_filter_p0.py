@@ -23,6 +23,7 @@ from app.services.llm_news_filter import (
     _is_chinese_dominant,
     _parse_response_detailed,
     _validate_ticker,
+    extract_tickers_from_text,
     filter_batch_detailed,
     filter_news,
 )
@@ -258,15 +259,56 @@ class TestParseResponseDetailed:
         assert scored[0].tags == []                       # dict 被拒
         assert scored[1].tags == ["半导体", "英伟达"]      # 只保留合法 str
 
-    def test_ticker_validated(self):
+    def test_ticker_extracted_from_text(self):
+        # P0：relevant_tickers 不再由 LLM 返回，改为从文本程序化提取。
+        # 即便 LLM 返回了 relevant_tickers，解析器也应忽略，以文本提取为准。
         raw = json.dumps([
-            {"id": 1, "score": 8, "reason": "test", "tags": [],
-             "relevant_tickers": ["300750", "invalid", "NVDA", "0700"]},
+            {"id": 1, "score": 8, "tags": [], "relevant_tickers": ["SHOULD_BE_IGNORED"]},
         ], ensure_ascii=False)
-        batch = _make_batch(1)
+        item = RawNewsItem(
+            title="$NVDA 与 600519.SH 双双上涨",
+            content="NASDAQ: NVDA 收涨，腾讯 00700.HK 亦走强，AAPL.O 创新高。",
+            url="https://example.com/x/1", source="test",
+            published_at=datetime(2026, 2, 10, 12, 0, 0), tags=["test"],
+        )
+        batch = [item]
         scored, _, _, _, _ = _parse_response_detailed(raw, batch, False)
-        # invalid 被去掉，"0700" 补 0 后 = "00700"
-        assert set(scored[0].relevant_tickers) == {"300750", "NVDA", "00700"}
+        # 忽略 LLM 的 SHOULD_BE_IGNORED；从文本提取：$/交易所/后缀/纯数字
+        assert set(scored[0].relevant_tickers) == {"NVDA", "600519", "00700", "AAPL"}
+        assert "SHOULD_BE_IGNORED" not in scored[0].relevant_tickers
+
+
+class TestExtractTickersFromText:
+    def test_dollar_and_exchange_prefix(self):
+        # $NVDA / NASDAQ: NVDA / NYSE: JPM
+        out = extract_tickers_from_text("市场观察", "$NVDA 与 NASDAQ: NVDA 走强，NYSE: JPM 亦上涨")
+        assert "NVDA" in out and "JPM" in out
+
+    def test_suffix_forms(self):
+        # AAPL.O / 600519.SH / 00700.HK
+        out = extract_tickers_from_text("美股动态", "AAPL.O 创新高，贵州茅台 600519.SH 企稳，腾讯 00700.HK 反弹")
+        assert out == ["AAPL", "600519", "00700"]
+
+    def test_bare_numeric(self):
+        # 纯 A 股 6 位 / 港股 5 位带前导 0
+        out = extract_tickers_from_text("代码扫描", "关注 300750 与 09988 的走势")
+        assert "300750" in out and "09988" in out
+
+    def test_us_letter_requires_context(self):
+        # 纯英文 3-5 字母必须带 ticker 上下文，避免误判普通大写词
+        with_ctx = extract_tickers_from_text("美股", "TSLA stock rose after earnings")
+        assert "TSLA" in with_ctx
+        no_ctx = extract_tickers_from_text("普通英文", "The CEO said the GDP and CPI data show the FED policy")
+        # CEO/GDP/CPI/FED 不应被误判为 ticker
+        assert not (set(no_ctx) & {"CEO", "GDP", "CPI", "FED"})
+
+    def test_blocklist_excluded(self):
+        out = extract_tickers_from_text("宏观", "GDP growth and CPI inflation reported by FED")
+        assert not (set(out) & {"GDP", "CPI", "FED"})
+
+    def test_empty_text(self):
+        assert extract_tickers_from_text("", "") == []
+        assert extract_tickers_from_text(None, None) == []
 
 
 # ═══════════════════════════════════════════════════════════════
