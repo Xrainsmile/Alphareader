@@ -28,6 +28,7 @@ import pytz
 from sqlalchemy import select, and_, delete
 
 from app.config import settings
+from app.utils.llm_usage import log_llm_usage
 from app.database import async_session
 from app.models.catalyst import NewsCatalystStock
 from app.models.news import News
@@ -127,6 +128,19 @@ async def _call_ticker_mapping_llm(entities: list[str]) -> dict[str, str | None]
                 )
                 resp.raise_for_status()
                 data = resp.json()
+
+                # 统一 token 用量统计（成本核算）
+                usage = data.get("usage") or {}
+                if usage:
+                    details = usage.get("completion_tokens_details") or {}
+                    log_llm_usage(
+                        "ticker_mapping",
+                        prompt=usage.get("prompt_tokens"),
+                        completion=usage.get("completion_tokens"),
+                        cache_hit=usage.get("prompt_cache_hit_tokens"),
+                        reasoning=details.get("reasoning_tokens"),
+                        total=usage.get("total_tokens"),
+                    )
 
             raw = data["choices"][0]["message"]["content"].strip()
 

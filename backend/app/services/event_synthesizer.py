@@ -33,6 +33,7 @@ from app.services import event_memory
 from app.services.notifier import send_report
 from app.services.prefilter import is_official_source
 from app.utils.event_signals import compute_event_signals
+from app.utils.llm_usage import log_llm_usage
 
 logger = logging.getLogger("alphareader.event_synth")
 
@@ -452,7 +453,19 @@ async def _synthesize_one(
                 settings.LLM_API_URL, json=payload, headers=headers, timeout=30.0
             )
             resp.raise_for_status()
-            raw = resp.json()["choices"][0]["message"]["content"]
+            data = resp.json()
+            raw = data["choices"][0]["message"]["content"]
+            usage = data.get("usage") or {}
+            if usage:
+                details = usage.get("completion_tokens_details") or {}
+                log_llm_usage(
+                    "event_synth",
+                    prompt=usage.get("prompt_tokens"),
+                    completion=usage.get("completion_tokens"),
+                    cache_hit=usage.get("prompt_cache_hit_tokens"),
+                    reasoning=details.get("reasoning_tokens"),
+                    total=usage.get("total_tokens"),
+                )
             parsed = _parse_llm_response(raw)
             if parsed:
                 break

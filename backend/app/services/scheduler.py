@@ -287,6 +287,22 @@ async def _event_maintenance_job():
         raise
 
 
+async def _llm_usage_summary_job():
+    """每日 00:00 汇总上一天各 scene 的 LLM token 消耗，并清空进程内累加器。
+
+    注：uvicorn 多 worker 下累加器为进程级，仅持调度锁的 leader worker 跑此任务。
+    pipeline / digest / catalyst / ticker_mapping / 评分 均在 leader worker 内执行，
+    故该汇总基本覆盖全量；纯 API 触发的零星 LLM 调用若落在另一 worker 则不计入。
+    逐行日志 `LLM usage [scene=...]` 才是完整审计源。
+    """
+    try:
+        from app.utils.llm_usage import log_llm_usage_summary, reset_llm_usage_stats
+        log_llm_usage_summary("daily")
+        reset_llm_usage_stats()
+    except Exception as e:
+        logger.exception("LLM usage summary job failed: %s", e)
+
+
 async def _rs_rating_job():
     """RS Rating 定时计算 — 每个交易日 11:30 和 15:00 触发。
 
@@ -1132,6 +1148,21 @@ async def _run_scheduler_jobs():
         ),
         id="event_maintenance_0400",
         name=f"Event Status Maintenance (Daily 04:00 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # ── 每日 LLM 用量汇总（00:00，leader worker 汇总上一天各 scene token 消耗并清空累加器）──
+    scheduler.add_job(
+        _llm_usage_summary_job,
+        trigger=CronTrigger(
+            hour="0",
+            minute="0",
+            timezone=settings.TIMEZONE,
+        ),
+        id="llm_usage_summary",
+        name=f"LLM Usage Daily Summary (Daily 00:00 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,

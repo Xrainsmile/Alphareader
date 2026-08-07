@@ -23,6 +23,7 @@ import random
 import httpx
 
 from app.config import settings
+from app.utils.llm_usage import log_llm_usage
 
 logger = logging.getLogger("alphareader.llm_client")
 
@@ -117,12 +118,13 @@ async def stream_chat(
                 if content:
                     if usage_info:
                         details = usage_info.get("completion_tokens_details") or {}
-                        logger.info(
-                            "%s usage: prompt=%s completion=%s cache_hit=%s reasoning=%s total=%s",
-                            log_tag,
-                            usage_info.get("prompt_tokens"), usage_info.get("completion_tokens"),
-                            usage_info.get("prompt_cache_hit_tokens"), details.get("reasoning_tokens"),
-                            usage_info.get("total_tokens"),
+                        log_llm_usage(
+                            log_tag.lower(),
+                            prompt=usage_info.get("prompt_tokens"),
+                            completion=usage_info.get("completion_tokens"),
+                            cache_hit=usage_info.get("prompt_cache_hit_tokens"),
+                            reasoning=details.get("reasoning_tokens"),
+                            total=usage_info.get("total_tokens"),
                         )
                     logger.info("%s stream OK (attempt %d): %d chars",
                                 log_tag, attempt, len(content))

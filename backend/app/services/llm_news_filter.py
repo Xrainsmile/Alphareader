@@ -44,6 +44,7 @@ from langdetect import DetectorFactory, detect, LangDetectException
 from app.config import settings
 from app.services.rss_fetcher import RawNewsItem
 from app.utils.json_extractor import extract_llm_json
+from app.utils.llm_usage import log_llm_usage
 
 logger = logging.getLogger("alphareader.llm_filter")
 
@@ -719,6 +720,8 @@ async def _call_llm_once(
     payload: dict[str, object],
     headers: dict[str, str],
     client: httpx.AsyncClient,
+    *,
+    scene: str = "news_score",
 ) -> tuple[str | None, BatchStatus, str, float | None]:
     """执行一次 LLM 调用；返回 (raw_content, status, error_body, retry_after)。
 
@@ -758,11 +761,13 @@ async def _call_llm_once(
     usage = data.get("usage") or {}
     if usage:
         details = usage.get("completion_tokens_details") or {}
-        logger.info(
-            "LLM usage: prompt=%s completion=%s cache_hit=%s reasoning=%s total=%s",
-            usage.get("prompt_tokens"), usage.get("completion_tokens"),
-            usage.get("prompt_cache_hit_tokens"), details.get("reasoning_tokens"),
-            usage.get("total_tokens"),
+        log_llm_usage(
+            scene,
+            prompt=usage.get("prompt_tokens"),
+            completion=usage.get("completion_tokens"),
+            cache_hit=usage.get("prompt_cache_hit_tokens"),
+            reasoning=details.get("reasoning_tokens"),
+            total=usage.get("total_tokens"),
         )
 
     return raw_text, "ok", "", None
@@ -812,7 +817,10 @@ async def _score_batch_once(
     last_error = ""
 
     for attempt in range(1, max_retries + 1):
-        raw_text, call_status, err_body, retry_after = await _call_llm_once(payload, headers, client)
+        raw_text, call_status, err_body, retry_after = await _call_llm_once(
+            payload, headers, client,
+            scene="news_score_en" if is_english else "news_score_cn",
+        )
 
         if call_status == "content_risk":
             # 不在这里 log,由调用方（可能触发二分）决定。仅返回状态。
@@ -1084,7 +1092,9 @@ async def _translate_batch_once(
 
     max_retries = settings.LLM_MAX_RETRIES
     for attempt in range(1, max_retries + 1):
-        raw_text, call_status, err_body, retry_after = await _call_llm_once(payload, headers, client)
+        raw_text, call_status, err_body, retry_after = await _call_llm_once(
+            payload, headers, client, scene="news_translate_en",
+        )
 
         if call_status == "content_risk":
             # 翻译阶段触发内容审查 → 不二分，直接返回空（评分结果保留）
