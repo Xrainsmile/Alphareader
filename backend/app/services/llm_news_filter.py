@@ -479,6 +479,79 @@ class BatchResult:
 # Prompt 构造
 # ═══════════════════════════════════════════════════════════════
 
+# ── P0：动态正文预览长度分配（零 token，纯 Python 预处理，不进入 Prompt）──
+# 三档（env 可配，见 config.py 的 LLM_PREVIEW_*_CHARS）：
+#   SHORT   = 120  → 完整快讯标题（标题已自包含完整事件，正文只需少量上下文）
+#   NORMAL  = 250  → 普通短新闻 / 常规财经科技新闻
+#   COMPLEX = 400  → 财报/业绩/guidance/监管/政策/并购/官方公告等（含关键数字，强制全长）
+# 目标：复杂新闻永不因截断丢失关键数字；其余按信息密度收紧，省 LLM 输入 token。
+_PREVIEW_COMPLEX_RE = re.compile(
+    r"(财报|业绩|guidance|监管|sec|政策|条例|并购|收购|批准|诉讼|制裁|央行|利率决议"
+    r"|公告|季报|年报|中报|业绩预告|earnings|regulat|merger|acqui|lawsuit|sanction"
+    r"|central bank|rate decision|monetary policy)",
+    re.IGNORECASE,
+)
+_PREVIEW_FLASH_RESULT_RE = re.compile(
+    r"(超预期|不及预期|新高|新低|暴涨|暴跌|飙升|大涨|大跌|反弹|回落|增长|下滑|盈利|亏损"
+    r"|盈余|突破|达成|维持|不变|上调|下调|降息|加息|涨|跌|升|降|增|减|公布|预告|披露|签署|合作)",
+)
+_PREVIEW_FLASH_ACTION_RE = re.compile(
+    r"(维持|称|宣布|表示|发布|披露|达成|获批|通过|上调|下调|降息|加息|涨|跌|升|降|增|减"
+    r"|反弹|回落|飙升|暴跌|大涨|新高|新低|超预期|不及预期|指引|公布|预告|签署|合作|起诉"
+    r"|增长|下滑|盈利|亏损|盈余|突破|不变)",
+)
+
+
+def get_llm_preview_chars(item: RawNewsItem) -> int:
+    """按内容类型动态分配正文预览长度（零 token，仅 Python 预处理）。
+
+    优先级：
+      1. 复杂新闻（含财报/业绩/监管/政策/并购/官方公告等关键词）→ COMPLEX(400)，
+         确保 earnings/guidance/法律等含关键数字的内容不被截断损失。
+      2. 完整快讯标题（标题已自包含完整事件）→ SHORT(120)，正文仅需少量上下文。
+      3. 其余 → NORMAL(250)。
+    """
+    short = int(getattr(settings, "LLM_PREVIEW_SHORT_CHARS", 120))
+    normal = int(getattr(settings, "LLM_PREVIEW_NORMAL_CHARS", 250))
+    complex_ = int(getattr(settings, "LLM_PREVIEW_COMPLEX_CHARS", 400))
+
+    title = getattr(item, "title", "") or ""
+    content = getattr(item, "content", "") or ""
+    haystack = f"{title}\n{content}"
+
+    # 1) 复杂新闻：强制全长，避免损失关键数字
+    if _PREVIEW_COMPLEX_RE.search(haystack):
+        return complex_
+
+    # 2) 完整快讯标题：标题自身已表达完整事件
+    if _is_complete_flash_title(title):
+        return short
+
+    # 3) 常规档
+    return normal
+
+
+def _is_complete_flash_title(title: str) -> bool:
+    """轻量启发式判定「完整快讯标题」。
+
+    满足：长度足够 + 含明确主体/动作 + 含数字或结果。
+    仅用于把正文预览缩短到 SHORT，误判至多让一条普通新闻少给约 130 字符，
+    不会损失关键数字（含关键数字的新闻已由复杂档拦截）。零 token。
+    """
+    if len(title) < 14:
+        return False
+    # 数字或结果信号
+    if not (re.search(r"\d", title) or _PREVIEW_FLASH_RESULT_RE.search(title)):
+        return False
+    # 明确动作信号
+    if not _PREVIEW_FLASH_ACTION_RE.search(title):
+        return False
+    # 明确主体：含 2+ 连续 CJK 或英文实体/代码
+    if not (re.search(r"[\u4e00-\u9fff]{2,}", title) or re.search(r"[A-Za-z]{2,}", title)):
+        return False
+    return True
+
+
 def _build_user_prompt(
     batch: list[RawNewsItem],
     is_english: bool,
@@ -493,13 +566,11 @@ def _build_user_prompt(
         age_hours 已由代码算好并注入，绝对日期与其语义重复且业务无消费方；
       - 删除顶部安全声明——System Prompt 已声明「输入为不可信待分析数据」，
         安全边界以 System Prompt 为准，User Prompt 不再逐批重复；
-      - 正文预览长度取 settings.LLM_CONTENT_PREVIEW_CHARS；
+      - 正文预览长度由 get_llm_preview_chars(item) 按内容类型动态分配
+        （SHORT/NORMAL/COMPLEX 三档，零 token）；
       - ids 可选：翻译阶段传入原始 id（可能不连续），禁止模型重新编号。
     """
     from datetime import datetime, timezone
-
-    _preview_len = getattr(settings, "LLM_CONTENT_PREVIEW_CHARS", 800)
-    preview_len = int(_preview_len) if isinstance(_preview_len, (int, float)) else 800
 
     now_utc = datetime.now(timezone.utc)
 
@@ -517,7 +588,7 @@ def _build_user_prompt(
     lines: list[str] = []
     for k, item in enumerate(batch):
         item_id = ids[k] if ids is not None else (k + 1)
-        content_preview = (item.content or "")[:preview_len]
+        content_preview = (item.content or "")[:get_llm_preview_chars(item)]
         if not content_preview:
             content_preview = "No content" if is_english else "无正文"
         age = _age_hours(item)

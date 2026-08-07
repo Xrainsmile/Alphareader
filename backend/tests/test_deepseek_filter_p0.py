@@ -522,21 +522,57 @@ class TestFilterNewsHadErrors:
 # ═══════════════════════════════════════════════════════════════
 
 class TestPromptLengthAndTime:
-    def test_content_preview_extended(self):
-        from app.services.llm_news_filter import _build_user_prompt
-        # 制造一条超长正文
-        long_content = "股价上涨。" * 500   # 2500 字符
-        item = RawNewsItem(
-            title="测试长文", content=long_content,
+    def test_dynamic_preview_length_allocation(self):
+        """P0 动态预览长度：按内容类型分 SHORT/NORMAL/COMPLEX 三档，零 token。"""
+        from app.services.llm_news_filter import (
+            _build_user_prompt,
+            get_llm_preview_chars,
+        )
+        # 复杂新闻（财报/业绩）→ COMPLEX(400)
+        complex_item = RawNewsItem(
+            title="公司发布Q2财报，营收同比增长25%超预期",
+            content="详细数据".ljust(2000, "x"),
             url="https://x", source="test",
             published_at=datetime(2026, 2, 10, tzinfo=timezone.utc),
         )
-        prompt = _build_user_prompt([item], is_english=False)
-        # 预览已压缩为 400 字符（2026-07-30 起 800→400，为省 LLM 输入 token）：
-        # 校验前 400 字完整保留、第 401 字起被截断
-        assert "股价上涨" in prompt
-        assert long_content[:400] in prompt
-        assert long_content[:401] not in prompt
+        # 完整快讯标题（标题已自包含完整事件）→ SHORT(120)
+        flash_item = RawNewsItem(
+            title="美联储维持利率不变，鲍威尔称通胀仍高于目标",
+            content="补充背景".ljust(2000, "x"),
+            url="https://x", source="test",
+            published_at=datetime(2026, 2, 10, tzinfo=timezone.utc),
+        )
+        # 普通新闻 → NORMAL(250)
+        normal_item = RawNewsItem(
+            title="科技股今日普遍上涨",
+            content="正文".ljust(2000, "x"),
+            url="https://x", source="test",
+            published_at=datetime(2026, 2, 10, tzinfo=timezone.utc),
+        )
+        assert get_llm_preview_chars(complex_item) == 400
+        assert get_llm_preview_chars(flash_item) == 120
+        assert get_llm_preview_chars(normal_item) == 250
+
+        # 截断长度与分配一致：前 n 字在、第 n+1 字不在
+        for it, n in ((complex_item, 400), (flash_item, 120), (normal_item, 250)):
+            prompt = _build_user_prompt([it], is_english=False)
+            assert it.content[:n] in prompt
+            assert it.content[: n + 1] not in prompt
+
+    def test_complex_keyword_forces_full_length(self):
+        """含关键数字/政策类关键词时强制全长 400，避免截断损失关键数字。"""
+        from app.services.llm_news_filter import get_llm_preview_chars
+        for title in (
+            "SEC 对某公司提起诉讼",
+            "央行公布利率决议维持不变",
+            "公司宣布重大并购交易获批",
+            "Fed holds rates, guidance cut",
+        ):
+            item = RawNewsItem(
+                title=title, content="x" * 2000,
+                url="https://x", source="test",
+            )
+            assert get_llm_preview_chars(item) == 400, title
 
     def test_age_hours_replaces_absolute_published_time(self):
         """P0 精简：只保留相对时长 age_hours，删除与其重复的绝对发布时间。"""

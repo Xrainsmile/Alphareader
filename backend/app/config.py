@@ -85,7 +85,10 @@ class Settings(BaseSettings):
     LLM_BATCH_SIZE: int = Field(20, validation_alias=AliasChoices("LLM_BATCH_SIZE", "DEEPSEEK_BATCH_SIZE"))                        # 每批评分条数
     LLM_SCORE_THRESHOLD: int = Field(5, validation_alias=AliasChoices("LLM_SCORE_THRESHOLD", "DEEPSEEK_SCORE_THRESHOLD"))          # 入库分数阈值（≥5 才存储）
     LLM_MAX_RETRIES: int = Field(2, validation_alias=AliasChoices("LLM_MAX_RETRIES", "DEEPSEEK_MAX_RETRIES"))                       # API 失败最大重试次数
-    LLM_CONTENT_PREVIEW_CHARS: int = Field(400, validation_alias=AliasChoices("LLM_CONTENT_PREVIEW_CHARS", "DEEPSEEK_CONTENT_PREVIEW_CHARS"))  # 送给 LLM 的正文预览长度（800→400：投资相关性判断主要看标题+开头，省 ~40% 输入 token）
+    LLM_CONTENT_PREVIEW_CHARS: int = Field(400, validation_alias=AliasChoices("LLM_CONTENT_PREVIEW_CHARS", "DEEPSEEK_CONTENT_PREVIEW_CHARS"))  # 已废弃：预览长度改由下方 LLM_PREVIEW_*_CHARS 三档动态分配，见 llm_news_filter.get_llm_preview_chars
+    LLM_PREVIEW_SHORT_CHARS: int = Field(120, validation_alias=AliasChoices("LLM_PREVIEW_SHORT_CHARS", "DEEPSEEK_PREVIEW_SHORT_CHARS"))  # 动态预览：完整快讯标题档（标题已自包含完整事件，正文只需少量上下文）
+    LLM_PREVIEW_NORMAL_CHARS: int = Field(250, validation_alias=AliasChoices("LLM_PREVIEW_NORMAL_CHARS", "DEEPSEEK_PREVIEW_NORMAL_CHARS"))  # 动态预览：普通短新闻/常规财经科技新闻档
+    LLM_PREVIEW_COMPLEX_CHARS: int = Field(400, validation_alias=AliasChoices("LLM_PREVIEW_COMPLEX_CHARS", "DEEPSEEK_PREVIEW_COMPLEX_CHARS"))  # 动态预览：财报/业绩/guidance/监管/政策/并购/官方公告档（含关键数字，强制全长）
     LLM_MIN_CHINESE_RATIO_TITLE: float = Field(0.5, validation_alias=AliasChoices("LLM_MIN_CHINESE_RATIO_TITLE", "DEEPSEEK_MIN_CHINESE_RATIO_TITLE"))  # 中文标题最低中文占比
     LLM_MIN_CHINESE_RATIO_SUMMARY: float = Field(0.6, validation_alias=AliasChoices("LLM_MIN_CHINESE_RATIO_SUMMARY", "DEEPSEEK_MIN_CHINESE_RATIO_SUMMARY"))  # 中文摘要最低中文占比
     LLM_CONTENT_RISK_BISECT_ENABLED: bool = Field(True, validation_alias=AliasChoices("LLM_CONTENT_RISK_BISECT_ENABLED", "DEEPSEEK_CONTENT_RISK_BISECT_ENABLED"))  # 内容审查触发时二分隔离
