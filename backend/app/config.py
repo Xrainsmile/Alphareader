@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "deepseek-v4-flash"                            # 评分/分析模型（结构化 JSON 输出）
 
     # ── LLM 评分参数（AliasChoices 兼容旧 DEEPSEEK_* 环境变量名）──
-    LLM_BATCH_SIZE: int = Field(20, validation_alias=AliasChoices("LLM_BATCH_SIZE", "DEEPSEEK_BATCH_SIZE"))                        # 每批评分条数
+    LLM_BATCH_SIZE: int = Field(30, validation_alias=AliasChoices("LLM_BATCH_SIZE", "DEEPSEEK_BATCH_SIZE"))                        # 每批评分条数（P1 实验：30 在零质量退化下较 20 省 ~9% prompt/item 且少 1/3 API 往返；40 仅再降 5% 却抬升 p95 延迟至 ~21s，故不取）
     LLM_SCORE_THRESHOLD: int = Field(5, validation_alias=AliasChoices("LLM_SCORE_THRESHOLD", "DEEPSEEK_SCORE_THRESHOLD"))          # 入库分数阈值（≥5 才存储）
     LLM_MAX_RETRIES: int = Field(2, validation_alias=AliasChoices("LLM_MAX_RETRIES", "DEEPSEEK_MAX_RETRIES"))                       # API 失败最大重试次数
     LLM_CONTENT_PREVIEW_CHARS: int = Field(400, validation_alias=AliasChoices("LLM_CONTENT_PREVIEW_CHARS", "DEEPSEEK_CONTENT_PREVIEW_CHARS"))  # 已废弃：预览长度改由下方 LLM_PREVIEW_*_CHARS 三档动态分配，见 llm_news_filter.get_llm_preview_chars
