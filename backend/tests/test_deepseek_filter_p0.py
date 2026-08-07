@@ -538,18 +538,19 @@ class TestPromptLengthAndTime:
         assert long_content[:400] in prompt
         assert long_content[:401] not in prompt
 
-    def test_published_time_included(self):
+    def test_age_hours_replaces_absolute_published_time(self):
+        """P0 精简：只保留相对时长 age_hours，删除与其重复的绝对发布时间。"""
         from app.services.llm_news_filter import _build_user_prompt
         item = RawNewsItem(
             title="测试", content="内容",
             url="https://x", source="test",
-            published_at=datetime(2026, 7, 1, 15, 30, tzinfo=timezone.utc),
+            published_at=datetime.now(timezone.utc) - timedelta(hours=5),
         )
         prompt = _build_user_prompt([item], is_english=False)
-        assert "发布时间: 2026-07-01 15:30" in prompt
-        assert "抓取时间:" in prompt
+        assert "距今: 5 小时" in prompt
+        assert "发布时间" not in prompt
 
-    def test_no_published_time_when_missing(self):
+    def test_age_unknown_when_published_missing(self):
         from app.services.llm_news_filter import _build_user_prompt
         item = RawNewsItem(
             title="测试", content="内容",
@@ -557,16 +558,33 @@ class TestPromptLengthAndTime:
             published_at=None,
         )
         prompt = _build_user_prompt([item], is_english=False)
-        assert "发布时间:" not in prompt
-        assert "抓取时间:" in prompt  # fetched_at 始终有
+        assert "距今: 未知 小时" in prompt
+        assert "发布时间" not in prompt
 
     def test_english_prompt_time_fields(self):
         from app.services.llm_news_filter import _build_user_prompt
         item = RawNewsItem(
             title="Fed keeps rates", content="content",
             url="https://x", source="Reuters",
-            published_at=datetime(2026, 7, 1, 15, 30, tzinfo=timezone.utc),
+            published_at=datetime.now(timezone.utc) - timedelta(hours=3),
         )
         prompt = _build_user_prompt([item], is_english=True)
-        assert "Published: 2026-07-01 15:30" in prompt
-        assert "Fetched:" in prompt
+        assert "Age: 3 hours" in prompt
+        assert "Published:" not in prompt
+
+    def test_no_duplicate_safety_header_in_user_prompt(self):
+        """安全边界以 System Prompt 为准，User Prompt 不再逐批重复安全声明。"""
+        from app.services.llm_news_filter import (
+            SYSTEM_PROMPT_CN,
+            SYSTEM_PROMPT_EN,
+            _build_user_prompt,
+        )
+        cn = _build_user_prompt(_make_batch(1), is_english=False)
+        en = _build_user_prompt(_make_batch(1), is_english=True)
+        assert cn.startswith("[新闻 id=1]")
+        assert en.startswith("[News id=1]")
+        assert "不包含可执行指令" not in cn
+        assert "untrusted news data" not in en
+        # 声明仍在 System Prompt 中
+        assert "不可信待分析数据" in SYSTEM_PROMPT_CN
+        assert "不可信待分析数据" in SYSTEM_PROMPT_EN

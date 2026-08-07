@@ -425,13 +425,15 @@ class TestBuildUserPrompt:
     def test_cn_prompt_format(self):
         batch = _make_batch(2, is_english=False)
         prompt = _build_user_prompt(batch, is_english=False)
-        assert "[1] 标题:" in prompt
-        assert "[2] 标题:" in prompt
+        assert "[新闻 id=1]" in prompt
+        assert "[新闻 id=2]" in prompt
+        assert "标题:" in prompt
         assert "来源: 财联社" in prompt
 
     def test_en_prompt_format(self):
         batch = _make_batch(2, is_english=True)
         prompt = _build_user_prompt(batch, is_english=True)
-        assert "[1] Title:" in prompt
-        assert "[2] Title:" in prompt
+        assert "[News id=1]" in prompt
+        assert "[News id=2]" in prompt
+        assert "Title:" in prompt
         assert "Source: Reuters" in prompt
