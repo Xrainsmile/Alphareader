@@ -13,11 +13,14 @@ import pytest
 
 from app.models.news import News
 from app.services.event_synthesizer import (
+    _build_major_event_alert_text,
     _build_update_params,
     _build_user_prompt,
+    _maybe_collect_alert,
     _parse_llm_response,
     _parse_material_update,
     _select_articles,
+    _synthesize_one,
     auto_stabilize_events,
     synthesize_events,
 )
@@ -316,6 +319,96 @@ class TestBuildUpdateParams:
         assert params["event_resolved_at"] is not None
         assert params["event_duration_hours"] is not None
         assert "event_outcome_type" not in params  # 非 resolved 不写结局字段
+
+
+# ── _synthesize_one 返回字段（重大事件即时提醒数据接线）──
+# 回归：此前 _synthesize_one 漏传 version/source_count/latest_change/event_title，
+# 导致 _maybe_collect_alert 在 `if not out.get("version"): return` 处永远提前返回，
+# 提醒功能静默失效。TestMajorEventAlert 已覆盖 _maybe_collect_alert 自身的三分支，
+# 这里锁定「生产者 _synthesize_one 确实把字段透传出来」这一真正断点。
+
+
+class TestSynthesizeOneReturnsAlertFields:
+    def _cluster(self, event_version=1):
+        return {
+            "id": "00000000-0000-0000-0000-0000000000b1",
+            "title": "根标题",
+            "source": "Reuters",
+            "ai_summary": "摘要",
+            "ai_score": 9,
+            "catalyst_type": "业绩",
+            "created_at": None,
+            "published_at": None,
+            "event_title": None,
+            "event_summary": None,
+            "event_latest_change": None,
+            "event_version": event_version,
+            "child_cnt": 0,
+            "event_source_cnt": 3,
+            "is_highlight": True,
+            "children": [],
+        }
+
+    def _client(self, payload_dict):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = {
+            "choices": [{"message": {"content": json.dumps(payload_dict, ensure_ascii=False)}}]
+        }
+        client = AsyncMock()
+        client.post.return_value = resp
+        return client
+
+    def _fake_session(self, sess_factory):
+        sess = AsyncMock()
+        sess.execute = AsyncMock()
+        sess.commit = AsyncMock()
+        cm = AsyncMock()
+        cm.__aenter__.return_value = sess
+        cm.__aexit__.return_value = False
+        sess_factory.return_value = cm
+        return sess
+
+    async def test_returns_alert_fields_on_material_update(self):
+        """有实质更新时，返回值必须包含 _maybe_collect_alert 需要的全部字段。"""
+        cluster = self._cluster(event_version=1)
+        payload = {
+            "event_title": "英伟达指引上调",
+            "event_summary": "摘要",
+            "latest_change": "官方确认下季指引上调",
+            "why_important": "w",
+            "uncertainty": "",
+            "watch_next": "关注法说会",
+            "status": "developing",
+            "has_material_update": True,
+        }
+        client = self._client(payload)
+        with patch("app.services.event_synthesizer.async_session") as sess_factory:
+            self._fake_session(sess_factory)
+            out = await _synthesize_one(cluster, client)
+        assert out is not None
+        assert out["version"] == 2  # event_version 1 + 1
+        assert out["source_count"] == 3
+        assert out["latest_change"] == "官方确认下季指引上调"
+        assert out["event_title"] == "英伟达指引上调"
+        assert out["material"] is True
+
+    async def test_no_version_when_no_material(self):
+        """无实质更新时 version 为 None，_maybe_collect_alert 据此正确不触发。"""
+        cluster = self._cluster(event_version=2)
+        payload = {
+            "event_title": "t", "event_summary": "s", "latest_change": "",
+            "why_important": "w", "uncertainty": "", "watch_next": "",
+            "status": "", "has_material_update": False,
+        }
+        client = self._client(payload)
+        with patch("app.services.event_synthesizer.async_session") as sess_factory:
+            self._fake_session(sess_factory)
+            out = await _synthesize_one(cluster, client)
+        assert out is not None
+        assert out["version"] is None
+        assert out["material"] is False
 
 
 # ── synthesize_events 主流程 ──
