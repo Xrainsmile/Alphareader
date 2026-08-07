@@ -94,6 +94,10 @@ class Settings(BaseSettings):
     LLM_CONTENT_RISK_BISECT_ENABLED: bool = Field(True, validation_alias=AliasChoices("LLM_CONTENT_RISK_BISECT_ENABLED", "DEEPSEEK_CONTENT_RISK_BISECT_ENABLED"))  # 内容审查触发时二分隔离
     LLM_CONTENT_RISK_MAX_DEPTH: int = Field(6, validation_alias=AliasChoices("LLM_CONTENT_RISK_MAX_DEPTH", "DEEPSEEK_CONTENT_RISK_MAX_DEPTH"))  # 二分最大递归深度
     LLM_TWO_STAGE_EN_ENABLED: bool = Field(True, validation_alias=AliasChoices("LLM_TWO_STAGE_EN_ENABLED", "DEEPSEEK_TWO_STAGE_EN_ENABLED"))  # 英文两阶段评分
+    # ── 英文单阶段实验（P1）──
+    # False=保持现状（两阶段：先评分后翻译，≥6 条目二次调用翻译）；
+    # True=实验性单次调用同时完成评分 + 对 score>=6 条目条件翻译（A/B 达标后再切换，切勿默认开启）。
+    LLM_EN_SINGLE_STAGE_EXPERIMENT: bool = Field(False, validation_alias=AliasChoices("LLM_EN_SINGLE_STAGE_EXPERIMENT", "DEEPSEEK_EN_SINGLE_STAGE_EXPERIMENT"))  # 英文单阶段实验开关
     LLM_TRANSLATE_BATCH_SIZE: int = Field(20, validation_alias=AliasChoices("LLM_TRANSLATE_BATCH_SIZE", "DEEPSEEK_TRANSLATE_BATCH_SIZE"))  # 翻译阶段批次大小
     LLM_MAX_CONCURRENCY: int = Field(3, validation_alias=AliasChoices("LLM_MAX_CONCURRENCY", "DEEPSEEK_MAX_CONCURRENCY"))  # 批次并发度
 

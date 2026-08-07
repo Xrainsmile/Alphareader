@@ -242,6 +242,43 @@ SYSTEM_PROMPT_EN_TRANSLATE = """你是中英金融翻译。输入为已通过评
 所有字段必填。"""
 
 
+# ── P1：英文单阶段实验（评分 + 条件翻译，一次调用）──
+# 评分指令完全复用 SYSTEM_PROMPT_EN_SCORE（两阶段阶段一）的「评分/时效」段，
+# 确保两方案评分口径一致、可比；仅把翻译并入同一 prompt，并按下述规则分档输出，
+# 省去对 ≥6 条目的二次调用与对 <6 条目的翻译 token。
+# 构造期从 SYSTEM_PROMPT_EN_SCORE 切出评分段（"## 输出" 之前），避免两处文案漂移。
+_SYSTEM_PROMPT_EN_SINGLE_SCORE_HEAD = (
+    SYSTEM_PROMPT_EN_SCORE.split("## 输出")[0]
+    .replace(
+        "你是财经新闻分析师。仅评估每条英文新闻的投资参考价值，不做标题或摘要翻译。",
+        "你是财经新闻分析师兼中英金融翻译。评估每条英文新闻的投资参考价值，"
+        "并（仅对 score>=6 的命中条目）生成简体中文标题、摘要与投资意义。",
+    )
+    .rstrip()
+)
+_SYSTEM_PROMPT_EN_SINGLE_TRANSLATE = (
+    "## 翻译\n\n"
+    "chinese_title ≤30字，chinese_summary ≤80字，以简体中文为主体；公司名用通行中文译名，"
+    "无通行译名的品牌、型号及金融缩写可保留英文。专业表达：Beat=超预期，Miss=不及预期，"
+    "Guidance=业绩指引，Revenue=营收，Buyback=回购，Yield=收益率。"
+    "标题过短时可依据可见正文生成描述性标题。\n\n"
+)
+SYSTEM_PROMPT_EN_SINGLE = (
+    _SYSTEM_PROMPT_EN_SINGLE_SCORE_HEAD
+    + "\n\n"
+    + _SYSTEM_PROMPT_EN_SINGLE_TRANSLATE
+    + "## 输出\n\n"
+    "只返回合法 JSON 数组，禁止 Markdown、解释或思考过程。每条输入对应一条输出，"
+    "原样返回输入 id，禁止遗漏、重复或重新编号。\n\n"
+    "先独立定分（严禁为减少输出而压低分数），再按下列规则只输出该档字段，不得多输出：\n\n"
+    "- score < 6：id、score（仅此两字段，不翻译、不生成标签）\n"
+    "- score >= 6：id、score、chinese_title、chinese_summary、why_it_matters、tags、is_highlight\n\n"
+    "score 为0—10整数；why_it_matters ≤40字，说明对盈利、估值、供需、政策或市场预期的具体影响；"
+    "tags 为3—5个中文标签，可为空数组；is_highlight 仅当 score>=8 且催化已确认、含量化依据、"
+    "进展在7天内、来源可靠时为 true。"
+)
+
+
 # ═══════════════════════════════════════════════════════════════
 # 语言 / 中文占比 / ticker 校验工具（P0 ⑦⑧⑨）
 # ═══════════════════════════════════════════════════════════════
@@ -1330,6 +1367,55 @@ async def _score_en_two_stage(
     return result
 
 
+async def _score_en_single_stage(
+    batch: list[RawNewsItem],
+    client: httpx.AsyncClient,
+) -> BatchResult:
+    """P1 实验：英文单阶段——一次调用同时完成评分（与 score>=6 条目的翻译）。
+
+    与两阶段阶段一使用完全相同的评分指令（SYSTEM_PROMPT_EN_SINGLE 复用
+    SYSTEM_PROMPT_EN_SCORE 的评分段），仅对 score>=6 的条目返回中文
+    title/summary/why_it_matters/tags/is_highlight；score<6 仅返回 id+score，
+    省去二次调用与低分条目翻译 token。
+
+    Content Risk 处理与两阶段一致：触发即二分隔离（用单阶段 prompt）。
+    """
+    result = await _score_batch_once(
+        batch, is_english=True, client=client, system_prompt=SYSTEM_PROMPT_EN_SINGLE,
+    )
+
+    if result.status == "content_risk":
+        bisect_enabled = getattr(settings, "LLM_CONTENT_RISK_BISECT_ENABLED", True)
+        if not bisect_enabled or len(batch) == 1:
+            logger.warning(
+                "⚠️ [single-stage] EN content risk — dropping batch of %d", len(batch),
+            )
+            return BatchResult(
+                scored=[],
+                status="content_risk",
+                content_risk_dropped=len(batch),
+                raw_response=result.raw_response,
+            )
+        logger.warning(
+            "⚠️ [single-stage] EN content risk — bisecting batch of %d", len(batch),
+        )
+        result = await _bisect_content_risk(
+            batch, is_english=True, client=client, depth=0,
+            system_prompt=SYSTEM_PROMPT_EN_SINGLE,
+        )
+        logger.info(
+            "✅ [single-stage] EN bisect done: scored=%d, dropped=%d / %d",
+            len(result.scored), result.content_risk_dropped, len(batch),
+        )
+
+    translated_count = sum(1 for si in result.scored if si.chinese_title or si.summary)
+    logger.info(
+        "[single-stage] EN batch done: scored=%d, translated=%d",
+        len(result.scored), translated_count,
+    )
+    return result
+
+
 async def filter_batch_detailed(
     batch: list[RawNewsItem],
     is_english: bool = False,
@@ -1363,7 +1449,10 @@ async def filter_batch_detailed(
         client = httpx.AsyncClient(timeout=90.0)
 
     try:
-        # P3 ②：英文两阶段评分
+        # P1：英文单阶段实验（A/B 达标后再切换）；默认关闭，保持两阶段现状
+        if is_english and getattr(settings, "LLM_EN_SINGLE_STAGE_EXPERIMENT", False):
+            return await _score_en_single_stage(batch, client)
+        # P3 ②：英文两阶段评分（默认）
         two_stage_en = getattr(settings, "LLM_TWO_STAGE_EN_ENABLED", True)
         if is_english and two_stage_en:
             return await _score_en_two_stage(batch, client)
