@@ -7,7 +7,13 @@
  * 3. html2canvas 截图并触发浏览器下载。
  *
  * 仅 H5 可用（依赖 DOM / Canvas / 下载），其他端调用方应提前拦截。
+ *
+ * 注意：html2canvas/qrcode 用静态 import——uni 构建对动态 import() 的
+ * chunk 路径处理有缺陷（运行时生成非法相对 specifier 导致加载失败）。
  */
+
+import html2canvas from 'html2canvas'
+import QRCode from 'qrcode'
 
 const SITE_BASE = 'https://www.alphareader.site'
 
@@ -37,11 +43,6 @@ export async function exportDigestImage(item) {
   if (!canExportImage()) {
     throw new Error('当前环境不支持导出，请使用浏览器打开')
   }
-  const [{ default: html2canvas }, QRCode] = await Promise.all([
-    import('html2canvas'),
-    import('qrcode'),
-  ])
-
   // 1. 找到页面上的简报卡片并克隆
   const host = document.getElementById(`digest-${item.id}`)
   const card = host && host.querySelector('.digest-card')
