@@ -783,7 +783,13 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
     )
     # 写入事件链接（下一份简报的对比基准）
     if digest_id:
-        await _save_event_links(digest_id, structured, events, prev_links)
+        try:
+            await _save_event_links(digest_id, structured, events, prev_links)
+        except Exception:
+            # links 仅作跨简报对比的辅助簿记，其失败绝不应阻断推送
+            logger.exception(
+                "Event links save failed for digest %s — pushing anyway", digest_id
+            )
         # 推送到企微群机器人（ALERT_WEBHOOK_URL）
         await _push_digest_to_wecom(digest_id, structured, period_label)
 
@@ -908,6 +914,25 @@ async def _save_event_links(
     rows = deduped
 
     async with async_session() as db:
+        # FK 防御（P4 后 event_id → events.id）：候选含未合成的新闻根（无 events 行），
+        # 直接插入会违反 fk_digest_event_links_event_id 导致整份简报推送失败。
+        # 过滤为 events 中真实存在的 id；被跳过的多为未合成单源根（无版本信息，
+        # 链接价值有限），不影响简报本体与推送。
+        ids = [row.event_id for row in rows]
+        if ids:
+            existing = set(
+                (await db.execute(
+                    select(Event.id).where(Event.id.in_(ids))
+                )).scalars().all()
+            )
+            kept = [row for row in rows if row.event_id in existing]
+            if len(kept) < len(rows):
+                logger.info(
+                    "Event links: %d/%d entries skipped (no events row, "
+                    "unsynthesized roots), digest %s",
+                    len(rows) - len(kept), len(rows), digest_id,
+                )
+            rows = kept
         await db.execute(
             DigestEventLink.__table__.delete().where(
                 DigestEventLink.digest_id == digest_id
