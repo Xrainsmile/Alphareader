@@ -111,27 +111,130 @@ let _stylesInjected = false
 function _injectExportStyles() {
   if (_stylesInjected) return
   _stylesInjected = true
+  // 图片专用排版皮肤：覆盖克隆节点继承的网页样式（网页为屏幕阅读优化，
+  // 分享图需要更大的字号行距与更清晰的视觉层次）。选择器以
+  // .digest-export-wrapper 开头提升优先级，与设备无关、输出恒定。
   const css = `
   .digest-export-wrapper {
     position: fixed; left: -10000px; top: 0;
-    width: 750px; padding: 32px; box-sizing: border-box;
-    background: #f2f3f5;
+    width: 750px; padding: 36px; box-sizing: border-box;
+    background: #eef1f5;
     font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
   }
-  .digest-export-wrapper .digest-card { margin: 0; }
+
+  /* ── 主卡片：白卡 + 顶部品牌渐变条 ── */
+  .digest-export-wrapper .digest-card {
+    margin: 0; padding: 0 36px 32px; border: none; border-radius: 20px;
+    background: #ffffff; box-shadow: 0 2px 14px rgba(15, 23, 42, 0.06);
+    overflow: hidden;
+  }
+  .digest-export-wrapper .digest-card::before {
+    content: ''; display: block; height: 6px;
+    margin: 0 -36px 28px;
+    background: linear-gradient(90deg, #4285f4, #1677ff);
+  }
+
+  /* ── 头部：大标题 + 时间范围 + 统计胶囊 ── */
+  .digest-export-wrapper .dc-head {
+    flex-direction: column; align-items: flex-start; gap: 8px;
+  }
+  .digest-export-wrapper .dc-title {
+    font-size: 34px; font-weight: 800; color: #111827; letter-spacing: 1px;
+  }
+  .digest-export-wrapper .dc-range { font-size: 14px; color: #9ca3af; }
+  .digest-export-wrapper .dc-stats { margin-top: 12px; gap: 10px; }
+  .digest-export-wrapper .dc-stat {
+    font-size: 13px; font-weight: 600; color: #1677ff;
+    background: rgba(66, 133, 244, 0.08); border-radius: 999px;
+    padding: 5px 14px;
+  }
+  .digest-export-wrapper .dc-sep { display: none; }
+
+  /* ── 区块标题：品牌色左条，区块间距拉开 ── */
+  .digest-export-wrapper .dc-section { margin-top: 30px; }
+  .digest-export-wrapper .dc-section-title {
+    display: block; font-size: 17px; font-weight: 700; color: #111827;
+    line-height: 1.3; padding-left: 12px; border-left: 4px solid #4285f4;
+    margin-bottom: 14px;
+  }
+
+  /* ── 时段概览：浅灰底信息块 ── */
+  .digest-export-wrapper .dc-overview {
+    background: #f8fafc; border-radius: 14px; padding: 18px 20px;
+  }
+  .digest-export-wrapper .dc-overview-text {
+    font-size: 15px; line-height: 1.85; color: #374151;
+  }
+  .digest-export-wrapper .dc-change { margin-top: 12px; }
+  .digest-export-wrapper .dc-change-text {
+    font-size: 15px; line-height: 1.8; color: #374151;
+  }
+
+  /* ── 核心变化 ── */
+  .digest-export-wrapper .dc-core-item { margin-top: 12px; }
+  .digest-export-wrapper .dc-core-dot { color: #4285f4; font-size: 18px; }
+  .digest-export-wrapper .dc-core-text {
+    font-size: 15px; font-weight: 600; color: #1f2937; line-height: 1.65;
+  }
+  .digest-export-wrapper .dc-core-summary {
+    font-size: 14px; color: #6b7280; line-height: 1.75; margin-top: 4px;
+  }
+
+  /* ── 必须知道：浅灰子卡片 + 品牌色编号 ── */
+  .digest-export-wrapper .dc-mk {
+    background: #f8fafc; border: none; border-radius: 14px;
+    padding: 16px 18px; margin-top: 12px;
+  }
+  .digest-export-wrapper .dc-mk-rank {
+    font-size: 19px; font-weight: 800; color: #4285f4; min-width: 34px;
+    line-height: 1.5;
+  }
+  .digest-export-wrapper .dc-mk-title {
+    font-size: 16px; font-weight: 700; color: #111827; line-height: 1.55;
+  }
+  .digest-export-wrapper .dc-conf {
+    border-radius: 999px; padding: 2px 10px; font-size: 11px; font-weight: 600;
+  }
+  .digest-export-wrapper .dc-mk-change {
+    font-size: 14px; color: #4b5563; line-height: 1.8; margin-top: 8px;
+  }
+  .digest-export-wrapper .dc-mk-impact,
+  .digest-export-wrapper .dc-mk-watch {
+    font-size: 13px; color: #6b7280; line-height: 1.75; margin-top: 6px;
+  }
+
+  /* ── 值得留意 / 持续关注 ── */
+  .digest-export-wrapper .dc-watch { margin-top: 10px; }
+  .digest-export-wrapper .dc-watch-bullet { color: #c3cad3; }
+  .digest-export-wrapper .dc-watch-text {
+    font-size: 14px; color: #4b5563; line-height: 1.75;
+  }
+  .digest-export-wrapper .dc-watch-note { color: #9ca3af; }
+
+  /* ── 接下来关注 ── */
+  .digest-export-wrapper .dc-upcoming { margin-top: 10px; }
+  .digest-export-wrapper .dc-upcoming-time {
+    font-size: 12px; color: #1677ff; background: rgba(66, 133, 244, 0.08);
+    border-radius: 6px; padding: 2px 8px; margin-right: 8px;
+  }
+  .digest-export-wrapper .dc-upcoming-text {
+    font-size: 14px; color: #4b5563; line-height: 1.75;
+  }
+
+  /* ── 底部品牌栏 ── */
   .digest-export-footer {
     display: flex; align-items: center; justify-content: space-between;
-    margin-top: 20px; padding: 20px 24px;
-    background: #ffffff; border-radius: 16px;
-    border: 1px solid #eef0f2;
+    margin-top: 24px; padding: 24px 28px;
+    background: #ffffff; border-radius: 20px; border: none;
+    box-shadow: 0 2px 14px rgba(15, 23, 42, 0.06);
   }
-  .digest-export-brand { display: flex; align-items: center; gap: 14px; }
-  .digest-export-logo { width: 44px; height: 44px; border-radius: 10px; }
-  .digest-export-brand-text { display: flex; flex-direction: column; gap: 4px; }
-  .digest-export-site { font-size: 17px; font-weight: 700; color: #1f2329; }
+  .digest-export-brand { display: flex; align-items: center; gap: 16px; }
+  .digest-export-logo { width: 48px; height: 48px; border-radius: 11px; }
+  .digest-export-brand-text { display: flex; flex-direction: column; gap: 5px; }
+  .digest-export-site { font-size: 18px; font-weight: 800; color: #111827; letter-spacing: 0.5px; }
   .digest-export-date { font-size: 13px; color: #9ca3af; }
-  .digest-export-qr { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  .digest-export-qr-img { width: 84px; height: 84px; }
+  .digest-export-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .digest-export-qr-img { width: 92px; height: 92px; }
   .digest-export-qr-tip { font-size: 12px; color: #9ca3af; }
   `
   const style = document.createElement('style')
