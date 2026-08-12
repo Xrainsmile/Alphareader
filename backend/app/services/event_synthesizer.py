@@ -31,7 +31,7 @@ from app.config import settings
 from app.database import async_session
 from app.services import event_memory
 from app.services.notifier import send_report
-from app.services.prefilter import is_official_source
+from app.services.prefilter import is_official_source, DEFAULT_OFFICIAL_NAMES
 from app.utils.event_signals import compute_event_signals
 from app.utils.llm_usage import log_llm_usage
 
@@ -229,15 +229,25 @@ def _parse_llm_response(raw: str) -> dict | None:
 
 
 async def _find_candidate_clusters(
-    window_hours: int, min_sources: int, max_events: int
+    window_hours: int, min_sources: int, max_events: int,
+    fast_ai_threshold: int = 8,
 ) -> list[dict]:
     """找出窗口内「有新关联报道、且需要（重新）合成」的事件簇。
 
     fresh = 窗口内有新子报道的根（触发条件）；
     agg   = 全量子报道统计（合成输入 + 增量判断基数 + 独立信源数）。
     增量判断必须比「全量报道总数」而非「窗口内新增数」。
+
+    合成门槛（满足任一即可）：普通多源 ≥ min_sources，或 fast path——
+    重大单一信源公告（权威一手来源 / ai_score ≥ fast_ai_threshold / is_highlight），
+    让美联储公告、SEC 文件、财报、交易所公告等仅单源的重要事件也能即时合成，
+    后续信源继续更新版本。fast_track 事件在 ORDER BY 中优先于普通多源，避免被 LIMIT 截断。
     """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+    # 权威/一手信源名称（与 prefilter.is_official_source 的 name 分支一致），
+    # 用于 SQL 层对根来源做 ILIKE 匹配，识别单源重大公告。
+    official_names = settings.PREFILTER_OFFICIAL_SOURCES or DEFAULT_OFFICIAL_NAMES
+    official_patterns = [f"%{n}%" for n in official_names]
     sql = text("""
         WITH fresh AS (
             SELECT DISTINCT related_to_id AS pid
@@ -268,19 +278,33 @@ async def _find_candidate_clusters(
         )
         SELECT p.id, p.title, p.source, p.ai_summary, p.ai_score,
                p.catalyst_type, p.created_at, p.published_at,
-               p.event_title, p.event_summary, p.event_latest_change,
-               p.event_version, p.event_article_count, p.is_highlight,
-               p.event_last_alerted_version,
-               (p.event_embedding IS NOT NULL
-                AND p.event_embedding_model = :emb_tag) AS has_embedding,
-               a.child_cnt, a.event_source_cnt, a.children
+               e.title AS event_title,
+               e.summary AS event_summary,
+               e.latest_change AS event_latest_change,
+               e.version AS event_version,
+               e.article_count AS event_article_count,
+               p.is_highlight,
+               e.last_alerted_version AS event_last_alerted_version,
+               (e.embedding IS NOT NULL
+                AND e.embedding_model = :emb_tag) AS has_embedding,
+               a.child_cnt, a.event_source_cnt, a.children,
+               ( (a.child_cnt + 1) >= :min_sources
+                 OR p.is_highlight = TRUE
+                 OR (p.ai_score IS NOT NULL AND p.ai_score >= :fast_ai_threshold)
+                 OR p.source ILIKE ANY(:official_patterns)
+               ) AS fast_track
         FROM news p
         JOIN fresh f ON f.pid = p.id
         JOIN agg a ON a.pid = p.id
+        LEFT JOIN events e ON p.event_id = e.id
         WHERE p.related_to_id IS NULL
-          AND (a.child_cnt + 1) >= :min_sources
-          AND (p.event_article_count IS NULL OR (a.child_cnt + 1) > p.event_article_count)
-        ORDER BY a.child_cnt DESC, p.ai_score DESC
+          AND (e.article_count IS NULL OR (a.child_cnt + 1) > COALESCE(e.article_count, 0))
+          AND ( (a.child_cnt + 1) >= :min_sources
+             OR p.is_highlight = TRUE
+             OR (p.ai_score IS NOT NULL AND p.ai_score >= :fast_ai_threshold)
+             OR p.source ILIKE ANY(:official_patterns)
+              )
+        ORDER BY fast_track DESC, a.child_cnt DESC, p.ai_score DESC
         LIMIT :max_events
     """)
     async with async_session() as session:
@@ -290,6 +314,8 @@ async def _find_candidate_clusters(
                 "cutoff": cutoff,
                 "min_sources": min_sources,
                 "max_events": max_events,
+                "fast_ai_threshold": fast_ai_threshold,
+                "official_patterns": official_patterns,
                 "emb_tag": event_memory.embedding_tag(),
             },
         )
@@ -361,6 +387,7 @@ def _build_update_params(cluster: dict, parsed: dict) -> dict:
         watch_next_text=parsed.get("watch_next") or "",
         has_material_update=parsed["has_material_update"],
         outcome_type=parsed.get("outcome_type") or "",
+        has_official_source=_cluster_has_official_source(cluster),
     )
     for _k, _v in signals.items():
         params[f"event_{_k}"] = _v
@@ -390,8 +417,52 @@ _UPDATE_SQL = text("""
         event_urgency = COALESCE(:event_urgency, event_urgency),
         event_confidence = COALESCE(:event_confidence, event_confidence),
         event_relevance = COALESCE(:event_relevance, event_relevance),
-        event_last_updated_at = CASE WHEN :material THEN :now ELSE event_last_updated_at END
+        event_last_updated_at = CASE WHEN :material THEN :now ELSE event_last_updated_at END,
+        event_id = :id
     WHERE id = :id
+""")
+
+# 长期方案 P3：事件写回主表 events（与 news 双写，P4 翻 reader 后 P5 去镜像）。
+# 用 UPSERT：① P1b 已回填的历史根直接 UPDATE；② P1b 之后新产生的事件根
+# 在 events 中尚无行，必须 INSERT（否则 event_versions 的 FK 指向 events.id 会违例）。
+# INSERT 分支用 EXCLUDED 全量值；ON CONFLICT 分支用 COALESCE 保留旧值（None=不更新）。
+_UPSERT_EVENT_SQL = text("""
+    INSERT INTO events (
+        id, article_count, source_count, title, summary, latest_change,
+        why_important, uncertainty, watch_next, status, version,
+        first_seen_at, outcome_type, final_outcome, watch_result,
+        resolved_at, duration_hours,
+        impact, novelty, urgency, confidence, relevance, last_updated_at
+    ) VALUES (
+        :id, :article_count, :source_count, :title, :summary, :latest_change,
+        :why_important, :uncertainty, :watch_next, :status, :version,
+        :first_seen_at, :outcome_type, :final_outcome, :watch_result,
+        :resolved_at, :duration_hours,
+        :impact, :novelty, :urgency, :confidence, :relevance, :now
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        article_count = EXCLUDED.article_count,
+        source_count = EXCLUDED.source_count,
+        title = COALESCE(EXCLUDED.title, events.title),
+        summary = COALESCE(EXCLUDED.summary, events.summary),
+        latest_change = COALESCE(EXCLUDED.latest_change, events.latest_change),
+        why_important = COALESCE(EXCLUDED.why_important, events.why_important),
+        uncertainty = COALESCE(EXCLUDED.uncertainty, events.uncertainty),
+        watch_next = COALESCE(EXCLUDED.watch_next, events.watch_next),
+        status = COALESCE(EXCLUDED.status, events.status),
+        version = COALESCE(EXCLUDED.version, events.version),
+        first_seen_at = COALESCE(EXCLUDED.first_seen_at, events.first_seen_at),
+        outcome_type = COALESCE(EXCLUDED.outcome_type, events.outcome_type),
+        final_outcome = COALESCE(EXCLUDED.final_outcome, events.final_outcome),
+        watch_result = COALESCE(EXCLUDED.watch_result, events.watch_result),
+        resolved_at = COALESCE(EXCLUDED.resolved_at, events.resolved_at),
+        duration_hours = COALESCE(EXCLUDED.duration_hours, events.duration_hours),
+        impact = COALESCE(EXCLUDED.impact, events.impact),
+        novelty = COALESCE(EXCLUDED.novelty, events.novelty),
+        urgency = COALESCE(EXCLUDED.urgency, events.urgency),
+        confidence = COALESCE(EXCLUDED.confidence, events.confidence),
+        relevance = COALESCE(EXCLUDED.relevance, events.relevance),
+        last_updated_at = CASE WHEN :material THEN :now ELSE events.last_updated_at END
 """)
 
 _INSERT_VERSION_SQL = text("""
@@ -510,7 +581,16 @@ async def _synthesize_one(
         "event_confidence": params.get("event_confidence"),
         "event_relevance": params.get("event_relevance"),
     }
+    # 长期方案 P3：events 主表用「去 event_ 前缀」的同义字段，UPSERT 建/更新事件行。
+    # 排除非列字段（is_first 仅用于分支判断），其余 event_* 去前缀即对齐 events 列。
+    evt_row = {
+        (k[len("event_"):] if k.startswith("event_") else k): v
+        for k, v in params.items()
+        if k != "is_first"
+    }
     async with async_session() as session:
+        # 先 UPSERT events（保证 event_versions 的 FK 指向 events.id 成立），再写 news 镜像
+        await session.execute(_UPSERT_EVENT_SQL, evt_row)
         await session.execute(_UPDATE_SQL, row)
         if params["material"]:
             await session.execute(_INSERT_VERSION_SQL, row)
@@ -609,6 +689,7 @@ async def synthesize_events() -> dict:
         window_hours=settings.EVENT_SYNTH_WINDOW_HOURS,
         min_sources=settings.EVENT_SYNTH_MIN_SOURCES,
         max_events=settings.EVENT_SYNTH_MAX_EVENTS,
+        fast_ai_threshold=settings.EVENT_SYNTH_FAST_AI_THRESHOLD,
     )
     if not clusters:
         return {"enabled": True, "candidates": 0, "synthesized": 0}
@@ -633,13 +714,20 @@ async def synthesize_events() -> dict:
     if alerts and settings.EVENT_ALERT_ENABLED:
         alerts.sort(key=lambda a: a["ai_score"], reverse=True)
         top = alerts[: settings.EVENT_ALERT_MAX_ITEMS]
-        text = _build_major_event_alert_text(top, len(alerts))
+        alert_text = _build_major_event_alert_text(top, len(alerts))
         try:
             async with async_session() as session:
                 for a in top:
+                    # 长期方案 P3：news 镜像 + events 主表双写去重版本
                     await session.execute(
                         text(
                             "UPDATE news SET event_last_alerted_version = :v WHERE id = :id"
+                        ),
+                        {"v": a["version"], "id": a["event_id"]},
+                    )
+                    await session.execute(
+                        text(
+                            "UPDATE events SET last_alerted_version = :v WHERE id = :id"
                         ),
                         {"v": a["version"], "id": a["event_id"]},
                     )
@@ -647,7 +735,7 @@ async def synthesize_events() -> dict:
         except Exception as e:  # 去重落库失败不影响提醒本身
             logger.warning("Failed to record event alert versions: %s", e)
         try:
-            await send_report(text)
+            await send_report(alert_text)
         except Exception as e:
             logger.warning("Failed to send major-event alert: %s", e)
 
@@ -741,6 +829,18 @@ _AUTO_STABLE_SQL = text("""
       AND COALESCE(event_last_updated_at, created_at) < :cutoff
 """)
 
+# 长期方案 P3：events 主表镜像（P4 翻 reader 后此镜像可去）
+_AUTO_STABLE_EVENT_SQL = text("""
+    UPDATE events
+    SET status = 'stable'
+    WHERE id IN (
+        SELECT event_id FROM news
+        WHERE related_to_id IS NULL
+          AND event_status = 'developing'
+          AND COALESCE(event_last_updated_at, created_at) < :cutoff
+    )
+""")
+
 
 async def auto_stabilize_events() -> dict:
     """每日维护：developing 且无实质更新超 EVENT_STABLE_AFTER_HOURS 的事件 → stable。
@@ -753,6 +853,7 @@ async def auto_stabilize_events() -> dict:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=settings.EVENT_STABLE_AFTER_HOURS)
     async with async_session() as session:
         result = await session.execute(_AUTO_STABLE_SQL, {"cutoff": cutoff})
+        await session.execute(_AUTO_STABLE_EVENT_SQL, {"cutoff": cutoff})
         await session.commit()
         updated = result.rowcount or 0
     logger.info(

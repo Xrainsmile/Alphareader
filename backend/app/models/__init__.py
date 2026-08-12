@@ -18,6 +18,7 @@ __all__ = [
     "DailyBriefing",
     "DigestEventLink",
     "EventVersion",
+    "Event",
     "News", "NewsDigest", "Report",
     "SandboxStock", "SandboxAnalysis", "SandboxTrade", "SandboxNav",
     "ScreenerRun", "TrendScreenerRun", "WatchlistDaily", "TrendWatchlistDaily",

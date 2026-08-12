@@ -26,10 +26,10 @@ class EventVersion(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # 所属事件（= news 表的聚合根 id）
+    # 所属事件（= events.id，P2 起重定向，删除 news 根不再级联抹版本）
     event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("news.id", ondelete="CASCADE"),
+        ForeignKey("events.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

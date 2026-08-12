@@ -695,3 +695,61 @@ class TestMajorEventAlert:
         assert "宣布超预期降息50bp" in text
         assert "评分 9" in text
         assert "alphareader.site" in text
+
+
+# ── 候选查询 fast path（重大单一信源可绕过 min_sources 门槛）──
+
+
+class TestCandidateFastPath:
+    """验证 _find_candidate_clusters 的 SQL 已编入 fast path 条件。
+
+    不依赖真实 DB：mock 掉 async_session，仅捕获生成的 SQL 文本与绑定参数，
+    断言权威单源 / 高 ai_score / highlight 可绕过 min_sources，且 fast_track 标记
+    用于优先排序（避免被 LIMIT 截断）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_fast_path_wired_into_sql(self):
+        from app.services import event_synthesizer as es
+        from app.services.prefilter import DEFAULT_OFFICIAL_NAMES
+
+        captured = {}
+
+        sess = AsyncMock()
+        # 捕获实际执行的 SQL 文本与参数
+        def _execute(sql_clause, params):
+            captured["sql"] = str(sql_clause)
+            captured["params"] = params
+            # 返回一个空结果集（映射为空），函数仅消费 mappings()
+            res = MagicMock()
+            res.mappings.return_value.all.return_value = []
+            return res
+        sess.execute = _execute
+        cm = AsyncMock()
+        cm.__aenter__.return_value = sess
+        cm.__aexit__.return_value = False
+
+        with patch.object(es, "async_session", cm), \
+             patch.object(es.settings, "PREFILTER_OFFICIAL_SOURCES", ["SEC", "美联储"]):
+            await es._find_candidate_clusters(
+                window_hours=12, min_sources=2, max_events=10, fast_ai_threshold=8
+            )
+
+        sql = captured["sql"]
+        params = captured["params"]
+
+        # 1) 原门槛仍为 OR 分支之一
+        assert ":min_sources" in params
+        # 2) fast path 三个条件均已编入查询
+        assert "p.is_highlight = TRUE" in sql
+        assert ":fast_ai_threshold" in params
+        assert "p.ai_score >= :fast_ai_threshold" in sql
+        assert "ILIKE ANY(:official_patterns)" in sql
+        # 3) fast_track 标记用于 SELECT 且排在 ORDER BY 首位（优先于普通多源）
+        assert "fast_track" in sql
+        order_by = sql[sql.upper().index("ORDER BY"):]
+        assert order_by.strip().startswith("ORDER BY fast_track DESC")
+        # 4) 官方信源名称被编译进绑定参数（用于 name 分支匹配）
+        assert params["official_patterns"] == ["%SEC%", "%美联储%"]
+        # 默认名单未被意外清空
+        assert "Federal Reserve" in DEFAULT_OFFICIAL_NAMES

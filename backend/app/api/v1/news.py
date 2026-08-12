@@ -345,8 +345,9 @@ async def hot_topics(
     WITH parents AS (
         SELECT n.id, n.title, n.source, n.url, n.ai_score, n.ai_summary,
                n.tags, n.published_at, n.created_at, n.why_it_matters, n.is_highlight,
-               n.event_title, n.event_summary
+               e.title AS event_title, e.summary AS event_summary
         FROM news n
+        LEFT JOIN events e ON n.event_id = e.id
         WHERE {' AND '.join(conditions)}
     ),
     child_agg AS (

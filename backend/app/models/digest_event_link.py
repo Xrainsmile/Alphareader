@@ -31,7 +31,7 @@ class DigestEventLink(Base):
         nullable=False, index=True,
     )
     event_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("news.id", ondelete="CASCADE"),
+        UUID(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
     # 收录时的事件版本（与 event_versions 对齐；未合成事件为 None）

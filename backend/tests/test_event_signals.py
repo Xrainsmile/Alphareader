@@ -55,6 +55,57 @@ def test_confidence_rises_without_uncertainty_and_more_sources():
     assert multi["confidence"] > clean["confidence"]
 
 
+def test_single_ordinary_source_no_longer_overconfident():
+    # 回归防护：单一普通媒体、无 uncertainty、无官方确认 → 应取基线 4，
+    # 不能凭"未写 uncertainty"白送到 8（旧实现的系统虚高）。
+    s = event_signals.compute_event_signals(
+        ai_score=7, status="developing", source_count=1
+    )
+    assert s["confidence"] == 4
+
+
+def test_official_source_boosts_confidence():
+    base = event_signals.compute_event_signals(
+        ai_score=7, status="developing", source_count=1
+    )
+    official = event_signals.compute_event_signals(
+        ai_score=7, status="developing", source_count=1, has_official_source=True
+    )
+    assert official["confidence"] == base["confidence"] + 3
+
+
+def test_source_count_tiers():
+    one = event_signals.compute_event_signals(
+        ai_score=7, status="developing", source_count=1
+    )
+    two = event_signals.compute_event_signals(
+        ai_score=7, status="developing", source_count=2
+    )
+    three = event_signals.compute_event_signals(
+        ai_score=7, status="developing", source_count=3
+    )
+    # 2 源 +1、3+ 源 +2（互斥取高，而非叠加）
+    assert two["confidence"] == one["confidence"] + 1
+    assert three["confidence"] == one["confidence"] + 2
+    assert three["confidence"] == two["confidence"] + 1
+
+
+def test_penalties_lower_confidence():
+    base = event_signals.compute_event_signals(
+        ai_score=7, status="developing", source_count=4, has_official_source=True
+    )
+    anon = event_signals.compute_event_signals(
+        ai_score=7, status="developing", source_count=4, has_official_source=True,
+        has_anonymous_source=True,
+    )
+    conflict = event_signals.compute_event_signals(
+        ai_score=7, status="developing", source_count=4, has_official_source=True,
+        has_source_conflict=True,
+    )
+    assert anon["confidence"] == base["confidence"] - 2
+    assert conflict["confidence"] == base["confidence"] - 2
+
+
 def test_resolved_confirmed_is_high_confidence():
     s = event_signals.compute_event_signals(
         ai_score=7, status="resolved", outcome_type="confirmed", source_count=4

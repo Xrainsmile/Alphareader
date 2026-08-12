@@ -12,7 +12,7 @@ News 排序却未必靠前。
   - impact     本轮变化是否重大（重要性）
   - novelty    本轮变化是否新鲜 / 是否仍在演进（新颖度）
   - urgency    当前紧迫性
-  - confidence 确定性（含"是否存在官方确认"：多信源交叉验证 / resolved+confirmed）
+  - confidence 确定性（官方原始来源 / 多源交叉验证 / 明确量化证据，低基线防虚高）
   - relevance  用户是否需要行动
 """
 
@@ -54,6 +54,10 @@ def compute_event_signals(
     watch_next_text: str = "",
     has_material_update: bool = False,
     outcome_type: str = "",
+    has_official_source: bool = False,
+    has_quantified_evidence: bool = False,
+    has_anonymous_source: bool = False,
+    has_source_conflict: bool = False,
 ) -> dict:
     """由既有字段与程序规则计算 5 个事件级排序信号（每项 0-10）。
 
@@ -84,18 +88,29 @@ def compute_event_signals(
     if has_watch:
         urgency += 1.5
 
-    # ── confidence：确定性（是否存在官方确认）──
-    # 起点 5；明确陈述了不确定性 → 下调；多信源交叉验证 → 上调；
-    # 已 resolved（有结论）→ 至少 8；confirmed 结局再 +1。
-    confidence = 5.0
-    if has_uncertainty:
-        confidence -= 3.0
-    else:
+    # ── confidence：确定性（官方原始来源 / 多源交叉验证 / 量化证据）──
+    # 基线 4：普通单源、无额外证据即中性偏低，不再凭"没有写 uncertainty"白送高分。
+    #   官方原始来源        +3
+    #   2 个独立可靠来源    +1   （与 3+ 互斥，取高）
+    #   3+ 独立来源         +2
+    #   明确量化证据         +1
+    #   不确定性 / 匿名消息 / 信源冲突  各 -2
+    #   已 resolved → 至少 8；confirmed 结局再 +1。
+    confidence = 4.0
+    if has_official_source:
         confidence += 3.0
-    if source_count >= 5:
+    if source_count >= 3:
         confidence += 2.0
-    elif source_count >= 3:
+    elif source_count >= 2:
         confidence += 1.0
+    if has_quantified_evidence:
+        confidence += 1.0
+    if has_uncertainty:
+        confidence -= 2.0
+    if has_anonymous_source:
+        confidence -= 2.0
+    if has_source_conflict:
+        confidence -= 2.0
     if status == "resolved":
         confidence = max(confidence, 8.0)
         if outcome_type == "confirmed":
@@ -148,8 +163,9 @@ def event_signal_sql() -> str:
     """PostgreSQL 表达式：由 5 个信号列计算 signal_boost（NULL 安全，封顶 3.0）。
 
     与 event_signal_boost() 语义一致，供 events.py 的 IMPORTANT 排序 ORDER BY 使用。
+    P4：信号从 events 表读取（events JOIN 已保证存在）。
     """
-    col = lambda name: f"COALESCE(event_{name}, 0)"
+    col = lambda name: f"COALESCE(events.{name}, 0)"
     weighted = (
         f"{_W_IMPACT} * {col('impact')}"
         f" + {_W_NOVELTY} * {col('novelty')}"

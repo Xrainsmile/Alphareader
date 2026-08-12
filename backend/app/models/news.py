@@ -97,6 +97,14 @@ class News(Base):
     event_relevance: Mapped[int | None] = mapped_column(Integer, nullable=True)   # 用户是否需要行动
     # 重大事件即时提醒去重：已为哪个 event_version 推送过提醒（避免重复推送同一版本）
     event_last_alerted_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # ── 长期方案：事件聚合根拆到独立 events 表后，news 仅持有外键 ──
+    # 过渡期（P1a→P5）event_* 字段仍保留在 news 上；回填迁移会把根+子报道的
+    # event_id 指向新建的 events.id。删除 news 根不再级联抹掉事件/版本/链接。
+    event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     # P5: 去重指纹——持久化到 DB，评分前加载 7 天历史用于跨天旧闻识别
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     simhash_fingerprint: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)

@@ -66,12 +66,24 @@
               <text class="dc-stat">{{ (sc(item).must_know || []).length }} 个必须知道</text>
             </view>
 
+            <!-- 时段概览 + 本期变化（阶段简报最有价值信息，优先呈现）-->
+            <view v-if="sc(item).period_summary || sc(item).what_changed" class="dc-section dc-overview">
+              <text v-if="sc(item).period_summary" class="dc-overview-text">{{ sc(item).period_summary }}</text>
+              <view v-if="sc(item).what_changed" class="dc-change">
+                <text class="dc-change-label">本期变化</text>
+                <text class="dc-change-text">{{ sc(item).what_changed }}</text>
+              </view>
+            </view>
+
             <!-- 核心变化（跨事件共同信号，一眼看本时段最重要变化）-->
             <view v-if="sc(item).cross_event_signals && sc(item).cross_event_signals.length" class="dc-section dc-core">
               <text class="dc-section-title">核心变化</text>
               <view v-for="(s, si) in sc(item).cross_event_signals" :key="si" class="dc-core-item">
                 <text class="dc-core-dot">•</text>
-                <text class="dc-core-text">{{ s.title }}</text>
+                <view class="dc-core-body">
+                  <text class="dc-core-text">{{ s.title }}</text>
+                  <text v-if="s.summary" class="dc-core-summary">{{ s.summary }}</text>
+                </view>
               </view>
             </view>
 
@@ -85,8 +97,13 @@
               >
                 <text class="dc-mk-rank">{{ String(ei + 1).padStart(2, '0') }}</text>
                 <view class="dc-mk-body">
-                  <text class="dc-mk-title">{{ e.title }}</text>
+                  <view class="dc-mk-headline">
+                    <text class="dc-mk-title">{{ e.title }}</text>
+                    <text v-if="e.confidence" class="dc-conf" :class="'dc-conf-' + e.confidence">{{ confLabel(e.confidence) }}</text>
+                  </view>
                   <text v-if="e.latest_change" class="dc-mk-change">{{ e.latest_change }}</text>
+                  <text v-if="e.why_important" class="dc-mk-impact">影响：{{ e.why_important }}</text>
+                  <text v-if="e.watch_next" class="dc-mk-watch">关注：{{ e.watch_next }}</text>
                   <view class="dc-mk-foot" @click.stop="goEventDetail(e.event_id)">
                     <text class="dc-mk-detail">查看详情 →</text>
                   </view>
@@ -189,18 +206,26 @@ function renderMd(md) {
 function sc(item) {
   return item && item.structured_content ? item.structured_content : {}
 }
+// 确定性标签：high/medium/low → 中文短标签（must_know 卡片展示）
+function confLabel(c) {
+  return { high: '高确定性', medium: '中等确定', low: '低确定性' }[c] || ''
+}
 // 持续关注 = 持续事件(ongoing_updates) + 此前关注暂无进展(quiet_topics)
 function ongoingList(item) {
   const s = sc(item)
   return [...(s.ongoing_updates || []), ...(s.quiet_topics || [])]
 }
-// 时段范围：08:30—12:15
+// 时段范围：08-11 18:30—08:30
 function formatPeriodRange(item) {
-  const fmt = (iso) => {
+  const fmtTime = (iso) => {
     const d = new Date(iso)
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
-  return `${fmt(item.period_start)}—${fmt(item.period_end)}`
+  const fmtDate = (iso) => {
+    const d = new Date(iso)
+    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  return `${fmtDate(item.period_start)} ${fmtTime(item.period_start)}—${fmtTime(item.period_end)}`
 }
 
 // 深链：从企微推送 ?id=<digest_id> 进入时，确保该简报在列表内、已展开，并滚动定位
@@ -497,6 +522,44 @@ onMounted(() => {
   display: block;
 }
 
+/* 时段概览 + 本期变化：阶段简报最有价值信息，置于卡片顶部 */
+.dc-overview {
+  background: var(--color-bg-brand-light, #eef4ff);
+  border-radius: 12rpx;
+  padding: 16rpx 20rpx;
+}
+.dc-overview-text {
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  display: block;
+}
+.dc-change {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  margin-top: 12rpx;
+  padding-top: 12rpx;
+  border-top: 1rpx solid var(--color-border-light, #e2e8f0);
+}
+.dc-change-label {
+  flex: none;
+  font-size: 22rpx;
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-brand, #4285f4);
+  border-radius: 8rpx;
+  padding: 3rpx 12rpx;
+  line-height: 1.5;
+  margin-top: 2rpx;
+}
+.dc-change-text {
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  font-weight: 600;
+}
+
 /* 核心变化：唯一强调色，浅底突出 */
 .dc-core {
   background: var(--color-bg-brand-light, #eef4ff);
@@ -509,12 +572,21 @@ onMounted(() => {
   gap: 10rpx;
   margin-top: 8rpx;
 }
-.dc-core-dot { color: var(--color-brand, #4285f4); font-weight: 700; line-height: 1.6; }
+.dc-core-dot { color: var(--color-brand, #4285f4); font-weight: 700; line-height: 1.6; flex: none; }
+.dc-core-body { flex: 1; min-width: 0; }
 .dc-core-text {
   font-size: 26rpx;
   color: var(--color-text-primary);
   line-height: 1.55;
   font-weight: 600;
+  display: block;
+}
+.dc-core-summary {
+  font-size: 23rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+  margin-top: 4rpx;
+  display: block;
 }
 
 /* 必须知道：编号体现优先级 */
@@ -536,18 +608,51 @@ onMounted(() => {
   min-width: 36rpx;
 }
 .dc-mk-body { flex: 1; min-width: 0; }
+.dc-mk-headline {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+}
 .dc-mk-title {
   font-size: 27rpx;
   font-weight: 600;
   color: var(--color-text-primary);
   line-height: 1.45;
   display: block;
+  flex: 1;
+  min-width: 0;
 }
+.dc-conf {
+  flex: none;
+  font-size: 20rpx;
+  font-weight: 600;
+  border-radius: 8rpx;
+  padding: 2rpx 10rpx;
+  line-height: 1.5;
+  margin-top: 4rpx;
+}
+.dc-conf-high { color: #0a7d3e; background: #e6f6ed; }
+.dc-conf-medium { color: #b07a00; background: #fdf2dc; }
+.dc-conf-low { color: #b23b3b; background: #fbe8e8; }
 .dc-mk-change {
   font-size: 24rpx;
   color: var(--color-text-secondary);
   line-height: 1.55;
   margin-top: 6rpx;
+  display: block;
+}
+.dc-mk-impact {
+  font-size: 24rpx;
+  color: var(--color-text-primary);
+  line-height: 1.55;
+  margin-top: 6rpx;
+  display: block;
+}
+.dc-mk-watch {
+  font-size: 23rpx;
+  color: var(--color-text-hint);
+  line-height: 1.55;
+  margin-top: 4rpx;
   display: block;
 }
 .dc-mk-foot { margin-top: 8rpx; }
@@ -600,9 +705,16 @@ onMounted(() => {
   .dc-stats { font-size: 13px; }
   .dc-section-title { font-size: 14px; }
   .dc-core-text { font-size: 15px; }
+  .dc-core-summary { font-size: 13px; }
+  .dc-overview-text { font-size: 15px; }
+  .dc-change-label { font-size: 13px; padding: 2px 8px; }
+  .dc-change-text { font-size: 15px; }
   .dc-mk-rank { font-size: 15px; min-width: 22px; }
   .dc-mk-title { font-size: 15px; }
   .dc-mk-change { font-size: 14px; }
+  .dc-mk-impact { font-size: 14px; }
+  .dc-mk-watch { font-size: 13px; }
+  .dc-conf { font-size: 12px; }
   .dc-mk-detail { font-size: 13px; }
   .dc-watch-text { font-size: 14px; }
   .dc-upcoming-text { font-size: 14px; }
@@ -704,9 +816,16 @@ onMounted(() => {
   .dc-stats { font-size: 16px; }
   .dc-section-title { font-size: 19px; }
   .dc-core-text { font-size: 19px; line-height: 1.7; }
+  .dc-core-summary { font-size: 16px; }
+  .dc-overview-text { font-size: 19px; line-height: 1.7; }
+  .dc-change-label { font-size: 15px; }
+  .dc-change-text { font-size: 19px; line-height: 1.7; }
   .dc-mk-rank { font-size: 19px; min-width: 28px; }
   .dc-mk-title { font-size: 19px; line-height: 1.6; }
   .dc-mk-change { font-size: 18px; line-height: 1.65; }
+  .dc-mk-impact { font-size: 18px; line-height: 1.65; }
+  .dc-mk-watch { font-size: 16px; }
+  .dc-conf { font-size: 14px; }
   .dc-mk-detail { font-size: 16px; }
   .dc-watch-text { font-size: 18px; }
   .dc-upcoming-text { font-size: 18px; }

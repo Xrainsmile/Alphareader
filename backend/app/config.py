@@ -111,6 +111,11 @@ class Settings(BaseSettings):
     EVENT_SYNTH_WINDOW_HOURS: int = 12    # 扫描最近 N 小时内有新关联报道的聚合簇
     EVENT_SYNTH_MAX_EVENTS: int = 10      # 每轮最多合成事件数（成本控制，按信源数优先）
     EVENT_SYNTH_MIN_SOURCES: int = 2      # 至少 N 个信源（根+子）才值得合成
+    # fast path：满足以下任一条件即可绕过 min_sources 门槛单独合成（一手重大公告常仅单源）：
+    #   - 根来源为权威/一手信源（美联储/SEC/交易所/央行/公司 IR 等）
+    #   - ai_score >= 该阈值（默认 8）
+    #   - is_highlight = true
+    EVENT_SYNTH_FAST_AI_THRESHOLD: int = 8
     # 每日维护：developing 且无实质更新超过该小时数 → 自动转 stable（resolved 不依赖时间自动判定）
     EVENT_STABLE_AFTER_HOURS: int = 48
 
@@ -129,6 +134,17 @@ class Settings(BaseSettings):
     EVENT_MEMORY_MAX_SIM: float = 0.67
     EVENT_MEMORY_MAX_CANDIDATES: int = 5000    # 单次加载候选向量上限（内存保护）
     EVENT_MEMORY_SUMMARY_CHARS: int = 60       # 注入的历史事件摘要截断长度
+
+    # ── 新闻清理（每日 03:30）──
+    # 普通报道保留窗口：原始 news 记录的硬删除上限（7~14 天，取 14 留余量）。
+    # 注意：事件聚合根（related_to_id IS NULL 且 event_title IS NOT NULL）不在此窗口删除，
+    # 而是按事件生命周期保留（见 NEWS_CLEANUP_EVENT_LOOKBACK_DAYS），否则会破坏
+    # 90 天 Event Memory、拆散长周期事件、并级联删除 Reports 历史链接。
+    NEWS_CLEANUP_ARTICLE_DAYS: int = 14
+    # 事件根保留窗口：与 EVENT_MEMORY_LOOKBACK_DAYS 对齐，使「配置写 90 天」真正生效。
+    # developing 事件按 event_last_updated_at 计龄；stable/resolved 按
+    # max(published_at, event_first_seen_at, event_last_updated_at) 计龄。
+    NEWS_CLEANUP_EVENT_LOOKBACK_DAYS: int = 90
 
     # ── 新闻预筛（LLM 评分前过滤/压缩，节省评分 token）──
     # 优先拦截低价值内容、按信源历史质量门控、同事件跟稿继承根评分。

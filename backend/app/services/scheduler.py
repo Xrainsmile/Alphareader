@@ -531,10 +531,23 @@ async def _us_screener_job():
 
 
 async def _news_cleanup_job():
-    """News 表定期清理 — 每日 03:30 删除 published_at 超过 7 天的旧闻。
+    """News 表定期清理 — 每日 03:30 删除过期原始报道，但保留事件生命周期数据。
 
-    保留窗口与去重历史指纹窗口（DEDUP_HISTORICAL_DAYS=7）一致，
-    防止 news 表无限膨胀（review M5）。
+    关键约束（P0-1）：news 同时承载原始报道与事件聚合根（event_* 字段），且
+    event_versions.event_id / digest_event_links.event_id 均 ON DELETE CASCADE 指向
+    news.id。旧逻辑 `DELETE FROM news WHERE published_at < 7天` 会直接删掉事件根，
+    导致：① 90 天 Event Memory 实际只能活 7 天；② 长周期事件被拆散（related_to_id
+    SET NULL 变成孤儿根）；③ Reports 历史链接级联消失。
+
+    新逻辑：
+    - 普通报道（非事件根）按 NEWS_CLEANUP_ARTICLE_DAYS 删除。
+    - 事件聚合根（related_to_id IS NULL 且 event_title IS NOT NULL）按事件生命周期保留：
+        developing 按 event_last_updated_at 计龄；stable/resolved 按
+        max(published_at, event_first_seen_at, event_last_updated_at) 计龄；
+        至少保留 NEWS_CLEANUP_EVENT_LOOKBACK_DAYS（与 EVENT_MEMORY_LOOKBACK_DAYS 对齐）。
+    - 任何被 digest_event_links 或 event_versions 引用的新闻（含事件根及其子报道）一律保留，
+        防止级联删除破坏 Reports 链接 / 版本历史。
+    - 受保护事件根的直接子报道（related_to_id 指向受保护根）保留，防止删除后事件被拆散。
     """
     try:
         from datetime import timedelta, timezone
@@ -543,15 +556,53 @@ async def _news_cleanup_job():
 
         from app.database import async_session
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        article_cutoff = datetime.now(timezone.utc) - timedelta(
+            days=settings.NEWS_CLEANUP_ARTICLE_DAYS
+        )
+        event_cutoff = datetime.now(timezone.utc) - timedelta(
+            days=settings.NEWS_CLEANUP_EVENT_LOOKBACK_DAYS
+        )
+        # 事件根计龄用的「最近活跃时间」：P4 从 events 表读取。
+        sql = text(
+            """
+            WITH preserved_event_root AS (
+                SELECT n.id FROM news n
+                JOIN events e ON n.event_id = e.id
+                WHERE n.related_to_id IS NULL
+                  AND e.title IS NOT NULL
+                  AND COALESCE(
+                        GREATEST(
+                            COALESCE(n.published_at, '1970-01-01'::timestamptz),
+                            COALESCE(e.first_seen_at, '1970-01-01'::timestamptz),
+                            COALESCE(e.last_updated_at, '1970-01-01'::timestamptz)
+                        ),
+                        '1970-01-01'::timestamptz
+                      ) >= :event_cutoff
+            )
+            DELETE FROM news
+            WHERE published_at < :article_cutoff
+              AND id NOT IN (
+                  SELECT id FROM preserved_event_root
+                  UNION
+                  SELECT event_id FROM digest_event_links
+                  UNION
+                  SELECT event_id FROM event_versions
+                  UNION
+                  SELECT id FROM news WHERE related_to_id IN (SELECT id FROM preserved_event_root)
+              )"""
+        )
         async with async_session() as s:
             result = await s.execute(
-                text("DELETE FROM news WHERE published_at < :cutoff"),
-                {"cutoff": cutoff},
+                sql,
+                {"article_cutoff": article_cutoff, "event_cutoff": event_cutoff},
             )
             await s.commit()
             deleted = result.rowcount or 0
-        logger.info("News cleanup: deleted %d rows (published_at < %s)", deleted, cutoff.isoformat())
+        logger.info(
+            "News cleanup: deleted %d rows "
+            "(article_cutoff=%s, event_lookback=%s)",
+            deleted, article_cutoff.isoformat(), event_cutoff.isoformat(),
+        )
         return {"deleted": deleted}
     except Exception as e:
         logger.exception("News cleanup job failed: %s", e)
@@ -898,7 +949,8 @@ async def _run_scheduler_jobs():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
-    # 03:30 每日：News 表清理（删除 published_at > 7 天的旧闻，防表无限膨胀）
+    # 03:30 每日：News 表清理（普通报道按 NEWS_CLEANUP_ARTICLE_DAYS 删除；
+    # 事件聚合根/被 Reports 链接及事件版本引用的新闻保留，避免破坏事件记忆与历史链接）
     scheduler.add_job(
         _news_cleanup_job,
         trigger=CronTrigger(

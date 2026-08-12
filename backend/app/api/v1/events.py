@@ -27,6 +27,7 @@ from sqlalchemy.orm import aliased
 from app.auth import require_api_key
 from app.config import settings
 from app.database import get_db
+from app.models.event import Event
 from app.models.event_version import EventVersion
 from app.models.news import News
 from app.schemas.response import APIResponse, PaginatedResponse
@@ -50,18 +51,30 @@ class EventSortMode(str, Enum):
     FIRST_SEEN = "first_seen"        # 首次出现
 
 
-def _serialize_event(n: News, child_cnt: int, source_cnt: int,
+def _event_field(n: News, evt, event_attr: str, news_attr: str, default=None):
+    """P4 过渡助函数：优先读 events 表字段，回退 news.event_* 镜像列。"""
+    if evt is not None:
+        val = getattr(evt, event_attr, None)
+        if val is not None:
+            return val
+    val = getattr(n, news_attr, None)
+    return val if val is not None else default
+
+
+def _serialize_event(n: News, evt, child_cnt: int, source_cnt: int,
                      child_max_pub, ranking_score: float | None) -> dict:
-    """事件列表条目序列化：事件字段优先，回落到根报道字段。"""
+    """事件列表条目序列化：P4 优先从 events 表读取字段。"""
+    first_seen = _event_field(n, evt, "first_seen_at", "event_first_seen_at")
+    last_upd = _event_field(n, evt, "last_updated_at", "event_last_updated_at")
     return {
         "id": str(n.id),
         # 事件标题/摘要优先，未合成的单信源事件回落到根报道
-        "title": n.event_title or n.title,
-        "summary": n.event_summary or n.ai_summary,
-        "latest_change": n.event_latest_change,
-        "why_important": n.event_why_important,
-        "status": n.event_status,
-        "is_synthesized": n.event_title is not None,
+        "title": _event_field(n, evt, "title", "event_title") or n.title,
+        "summary": _event_field(n, evt, "summary", "event_summary") or n.ai_summary,
+        "latest_change": _event_field(n, evt, "latest_change", "event_latest_change"),
+        "why_important": _event_field(n, evt, "why_important", "event_why_important"),
+        "status": _event_field(n, evt, "status", "event_status"),
+        "is_synthesized": _event_field(n, evt, "title", "event_title") is not None,
         "source": n.source,
         "category": n.category,
         "url": n.url,
@@ -70,20 +83,20 @@ def _serialize_event(n: News, child_cnt: int, source_cnt: int,
         "is_highlight": bool(n.is_highlight),
         "tags": n.tags,
         # 事件级排序信号（0-10，纯规则计算，见 app/utils/event_signals.py）
-        "event_impact": n.event_impact,
-        "event_novelty": n.event_novelty,
-        "event_urgency": n.event_urgency,
-        "event_confidence": n.event_confidence,
-        "event_relevance": n.event_relevance,
+        "event_impact": _event_field(n, evt, "impact", "event_impact"),
+        "event_novelty": _event_field(n, evt, "novelty", "event_novelty"),
+        "event_urgency": _event_field(n, evt, "urgency", "event_urgency"),
+        "event_confidence": _event_field(n, evt, "confidence", "event_confidence"),
+        "event_relevance": _event_field(n, evt, "relevance", "event_relevance"),
         # 报道总数 vs 独立信源数（同一媒体多篇只计 1）
         "article_count": child_cnt + 1,
         "source_count": source_cnt,
-        "version": n.event_version,
-        "first_seen_at": (n.event_first_seen_at or n.published_at or n.created_at).isoformat()
-            if (n.event_first_seen_at or n.published_at or n.created_at) else None,
-        "last_updated_at": (n.event_last_updated_at or child_max_pub
+        "version": _event_field(n, evt, "version", "event_version"),
+        "first_seen_at": (first_seen or n.published_at or n.created_at).isoformat()
+            if (first_seen or n.published_at or n.created_at) else None,
+        "last_updated_at": (last_upd or child_max_pub
                             or n.published_at or n.created_at).isoformat()
-            if (n.event_last_updated_at or child_max_pub
+            if (last_upd or child_max_pub
                 or n.published_at or n.created_at) else None,
         "published_at": n.published_at.isoformat() if n.published_at else None,
         "created_at": n.created_at.isoformat() if n.created_at else None,
@@ -197,10 +210,10 @@ async def list_events(
                 # 使 Reports 标为"必须知道"的事件在 News 里也靠前。NULL 安全。
                 boost_sql += f" + {event_signal_sql()}"
             event_time_sql = (
-                "GREATEST(published_at, "
-                "COALESCE(event_last_updated_at, published_at), "
+                "GREATEST(news.published_at, "
+                "COALESCE(events.last_updated_at, news.published_at), "
                 "COALESCE((SELECT MAX(c2.published_at) FROM news c2 "
-                "WHERE c2.related_to_id = news.id), published_at))"
+                "WHERE c2.related_to_id = news.id), news.published_at))"
             )
             gravity_sql = (
                 f"CASE WHEN COALESCE({child_cnt_sql}, 0) > 0 "
@@ -218,15 +231,18 @@ async def list_events(
             use_python_sort = True
     elif sort == EventSortMode.LATEST_UPDATE:
         order_clause = desc(func.coalesce(
-            News.event_last_updated_at, News.published_at, News.created_at,
+            Event.last_updated_at, News.event_last_updated_at,
+            News.published_at, News.created_at,
         ))
     else:  # FIRST_SEEN
         order_clause = desc(func.coalesce(
-            News.event_first_seen_at, News.published_at, News.created_at,
+            Event.first_seen_at, News.event_first_seen_at,
+            News.published_at, News.created_at,
         ))
 
     stmt = (
-        select(News)
+        select(News, Event)
+        .outerjoin(Event, News.event_id == Event.id)
         .where(where_clause)
         .order_by(order_clause, desc(News.created_at))
         .offset(offset)
@@ -234,21 +250,22 @@ async def list_events(
     )
     try:
         result = await db.execute(stmt)
-        rows = list(result.scalars().all())
+        rows = list(result.all())  # (News, Event|None) tuples
     except Exception:
         use_python_sort = True
         fallback_stmt = (
-            select(News)
+            select(News, Event)
+            .outerjoin(Event, News.event_id == Event.id)
             .where(where_clause)
             .order_by(desc(News.created_at))
             .offset(offset)
             .limit(limit)
         )
         result = await db.execute(fallback_stmt)
-        rows = list(result.scalars().all())
+        rows = list(result.all())
 
     items = []
-    for n in rows:
+    for n, evt in rows:
         child_cnt, child_max_pub = child_stats.get(n.id, (0, None))
         # 统一口径：整个事件（根 + 全部子报道）的去重信源数
         source_count = source_counts.get(str(n.id), 1)
@@ -257,10 +274,13 @@ async def list_events(
             boost = min(source_count * EVENT_BOOST_PER_SOURCE, EVENT_BOOST_MAX)
             if settings.EVENT_SIGNAL_BOOST_ENABLED:
                 boost += event_signal_boost(
-                    n.event_impact, n.event_novelty, n.event_urgency,
-                    n.event_confidence, n.event_relevance,
+                    _event_field(n, evt, "impact", "event_impact"),
+                    _event_field(n, evt, "novelty", "event_novelty"),
+                    _event_field(n, evt, "urgency", "event_urgency"),
+                    _event_field(n, evt, "confidence", "event_confidence"),
+                    _event_field(n, evt, "relevance", "event_relevance"),
                 )
-            effective_pub = n.event_last_updated_at or n.published_at
+            effective_pub = _event_field(n, evt, "last_updated_at", "event_last_updated_at") or n.published_at
             if child_max_pub and (effective_pub is None or child_max_pub > effective_pub):
                 effective_pub = child_max_pub
             ranking_score = calculate_ranking_score(
@@ -269,7 +289,7 @@ async def list_events(
                 gravity=EVENT_GRAVITY if child_cnt > 0 else DEFAULT_GRAVITY,
                 boost=boost,
             )
-        items.append(_serialize_event(n, child_cnt, source_count,
+        items.append(_serialize_event(n, evt, child_cnt, source_count,
                                       child_max_pub, ranking_score))
 
     if use_python_sort and sort == EventSortMode.IMPORTANT:
@@ -322,6 +342,11 @@ async def get_event_detail(
         depth += 1
     eid = root.id  # 后续版本 / 子报道查询统一以根 ID 为准
 
+    # P4: 从 events 表加载事件详情（优先于 news.event_* 镜像列）
+    evt = (
+        await db.execute(select(Event).where(Event.id == root.event_id))
+    ).scalar_one_or_none()
+
     # 版本演进（倒序）
     versions = (
         await db.execute(
@@ -347,10 +372,10 @@ async def get_event_detail(
     for c in children:
         sources.add(c.source)
     src_cnt = len(sources) or 1
-    detail = _serialize_event(root, len(children), int(src_cnt) or 1, None, None)
+    detail = _serialize_event(root, evt, len(children), int(src_cnt) or 1, None, None)
     detail.update({
-        "uncertainty": root.event_uncertainty,
-        "watch_next": root.event_watch_next,
+        "uncertainty": _event_field(root, evt, "uncertainty", "event_uncertainty"),
+        "watch_next": _event_field(root, evt, "watch_next", "event_watch_next"),
         "versions": [
             {
                 "version": v.version,

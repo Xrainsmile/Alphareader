@@ -25,6 +25,7 @@ from sqlalchemy import select, and_, or_, func
 from app.config import settings
 from app.database import async_session
 from app.models.digest_event_link import DigestEventLink
+from app.models.event import Event
 from app.models.news import News
 from app.models.news_digest import NewsDigest
 from app.services.llm_client import stream_chat
@@ -114,6 +115,16 @@ _FINAL_EVENT_LIMIT = 20
 # 与上一份成功简报的 period_end 计算（滚动窗口），固定窗口 PERIOD_CONFIG 不再使用。
 
 
+def _ev(n, evt, event_attr: str, news_attr: str, default=None):
+    """P4 过渡助函数：优先读 events 表字段，回退 news.event_* 镜像列。"""
+    if evt is not None:
+        val = getattr(evt, event_attr, None)
+        if val is not None:
+            return val
+    val = getattr(n, news_attr, None)
+    return val if val is not None else default
+
+
 async def _fetch_period_events(
     period_start: datetime,
     period_end: datetime,
@@ -138,7 +149,8 @@ async def _fetch_period_events(
         ).scalar() or 0
 
         stmt = (
-            select(News)
+            select(News, Event)
+            .outerjoin(Event, News.event_id == Event.id)
             .where(
                 and_(
                     News.related_to_id.is_(None),  # 只读事件根
@@ -160,16 +172,16 @@ async def _fetch_period_events(
             )
             .limit(_FETCH_EVENT_LIMIT)
         )
-        rows = (await db.execute(stmt)).scalars().all()
+        rows = (await db.execute(stmt)).all()  # P4: (News, Event|None) tuples
 
     events = []
     material_updates = 0
-    for r in rows:
+    for r, evt in rows:
         # SQLite 读回的是 naive datetime（PG 为 aware），统一补 tz 再比较
-        elu = r.event_last_updated_at
+        elu = _ev(r, evt, "last_updated_at", "event_last_updated_at")
         if elu is not None and elu.tzinfo is None:
             elu = elu.replace(tzinfo=period_start.tzinfo)
-        first_seen = r.event_first_seen_at or r.published_at or r.created_at
+        first_seen = _ev(r, evt, "first_seen_at", "event_first_seen_at") or r.published_at or r.created_at
         if first_seen is not None and first_seen.tzinfo is None:
             first_seen = first_seen.replace(tzinfo=period_start.tzinfo)
 
@@ -181,7 +193,8 @@ async def _fetch_period_events(
             material_updates += 1
 
         # change_type 四分类（PRD 第三步）
-        if updated_in_period and r.event_status == "resolved":
+        status_val = _ev(r, evt, "status", "event_status")
+        if updated_in_period and status_val == "resolved":
             change_type = "RESOLVED"
         elif first_seen is not None and period_start <= first_seen < period_end:
             change_type = "NEW_EVENT"
@@ -194,14 +207,14 @@ async def _fetch_period_events(
         events.append({
             "event_id": str(r.id),
             "change_type": change_type,
-            "title": r.event_title or r.title,
-            "summary": r.event_summary or r.ai_summary or "",
-            "latest_change": r.event_latest_change or "",
-            "why_important": r.event_why_important or "",
-            "uncertainty": r.event_uncertainty or "",
-            "watch_next": r.event_watch_next or "",
-            "status": r.event_status or "",
-            "event_version": r.event_version,
+            "title": _ev(r, evt, "title", "event_title") or r.title,
+            "summary": _ev(r, evt, "summary", "event_summary") or r.ai_summary or "",
+            "latest_change": _ev(r, evt, "latest_change", "event_latest_change") or "",
+            "why_important": _ev(r, evt, "why_important", "event_why_important") or "",
+            "uncertainty": _ev(r, evt, "uncertainty", "event_uncertainty") or "",
+            "watch_next": _ev(r, evt, "watch_next", "event_watch_next") or "",
+            "status": status_val or "",
+            "event_version": _ev(r, evt, "version", "event_version"),
             "source_count": r.event_source_count or 1,
             "ai_score": r.ai_score,
             "tags": (r.tags or [])[:5],
@@ -303,21 +316,25 @@ async def _build_ongoing_updates(
     uuids = [_uuid.UUID(e) for e in stale_ids]
     async with async_session() as db:
         roots = (
-            await db.execute(select(News).where(News.id.in_(uuids)))
-        ).scalars().all()
+            await db.execute(
+                select(News, Event)
+                .outerjoin(Event, News.event_id == Event.id)
+                .where(News.id.in_(uuids))
+            )
+        ).all()  # P4: (News, Event|None) tuples
 
     ongoing: list[dict] = []
     quiet: list[dict] = []
-    for r in roots:
+    for r, evt in roots:
         entry = {
             "event_id": str(r.id),
-            "title": r.event_title or r.title,
+            "title": _ev(r, evt, "title", "event_title") or r.title,
             "note": (
                 f"本时段无实质更新"
-                f"（v{r.event_version or 1} · {r.event_source_count or 1} 信源）"
+                f"（v{_ev(r, evt, 'version', 'event_version') or 1} · {r.event_source_count or 1} 信源）"
             ),
         }
-        if r.event_status == "developing":
+        if _ev(r, evt, "status", "event_status") == "developing":
             ongoing.append(entry)
         elif prev_links[str(r.id)].get("section") == "must_know":
             quiet.append(entry)

@@ -148,17 +148,18 @@ class EventMemoryIndex:
         return hits
 
 
+# 长期方案 P4：事件记忆索引从 events 表加载（替代旧 news.event_* 列）。
+# events 表仅含事件根，无需 related_to_id IS NULL 过滤。
 _LOAD_INDEX_SQL = text("""
-    SELECT id, event_title, event_summary, event_status, event_version,
-           COALESCE(event_first_seen_at, created_at) AS seen_at,
-           event_embedding,
-           event_outcome_type, event_final_outcome, event_watch_result,
-           event_resolved_at, event_duration_hours
-    FROM news
-    WHERE related_to_id IS NULL
-      AND event_embedding IS NOT NULL
-      AND event_embedding_model = :tag
-      AND event_status IN :statuses
+    SELECT id, title, summary, status, version,
+           COALESCE(first_seen_at, created_at) AS seen_at,
+           embedding,
+           outcome_type, final_outcome, watch_result,
+           resolved_at, duration_hours
+    FROM events
+    WHERE embedding IS NOT NULL
+      AND embedding_model = :tag
+      AND status IN :statuses
       AND created_at >= :cutoff
     ORDER BY created_at DESC
     LIMIT :limit
@@ -181,22 +182,22 @@ async def load_index() -> EventMemoryIndex | None:
     vectors: list[list[float]] = []
     dim = EMBEDDING_DIMENSIONS
     for r in rows:
-        vec = r["event_embedding"]
+        vec = r["embedding"]
         # 防御：标签一致但长度异常（历史脏数据）直接跳过，避免 np.asarray 变成 object 数组
         if not vec or len(vec) != dim:
             continue
         meta.append({
             "event_id": str(r["id"]),
-            "title": r["event_title"] or "",
-            "summary": r["event_summary"] or "",
-            "status": r["event_status"] or "",
-            "version": int(r["event_version"] or 1),
+            "title": r["title"] or "",
+            "summary": r["summary"] or "",
+            "status": r["status"] or "",
+            "version": int(r["version"] or 1),
             "seen_at": r["seen_at"],
-            "outcome_type": r["event_outcome_type"],
-            "final_outcome": r["event_final_outcome"],
-            "watch_result": r["event_watch_result"],
-            "resolved_at": r["event_resolved_at"],
-            "duration_hours": r["event_duration_hours"],
+            "outcome_type": r["outcome_type"],
+            "final_outcome": r["final_outcome"],
+            "watch_result": r["watch_result"],
+            "resolved_at": r["resolved_at"],
+            "duration_hours": r["duration_hours"],
         })
         vectors.append(vec)
 
@@ -233,9 +234,20 @@ _PERSIST_SQL = text("""
     WHERE id = :id
 """).bindparams(bindparam("vec", type_=ARRAY(REAL)))
 
+# 长期方案 P3：事件向量主表改为 events（与 news 双写，P4 翻 reader 后 P5 去 news 镜像）
+_PERSIST_EVENT_SQL = text("""
+    UPDATE events
+    SET embedding = :vec,
+        embedding_model = :tag
+    WHERE id = :id
+""").bindparams(bindparam("vec", type_=ARRAY(REAL)))
+
 
 async def persist_embeddings(pairs: list[tuple[str, list[float]]]) -> int:
-    """把事件包向量写回聚合根。返回成功写入条数。"""
+    """把事件包向量写回聚合根。返回成功写入条数。
+
+    长期方案 P3 起双写 events.embedding 与 news.event_embedding（后者为 P4 翻 reader 前的过渡镜像）。
+    """
     if not pairs:
         return 0
     tag = embedding_tag()
@@ -245,6 +257,7 @@ async def persist_embeddings(pairs: list[tuple[str, list[float]]]) -> int:
     async with async_session() as session:
         for row in rows:
             await session.execute(_PERSIST_SQL, row)
+            await session.execute(_PERSIST_EVENT_SQL, row)
         await session.commit()
     return len(rows)
 
