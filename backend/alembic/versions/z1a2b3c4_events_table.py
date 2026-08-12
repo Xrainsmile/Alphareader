@@ -16,6 +16,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # ── merge 4 个分支头 ──
+revision = "z1a2b3c4_events_table"
 down_revision = [
     "g6h7i8j9k0l1",          # watchlist_extra
     "e5f6a7b8_event_alert_state",  # event alert state
