@@ -10,8 +10,10 @@
     "@dcloudio/uni-app": "3.0.0-alpha-5000120260205002",
     "@dcloudio/uni-components": "3.0.0-alpha-5000120260205002",
     "@dcloudio/uni-h5": "3.0.0-alpha-5000120260205002",
+    "html2canvas": "^1.4.1",
     "marked": "^17.0.2",
     "mp-html": "^2.5.2",
+    "qrcode": "^1.5.4",
     "vue": "^3.4.0"
   },
   "devDependencies": {

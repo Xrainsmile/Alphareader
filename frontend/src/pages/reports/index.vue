@@ -57,6 +57,10 @@
             <view class="dc-head">
               <text class="dc-title">{{ item.period_display }}</text>
               <text class="dc-range">{{ formatPeriodRange(item) }}</text>
+              <!-- 导出本期为分享图（含扫码回看二维码，仅 H5） -->
+              <text class="dc-export" @click.stop="exportDigest(item)">
+                {{ exportingId === item.id ? '导出中…' : '导出图片' }}
+              </text>
             </view>
             <view class="dc-stats">
               <text class="dc-stat">{{ item.event_count || 0 }} 个事件</text>
@@ -167,6 +171,7 @@ import PcSidebar from '@/components/common/PcSidebar.vue'
 import GateButton from '@/components/common/GateButton.vue'
 import { useGate } from '@/utils/useGate'
 import { listTagStyle, listTagStyleMobile } from '@/utils/formatters'
+import { exportDigestImage, canExportImage } from '@/utils/digestExport'
 
 // ── 侧门（gate）：Stocks / SEPA 对外隐藏，解锁后显现 ──
 const { isOpen } = useGate()
@@ -248,6 +253,25 @@ async function applyDigestDeepLink() {
 function goEventDetail(eventId) {
   if (!eventId) return
   uni.navigateTo({ url: `/pages/events/detail?id=${eventId}` })
+}
+
+// ── 导出简报为图片（样式与网页一致 + 扫码回看二维码，仅 H5）──
+const exportingId = ref(null)
+async function exportDigest(item) {
+  if (!canExportImage()) {
+    uni.showToast({ title: '请使用浏览器打开', icon: 'none' })
+    return
+  }
+  if (exportingId.value) return // 防连点
+  exportingId.value = item.id
+  try {
+    await exportDigestImage(item)
+  } catch (e) {
+    console.warn('导出简报图片失败:', e)
+    uni.showToast({ title: e.message || '导出失败', icon: 'none' })
+  } finally {
+    exportingId.value = null
+  }
 }
 
 // ── Data Loading ──
@@ -500,6 +524,19 @@ onMounted(() => {
   color: var(--color-text-muted);
   font-family: var(--font-sans);
 }
+.dc-export {
+  margin-left: auto;
+  font-size: 22rpx;
+  color: var(--color-brand);
+  border: 1rpx solid var(--color-brand);
+  border-radius: 999rpx;
+  padding: 4rpx 18rpx;
+  line-height: 1.6;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.dc-export:active { opacity: 0.7; }
 .dc-stats {
   display: flex;
   align-items: center;
