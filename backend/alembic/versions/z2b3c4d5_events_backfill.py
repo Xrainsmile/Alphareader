@@ -66,21 +66,22 @@ def upgrade() -> None:
     """))
 
     # 4. 子报道 event_id = 最终事件根（递归上溯，兼容历史链式 related_to_id 残留）
+    #    up 沿 related_to_id 逐级向上，最终一跳的 parent_id 即合格事件根。
     op.execute(sa.text("""
-        WITH RECURSIVE chain AS (
-            SELECT id, related_to_id, id AS root
+        WITH RECURSIVE up AS (
+            SELECT id AS child_id, related_to_id AS parent_id
             FROM news
             WHERE related_to_id IS NOT NULL
             UNION ALL
-            SELECT c.id, n.related_to_id, c.root
-            FROM chain c
-            JOIN news n ON c.related_to_id = n.id
+            SELECT up.child_id, n.related_to_id
+            FROM up
+            JOIN news n ON n.id = up.parent_id
             WHERE n.related_to_id IS NOT NULL
         )
-        UPDATE news x SET event_id = chain.root
-        FROM chain
-        WHERE x.id = chain.id
-          AND chain.root IN (
+        UPDATE news x SET event_id = up.parent_id
+        FROM up
+        WHERE x.id = up.child_id
+          AND up.parent_id IN (
               SELECT id FROM news
               WHERE related_to_id IS NULL AND event_title IS NOT NULL
           )
