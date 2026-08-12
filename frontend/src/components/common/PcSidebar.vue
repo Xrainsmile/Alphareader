@@ -1,6 +1,9 @@
 <template>
   <view class="pc-sidebar">
-    <text class="pc-sidebar-logo">AlphaReader</text>
+    <view class="pc-sidebar-brand">
+      <image class="pc-sidebar-logo-img" src="/static/logo.png" mode="aspectFit" />
+      <text class="pc-sidebar-logo">AlphaReader</text>
+    </view>
     <!-- Reports + 侧门「!」入口 -->
     <view
       class="pc-nav-item"
@@ -76,11 +79,23 @@ function navTo(url, isTab) {
     flex-direction: column;
     gap: 4px;
   }
+  .pc-sidebar-brand {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .pc-sidebar-logo-img {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
   .pc-sidebar-logo {
     font-size: 18px;
     font-weight: 800;
     color: var(--color-text-primary);
-    margin-bottom: 20px;
     letter-spacing: 0.5px;
     user-select: none;
     -webkit-user-select: none;

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlphaReader Logo 概念稿</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    background: #f2f3f5; color: #1f2329; padding: 48px 24px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 24px; margin-bottom: 8px; }
+  .sub { color: #6b7280; font-size: 14px; margin-bottom: 40px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+  .card {
+    background: #fff; border-radius: 16px; padding: 28px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .card h2 { font-size: 17px; margin-bottom: 4px; }
+  .card .en { color: #9ca3af; font-size: 12px; margin-bottom: 16px; letter-spacing: .05em; }
+  .card .desc { color: #4b5563; font-size: 13px; line-height: 1.7; margin-bottom: 20px; }
+  .hero {
+    display: flex; align-items: center; justify-content: center;
+    background: #f8fafc; border: 1px solid #eef0f2; border-radius: 12px;
+    padding: 32px; margin-bottom: 16px;
+  }
+  .sizes {
+  display: flex; align-items: flex-end; gap: 20px; justify-content: center;
+    padding: 16px; background: #fff; border: 1px solid #eef0f2; border-radius: 12px; margin-bottom: 12px;
+  }
+  .sizes.dark { background: #17191c; border-color: #2a2d31; }
+  .sizes .cell { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .sizes .label { font-size: 10px; color: #9ca3af; }
+  .tag {
+    display: inline-block; font-size: 11px; color: #4285f4; background: rgba(66,133,244,.08);
+    border-radius: 4px; padding: 2px 8px; margin-right: 6px; margin-top: 8px;
+  }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AlphaReader Logo 概念稿</h1>
+  <p class="sub">品牌色 #4285f4 → #1677ff ｜ 手绘 SVG 矢量 ｜ 三个方向各一版，选定后再细化</p>
+
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#4285f4"/>
+        <stop offset="1" stop-color="#1677ff"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div class="grid">
+
+    <!-- ============ 概念 A：Alpha 趋势 ============ -->
+    <div class="card">
+      <h2>概念 A · 字母 A × 趋势线</h2>
+      <div class="en">ALPHA MOMENTUM</div>
+      <div class="desc">大写字母 A 的横杠被一条上扬折线取代，箭头穿出右肩——「阅读市场，捕捉超额收益」。最直白地呼应 Alpha + 行情，识别成本最低，16px 下依然清晰。</div>
+      <div class="hero">
+        <svg width="160" height="160" viewBox="0 0 240 240">
+          <rect width="240" height="240" rx="54" fill="url(#brandGrad)"/>
+          <path d="M62 196 L112 52" stroke="#fff" stroke-width="22" stroke-linecap="round" fill="none"/>
+          <path d="M128 52 L178 196" stroke="#fff" stroke-width="22" stroke-linecap="round" fill="none"/>
+          <polyline points="80,150 104,124 124,140 158,102"
+            stroke="#fff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <path d="M158 102 L156 124 M158 102 L136 104" stroke="#fff" stroke-width="15" stroke-linecap="round" fill="none"/>
+        </svg>
+      </div>
+      <div class="sizes">
+        <div class="cell"><svg width="64" height="64" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M62 196 L112 52" stroke="#fff" stroke-width="22" stroke-linecap="round" fill="none"/><path d="M128 52 L178 196" stroke="#fff" stroke-width="22" stroke-linecap="round" fill="none"/><polyline points="80,150 104,124 124,140 158,102" stroke="#fff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M158 102 L156 124 M158 102 L136 104" stroke="#fff" stroke-width="15" stroke-linecap="round" fill="none"/></svg><span class="label">64</span></div>
+        <div class="cell"><svg width="32" height="32" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M62 196 L112 52" stroke="#fff" stroke-width="22" stroke-linecap="round" fill="none"/><path d="M128 52 L178 196" stroke="#fff" stroke-width="22" stroke-linecap="round" fill="none"/><polyline points="80,150 104,124 124,140 158,102" stroke="#fff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M158 102 L156 124 M158 102 L136 104" stroke="#fff" stroke-width="15" stroke-linecap="round" fill="none"/></svg><span class="label">32</span></div>
+        <div class="cell"><svg width="16" height="16" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M62 196 L112 52" stroke="#fff" stroke-width="22" stroke-linecap="round" fill="none"/><path d="M128 52 L178 196" stroke="#fff" stroke-width="22" stroke-linecap="round" fill="none"/><polyline points="80,150 104,124 124,140 158,102" stroke="#fff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M158 102 L156 124 M158 102 L136 104" stroke="#fff" stroke-width="15" stroke-linecap="round" fill="none"/></svg><span class="label">16</span></div>
+      </div>
+      <div class="sizes dark">
+        <div class="cell"><svg width="64" height="64" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M62 196 L112 52" stroke="#fff" stroke-width="22" stroke-linecap="round" fill="none"/><path d="M128 52 L178 196" stroke="#fff" stroke-width="22" stroke-linecap="round" fill="none"/><polyline points="80,150 104,124 124,140 158,102" stroke="#fff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M158 102 L156 124 M158 102 L136 104" stroke="#fff" stroke-width="15" stroke-linecap="round" fill="none"/></svg><span class="label">dark 64</span></div>
+      </div>
+      <span class="tag">识别最快</span><span class="tag">favicon 友好</span>
+    </div>
+
+    <!-- ============ 概念 B：α 符号 ============ -->
+    <div class="card">
+      <h2>概念 B · α 符号 × 上挑箭头</h2>
+      <div class="en">PURE ALPHA</div>
+      <div class="desc">希腊字母 α 直接作为图形主体，收尾笔画向上挑起成箭头。金融语境里 α 就是超额收益本身，最纯粹；圆环 + 一笔甩尾，比概念 A 更含蓄、更「量化」。</div>
+      <div class="hero">
+        <svg width="160" height="160" viewBox="0 0 240 240">
+          <rect width="240" height="240" rx="54" fill="url(#brandGrad)"/>
+          <path d="M122.5 86 A45 45 0 1 0 134.5 154" stroke="#fff" stroke-width="20" stroke-linecap="round" fill="none"/>
+          <path d="M134.5 154 C 165 168, 168 120, 196 82" stroke="#fff" stroke-width="20" stroke-linecap="round" fill="none"/>
+          <path d="M196 82 L 193 106 M196 82 L 172 85" stroke="#fff" stroke-width="16" stroke-linecap="round" fill="none"/>
+        </svg>
+      </div>
+      <div class="sizes">
+        <div class="cell"><svg width="64" height="64" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M122.5 86 A45 45 0 1 0 134.5 154" stroke="#fff" stroke-width="20" stroke-linecap="round" fill="none"/><path d="M134.5 154 C 165 168, 168 120, 196 82" stroke="#fff" stroke-width="20" stroke-linecap="round" fill="none"/><path d="M196 82 L 193 106 M196 82 L 172 85" stroke="#fff" stroke-width="16" stroke-linecap="round" fill="none"/></svg><span class="label">64</span></div>
+        <div class="cell"><svg width="32" height="32" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M122.5 86 A45 45 0 1 0 134.5 154" stroke="#fff" stroke-width="20" stroke-linecap="round" fill="none"/><path d="M134.5 154 C 165 168, 168 120, 196 82" stroke="#fff" stroke-width="20" stroke-linecap="round" fill="none"/><path d="M196 82 L 193 106 M196 82 L 172 85" stroke="#fff" stroke-width="16" stroke-linecap="round" fill="none"/></svg><span class="label">32</span></div>
+        <div class="cell"><svg width="16" height="16" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M122.5 86 A45 45 0 1 0 134.5 154" stroke="#fff" stroke-width="20" stroke-linecap="round" fill="none"/><path d="M134.5 154 C 165 168, 168 120, 196 82" stroke="#fff" stroke-width="20" stroke-linecap="round" fill="none"/><path d="M196 82 L 193 106 M196 82 L 172 85" stroke="#fff" stroke-width="16" stroke-linecap="round" fill="none"/></svg><span class="label">16</span></div>
+      </div>
+      <div class="sizes dark">
+        <div class="cell"><svg width="64" height="64" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M122.5 86 A45 45 0 1 0 134.5 154" stroke="#fff" stroke-width="20" stroke-linecap="round" fill="none"/><path d="M134.5 154 C 165 168, 168 120, 196 82" stroke="#fff" stroke-width="20" stroke-linecap="round" fill="none"/><path d="M196 82 L 193 106 M196 82 L 172 85" stroke="#fff" stroke-width="16" stroke-linecap="round" fill="none"/></svg><span class="label">dark 64</span></div>
+      </div>
+      <span class="tag">最金融</span><span class="tag">符号感强</span>
+    </div>
+
+    <!-- ============ 概念 C：书页 × 纸飞机 ============ -->
+    <div class="card">
+      <h2>概念 C · 打开的书 × 起飞</h2>
+      <div class="en">READER TAKES OFF</div>
+      <div class="desc">打开的书代表 Reader（资讯阅读），右页脱离书面化作向上飞出的纸飞机——信息被 AI 消化后变成可行动的洞察。叙事性最强，唯一同时覆盖 Alpha（飞升）和 Reader（书）的方案。</div>
+      <div class="hero">
+        <svg width="160" height="160" viewBox="0 0 240 240">
+          <rect width="240" height="240" rx="54" fill="url(#brandGrad)"/>
+          <path d="M40 108 C 68 90, 98 90, 120 104 C 142 90, 172 90, 200 108 L 200 186 C 172 168, 142 168, 120 182 C 98 168, 68 168, 40 186 Z"
+            stroke="#fff" stroke-width="13" stroke-linejoin="round" fill="none"/>
+          <path d="M120 104 L120 182" stroke="#fff" stroke-width="13" stroke-linecap="round"/>
+          <path d="M132 74 L 206 40 L 178 96 L 160 68 Z" fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="sizes">
+        <div class="cell"><svg width="64" height="64" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M40 108 C 68 90, 98 90, 120 104 C 142 90, 172 90, 200 108 L 200 186 C 172 168, 142 168, 120 182 C 98 168, 68 168, 40 186 Z" stroke="#fff" stroke-width="13" stroke-linejoin="round" fill="none"/><path d="M120 104 L120 182" stroke="#fff" stroke-width="13" stroke-linecap="round"/><path d="M132 74 L 206 40 L 178 96 L 160 68 Z" fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round"/></svg><span class="label">64</span></div>
+        <div class="cell"><svg width="32" height="32" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M40 108 C 68 90, 98 90, 120 104 C 142 90, 172 90, 200 108 L 200 186 C 172 168, 142 168, 120 182 C 98 168, 68 168, 40 186 Z" stroke="#fff" stroke-width="13" stroke-linejoin="round" fill="none"/><path d="M120 104 L120 182" stroke="#fff" stroke-width="13" stroke-linecap="round"/><path d="M132 74 L 206 40 L 178 96 L 160 68 Z" fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round"/></svg><span class="label">32</span></div>
+        <div class="cell"><svg width="16" height="16" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M40 108 C 68 90, 98 90, 120 104 C 142 90, 172 90, 200 108 L 200 186 C 172 168, 142 168, 120 182 C 98 168, 68 168, 40 186 Z" stroke="#fff" stroke-width="13" stroke-linejoin="round" fill="none"/><path d="M120 104 L120 182" stroke="#fff" stroke-width="13" stroke-linecap="round"/><path d="M132 74 L 206 40 L 178 96 L 160 68 Z" fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round"/></svg><span class="label">16</span></div>
+      </div>
+      <div class="sizes dark">
+        <div class="cell"><svg width="64" height="64" viewBox="0 0 240 240"><rect width="240" height="240" rx="54" fill="url(#brandGrad)"/><path d="M40 108 C 68 90, 98 90, 120 104 C 142 90, 172 90, 200 108 L 200 186 C 172 168, 142 168, 120 182 C 98 168, 68 168, 40 186 Z" stroke="#fff" stroke-width="13" stroke-linejoin="round" fill="none"/><path d="M120 104 L120 182" stroke="#fff" stroke-width="13" stroke-linecap="round"/><path d="M132 74 L 206 40 L 178 96 L 160 68 Z" fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round"/></svg><span class="label">dark 64</span></div>
+      </div>
+      <span class="tag">叙事最完整</span><span class="tag">覆盖双词义</span>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
