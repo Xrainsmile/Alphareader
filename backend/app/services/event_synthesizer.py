@@ -582,11 +582,34 @@ async def _synthesize_one(
         "event_relevance": params.get("event_relevance"),
     }
     # 长期方案 P3：events 主表用「去 event_ 前缀」的同义字段，UPSERT 建/更新事件行。
-    # 排除非列字段（is_first 仅用于分支判断），其余 event_* 去前缀即对齐 events 列。
+    # 必须显式列全 UPSERT 引用的参数（缺失键会报 bind parameter 错）：
+    # first_seen_at / outcome_* 等仅在特定分支写入 params，此处统一 .get() 置 None
+    # （None = 不更新该列，与 COALESCE 语义一致）。
     evt_row = {
-        (k[len("event_"):] if k.startswith("event_") else k): v
-        for k, v in params.items()
-        if k != "is_first"
+        "id": params["id"],
+        "article_count": params["article_count"],
+        "source_count": params["source_count"],
+        "title": params.get("event_title"),
+        "summary": params.get("event_summary"),
+        "latest_change": params.get("latest_change"),
+        "why_important": params.get("why_important"),
+        "uncertainty": params.get("uncertainty"),
+        "watch_next": params.get("watch_next"),
+        "status": params.get("status"),
+        "version": params.get("version"),
+        "first_seen_at": params.get("first_seen_at"),
+        "outcome_type": params.get("event_outcome_type"),
+        "final_outcome": params.get("event_final_outcome"),
+        "watch_result": params.get("event_watch_result"),
+        "resolved_at": params.get("event_resolved_at"),
+        "duration_hours": params.get("event_duration_hours"),
+        "impact": params.get("event_impact"),
+        "novelty": params.get("event_novelty"),
+        "urgency": params.get("event_urgency"),
+        "confidence": params.get("event_confidence"),
+        "relevance": params.get("event_relevance"),
+        "material": params["material"],
+        "now": params["now"],
     }
     async with async_session() as session:
         # 先 UPSERT events（保证 event_versions 的 FK 指向 events.id 成立），再写 news 镜像

@@ -163,7 +163,7 @@ _LOAD_INDEX_SQL = text("""
       AND created_at >= :cutoff
     ORDER BY created_at DESC
     LIMIT :limit
-""")
+""").bindparams(bindparam("statuses", expanding=True))
 
 
 async def load_index() -> EventMemoryIndex | None:
