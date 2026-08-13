@@ -20,7 +20,7 @@ import logging
 from datetime import date, datetime, time, timedelta
 
 import pytz
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, or_, func, text
 
 from app.config import settings
 from app.database import async_session
@@ -125,6 +125,33 @@ def _ev(n, evt, event_attr: str, news_attr: str, default=None):
     return val if val is not None else default
 
 
+async def _fetch_event_sources(event_ids: list[str]) -> dict[str, list[str]]:
+    """批量取事件（根 + 子报道）的信源名称，供简报展示背书（防"谣言感"）。
+
+    兼容未合成根（event_id 为 NULL）：根的子报道经 related_to_id 归属，
+    根自身以 id 兜底。返回 {event_id_str: [信源名, ...]}（去重，按出现序）。
+    """
+    if not event_ids:
+        return {}
+    import uuid as _uuid
+    uuids = [_uuid.UUID(e) for e in event_ids]
+    sql = text("""
+        SELECT COALESCE(n.event_id, n.related_to_id, n.id) AS gid,
+               array_agg(DISTINCT n.source) AS sources
+        FROM news n
+        WHERE n.event_id = ANY(:ids)
+           OR n.related_to_id = ANY(:ids)
+           OR n.id = ANY(:ids)
+        GROUP BY 1
+    """)
+    async with async_session() as db:
+        rows = (await db.execute(sql, {"ids": uuids})).all()
+    return {
+        str(r.gid): [s for s in (r.sources or []) if s][:5]
+        for r in rows
+    }
+
+
 async def _fetch_period_events(
     period_start: datetime,
     period_end: datetime,
@@ -220,6 +247,11 @@ async def _fetch_period_events(
             "tags": (r.tags or [])[:5],
             "updated_in_period": updated_in_period,
         })
+
+    # 信源名称（根 + 子报道去重），前端展示「信源：A / B」背书
+    sources_map = await _fetch_event_sources([e["event_id"] for e in events])
+    for e in events:
+        e["sources"] = sources_map.get(e["event_id"], [])
     return events, article_count, material_updates
 
 
@@ -286,6 +318,7 @@ def _filter_repeated_events(
                     "event_id": e["event_id"],
                     "title": e["title"],
                     "note": f"本时段无实质更新（v{e['event_version']}）",
+                    "sources": e.get("sources") or [],
                 })
             continue
         kept.append(e)
@@ -323,6 +356,7 @@ async def _build_ongoing_updates(
             )
         ).all()  # P4: (News, Event|None) tuples
 
+    sources_map = await _fetch_event_sources(stale_ids)
     ongoing: list[dict] = []
     quiet: list[dict] = []
     for r, evt in roots:
@@ -333,6 +367,7 @@ async def _build_ongoing_updates(
                 f"本时段无实质更新"
                 f"（v{_ev(r, evt, 'version', 'event_version') or 1} · {r.event_source_count or 1} 信源）"
             ),
+            "sources": sources_map.get(str(r.id), []),
         }
         if _ev(r, evt, "status", "event_status") == "developing":
             ongoing.append(entry)
@@ -752,6 +787,13 @@ async def generate_digest(period_label: str, target_date: date | None = None) ->
     if structured:
         # 跨栏目/栏内去重，并回填空标题（P0 修复：避免同事件落入多栏目致唯一约束冲突）
         structured = _dedupe_structured(structured, events)
+        # 信源背书：程序化附到条目（不走 LLM，零 token、防编造）
+        sources_by_id = {e["event_id"]: e.get("sources") or [] for e in events}
+        for section in ("must_know", "worth_watching"):
+            for entry in structured.get(section) or []:
+                src = sources_by_id.get(str(entry.get("event_id") or ""))
+                if src:
+                    entry["sources"] = src
 
     if not structured:
         # 失败不覆盖上一版有效简报（PRD 15.8）

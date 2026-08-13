@@ -108,6 +108,7 @@
                   <text v-if="e.latest_change" class="dc-mk-change">{{ e.latest_change }}</text>
                   <text v-if="e.why_important" class="dc-mk-impact">影响：{{ e.why_important }}</text>
                   <text v-if="e.watch_next" class="dc-mk-watch">关注：{{ e.watch_next }}</text>
+                  <text v-if="e.sources && e.sources.length" class="dc-mk-src">信源：{{ e.sources.join(' / ') }}</text>
                   <view class="dc-mk-foot" @click.stop="goEventDetail(e.event_id)">
                     <text class="dc-mk-detail">查看详情 →</text>
                   </view>
@@ -120,7 +121,7 @@
               <text class="dc-section-title">值得留意</text>
               <view v-for="e in sc(item).worth_watching" :key="e.event_id" class="dc-watch">
                 <text class="dc-watch-bullet">—</text>
-                <text class="dc-watch-text">{{ e.title }}</text>
+                <text class="dc-watch-text">{{ e.title }}<text v-if="e.sources && e.sources.length" class="dc-watch-src"> · {{ e.sources.join(' / ') }}</text></text>
               </view>
             </view>
 
@@ -129,7 +130,7 @@
               <text class="dc-section-title">持续关注</text>
               <view v-for="e in ongoingList(item)" :key="e.event_id" class="dc-watch">
                 <text class="dc-watch-bullet">—</text>
-                <text class="dc-watch-text">{{ e.title }}<text v-if="e.note" class="dc-watch-note"> · {{ e.note }}</text></text>
+                <text class="dc-watch-text">{{ e.title }}<text v-if="e.sources && e.sources.length" class="dc-watch-src"> · {{ e.sources.join(' / ') }}</text><text v-if="e.note" class="dc-watch-note"> · {{ e.note }}</text></text>
               </view>
             </view>
 
@@ -692,6 +693,14 @@ onMounted(() => {
   margin-top: 4rpx;
   display: block;
 }
+.dc-mk-src {
+  font-size: 22rpx;
+  color: var(--color-text-hint);
+  line-height: 1.55;
+  margin-top: 6rpx;
+  display: block;
+}
+.dc-watch-src { color: var(--color-text-hint); font-size: 22rpx; }
 .dc-mk-foot { margin-top: 8rpx; }
 .dc-mk-detail {
   font-size: 22rpx;
@@ -751,6 +760,8 @@ onMounted(() => {
   .dc-mk-change { font-size: 14px; }
   .dc-mk-impact { font-size: 14px; }
   .dc-mk-watch { font-size: 13px; }
+  .dc-mk-src { font-size: 12px; }
+  .dc-watch-src { font-size: 13px; }
   .dc-conf { font-size: 12px; }
   .dc-mk-detail { font-size: 13px; }
   .dc-watch-text { font-size: 14px; }
@@ -862,6 +873,8 @@ onMounted(() => {
   .dc-mk-change { font-size: 18px; line-height: 1.65; }
   .dc-mk-impact { font-size: 18px; line-height: 1.65; }
   .dc-mk-watch { font-size: 16px; }
+  .dc-mk-src { font-size: 15px; }
+  .dc-watch-src { font-size: 16px; }
   .dc-conf { font-size: 14px; }
   .dc-mk-detail { font-size: 16px; }
   .dc-watch-text { font-size: 18px; }

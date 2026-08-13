@@ -205,6 +205,10 @@ function _injectExportStyles() {
   .digest-export-wrapper .dc-mk-watch {
     font-size: 18px; color: #6b7280; line-height: 1.75; margin-top: 8px;
   }
+  .digest-export-wrapper .dc-mk-src {
+    font-size: 17px; color: #9ca3af; line-height: 1.7; margin-top: 8px;
+  }
+  .digest-export-wrapper .dc-watch-src { color: #9ca3af; font-size: 17px; }
 
   /* ── 值得留意 / 持续关注 ── */
   .digest-export-wrapper .dc-watch { margin-top: 12px; }
