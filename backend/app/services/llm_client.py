@@ -57,9 +57,9 @@ async def stream_chat(
         - HTTP 429 / 5xx / 网络错误 / 空响应 → 指数退避重试
         - HTTP 400 内容审查 → 不重试，直接返回空串（上层走兜底）
     """
-    api_key = settings.DEEPSEEK_API_KEY
+    api_key = settings.DEEPSEEK_API_KEY  # 内部已通过 AliasChoices 复用 TENCENTMAAS_API_KEY
     if not api_key or api_key.startswith("sk-your"):
-        logger.warning("%s: DeepSeek API key not configured, returning empty", log_tag)
+        logger.warning("%s: tencentmaas API key not configured, returning empty", log_tag)
         return ""
 
     if model is None:

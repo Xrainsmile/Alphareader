@@ -68,17 +68,18 @@ class Settings(BaseSettings):
     SILICONFLOW_API_KEY: str = Field("", repr=False)                    # SiliconFlow API Key (https://cloud.siliconflow.cn)
     SILICONFLOW_EMBEDDING_MODEL: str = "BAAI/bge-m3"               # Embedding 模型：BAAI/bge-m3(1024维) / BAAI/bge-large-zh-v1.5(1024维)
 
-    # ── DeepSeek AI（摘要/研报专用，流式调用）──
-    # deepseek-chat / deepseek-reasoner 将于 2026/07/24 弃用，默认升级为 v4-flash
-    DEEPSEEK_API_KEY: str = Field("", repr=False)                       # API 密钥（同时供评分复用，见 LLM_API_KEY）
-    DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # API 地址（OpenAI 兼容）
+    # ── 腾讯云 tencentmaas AI（摘要/研报专用，流式调用）──
+    # 从 DeepSeek 官网迁移至腾讯云 tencentmaas（OpenAI 兼容，请求方式不变）
+    TENCENTMAAS_API_KEY: str = Field("", repr=False)                          # API 密钥（同时供评分复用，见 LLM_API_KEY）
+    DEEPSEEK_API_KEY: str = Field("", repr=False, validation_alias=AliasChoices("TENCENTMAAS_API_KEY"))  # 兼容旧名（内部复用 tencentmaas key）
+    DEEPSEEK_API_URL: str = "https://tokenhub.tencentmaas.com/v1/chat/completions"  # API 地址（OpenAI 兼容）
     DEEPSEEK_MODEL: str = "deepseek-v4-flash"                        # 摘要/研报模型（digest / briefing 使用）
 
-    # ── LLM 评分/翻译/分析/公司名映射（DeepSeek-V4-flash）──
+    # ── LLM 评分/翻译/分析/公司名映射（deepseek-v4-flash）──
     # 评分等高频结构化任务用 v4-flash（便宜），摘要等长文本用 DEEPSEEK_MODEL。
-    # LLM_API_KEY 通过 AliasChoices 复用 DEEPSEEK_API_KEY：只配一个 DeepSeek key 即可同时驱动评分与摘要。
-    LLM_API_KEY: str = Field("", repr=False, validation_alias=AliasChoices("LLM_API_KEY", "DEEPSEEK_API_KEY"))  # 评分/分析用 key（默认复用 DeepSeek key）
-    LLM_API_URL: str = "https://api.deepseek.com/v1/chat/completions"  # 评分/分析 API 地址（OpenAI 兼容）
+    # LLM_API_KEY 通过 AliasChoices 复用 TENCENTMAAS_API_KEY：只配一个 key 即可同时驱动评分与摘要。
+    LLM_API_KEY: str = Field("", repr=False, validation_alias=AliasChoices("LLM_API_KEY", "TENCENTMAAS_API_KEY", "DEEPSEEK_API_KEY"))  # 评分/分析用 key（默认复用 tencentmaas key）
+    LLM_API_URL: str = "https://tokenhub.tencentmaas.com/v1/chat/completions"  # 评分/分析 API 地址（OpenAI 兼容）
     LLM_MODEL: str = "deepseek-v4-flash"                            # 评分/分析模型（结构化 JSON 输出）
 
     # ── LLM 评分参数（AliasChoices 兼容旧 DEEPSEEK_* 环境变量名）──
