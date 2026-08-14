@@ -840,7 +840,7 @@ def _parse_simonwillison(raw_text: str) -> list[RawNewsItem]:
 
 # ── 新增财经信源（标准 RSS，复用 _generic_rss_parse）──
 def _parse_investinglive(raw_text: str) -> list[RawNewsItem]:
-    """Parse Investing.com / investinglive market RSS (https://investinglive.com/rss/)."""
+    """解析 Investing.com 官方中文 RSS（cn.investing.com/rss/）。"""
     return _generic_rss_parse(raw_text, source_name="Investing.com", category="财经")
 
 
@@ -957,7 +957,8 @@ FEED_SOURCES: list[FeedSource] = [
     ),
     FeedSource(
         name="Investing.com",
-        url="https://www.investing.com/rss/news_25.rss",
+        # Investing.com 官方中文 RSS；不经过 RSSHub
+        url="https://cn.investing.com/rss/news_25.rss",
         parser=_parse_investinglive,
         is_rss=True,
     ),
