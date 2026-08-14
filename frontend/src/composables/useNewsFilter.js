@@ -12,7 +12,7 @@ export function useNewsFilter() {
     { value: '财经', label: '财经' },
     { value: '科技', label: '科技' },
   ]
-  const cnSources = ['富途新闻']
+  const cnSources = ['富途新闻', '英为财情']
   const enSources = ['MarketWatch', 'Seeking Alpha', 'Finnhub']
   const techSources = ['TechCrunch', 'Hacker News', 'OpenAI Blog', 'Google AI Blog', 'Anthropic', 'Hugging Face', 'MIT Tech Review']
   // 事件排序（对应 /api/v1/events 的 sort 参数，PRD 8.4）
@@ -78,9 +78,13 @@ export function useNewsFilter() {
 
   /** 构建 API 请求参数 */
   function buildFilterParams() {
+    // UI 展示中文品牌名，后端仍按入库 source 值 Investing.com 过滤
+    const source = currentSource.value === '英为财情'
+      ? 'Investing.com'
+      : currentSource.value
     return {
       min_score: minScore.value,
-      source: currentSource.value || undefined,
+      source: source || undefined,
       category: currentCategory.value || undefined,
       sort: currentSort.value,
       max_age_hours: maxAgeHours.value || undefined,
