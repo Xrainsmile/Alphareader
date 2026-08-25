@@ -498,8 +498,8 @@ class TestSynthesizeEvents:
             result = await synthesize_events()
 
         assert result["synthesized"] == 1
-        # UPDATE + INSERT event_versions + commit
-        assert mock_session.execute.await_count == 2
+        # 首合成（material）：UPSERT events + UPDATE news 镜像 + INSERT event_versions
+        assert mock_session.execute.await_count == 3
         update_params = mock_session.execute.call_args_list[0][0][1]
         assert update_params["version"] == 1
         assert update_params["source_count"] == 3
@@ -753,3 +753,84 @@ class TestCandidateFastPath:
         assert params["official_patterns"] == ["%SEC%", "%美联储%"]
         # 默认名单未被意外清空
         assert "Federal Reserve" in DEFAULT_OFFICIAL_NAMES
+
+        # 5) 独立单源根分支已编入查询：窗口内重要且无子报道的根现纳入候选，
+        #    且「仅合成一次」闸门（events.article_count 空或 0 才合成）已就位。
+        assert "recent_singles" in sql
+        assert "NOT EXISTS" in sql
+        assert "candidate_pids" in sql
+        assert "is_standalone" in sql
+        assert "COALESCE(e.article_count, 0) = 0" in sql
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 独立单源根：真实 PostgreSQL 集成测试
+# 直接对 Postgres 跑 _find_candidate_clusters 的真实 SQL，验证「窗口内重要、
+# 且无子报道的独立新闻根」确实进入候选（is_standalone=True）。
+# 仅在 CI 的 PostgreSQL 环境运行；本地/SQLite 因 SQL 为 PG 专用而自动跳过。
+# ─────────────────────────────────────────────────────────────────────────────
+class TestStandaloneRootIntegration:
+    @pytest.mark.asyncio
+    async def test_standalone_significant_root_is_candidate(self):
+        from app.database import engine as pg_engine, Base
+        from app.models.news import News
+        from app.models.event import Event  # noqa: F401  注册 events 表
+        from app.services import event_synthesizer as es
+
+        if pg_engine.dialect.name != "postgresql":
+            pytest.skip("standalone-root integration test requires PostgreSQL")
+
+        # 用独立的 Postgres 库跑真实 SQL；测试前后重建表，互不污染。
+        async with pg_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+        try:
+            now = datetime.now(timezone.utc)
+            sig_id = uuid.uuid4()
+            low_id = uuid.uuid4()
+            async with es.async_session() as s:
+                # 独立且重要（ai_score 越过 fast_ai_threshold）的新闻根，无子报道
+                s.add(News(
+                    id=sig_id,
+                    title="美联储紧急降息50bp",
+                    source="Reuters",
+                    url=f"https://example.com/{sig_id}",
+                    ai_score=9,
+                    created_at=now,
+                    ai_summary="美联储宣布超预期降息50bp",
+                    catalyst_type="货币政策",
+                ))
+                # 对照：低分、非官方、非 highlight 的独立根，不应被纳入
+                s.add(News(
+                    id=low_id,
+                    title="某普通公司日常公告",
+                    source="某媒体",
+                    url=f"https://example.com/{low_id}",
+                    ai_score=3,
+                    created_at=now,
+                    ai_summary="普通快讯",
+                    catalyst_type=None,
+                ))
+                await s.commit()
+
+            rows = await es._find_candidate_clusters(
+                window_hours=12, min_sources=2, max_events=10, fast_ai_threshold=8
+            )
+            ids = {r["id"] for r in rows}
+
+            # 重要独立根应被纳入候选
+            assert sig_id in ids
+            # 不重要独立根不应被纳入（显著性闸门生效）
+            assert low_id not in ids
+
+            sig = next(r for r in rows if r["id"] == sig_id)
+            # 独立根：无子报道，聚合字段退化为单条报道语义
+            assert sig["is_standalone"] is True
+            assert sig["child_cnt"] == 0
+            assert sig["event_source_cnt"] == 1
+            assert sig["children"] == []
+            # 独立根不抢占多源合成配额
+            assert sig["fast_track"] is False
+        finally:
+            async with pg_engine.begin() as conn:
+                await conn.run_sync(Base.metadata.drop_all)

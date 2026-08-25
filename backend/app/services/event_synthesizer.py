@@ -232,16 +232,21 @@ async def _find_candidate_clusters(
     window_hours: int, min_sources: int, max_events: int,
     fast_ai_threshold: int = 8,
 ) -> list[dict]:
-    """找出窗口内「有新关联报道、且需要（重新）合成」的事件簇。
+    """找出窗口内「需要（重新）合成」的事件候选根。
 
-    fresh = 窗口内有新子报道的根（触发条件）；
-    agg   = 全量子报道统计（合成输入 + 增量判断基数 + 独立信源数）。
+    fresh = 窗口内有新子报道的根（多源簇触发条件）；
+    agg   = 全量子报道统计（合成输入 + 增量判断基数 + 独立信源数）；
+    recent_singles = 窗口内重要、且无任何子报道指向它的独立新闻根（单源事件）。
     增量判断必须比「全量报道总数」而非「窗口内新增数」。
 
-    合成门槛（满足任一即可）：普通多源 ≥ min_sources，或 fast path——
-    重大单一信源公告（权威一手来源 / ai_score ≥ fast_ai_threshold / is_highlight），
-    让美联储公告、SEC 文件、财报、交易所公告等仅单源的重要事件也能即时合成，
-    后续信源继续更新版本。fast_track 事件在 ORDER BY 中优先于普通多源，避免被 LIMIT 截断。
+    合成门槛（满足其一即可）：
+      - 普通多源簇 ≥ min_sources（多源），
+      - 或 fast path：重大单一信源公告（权威一手来源 / ai_score ≥ fast_ai_threshold /
+        is_highlight）。这让美联储公告、SEC 文件、财报、交易所公告等「仅单源」的
+        重要事件也能即时合成——既包含多源簇中的单源重大根，也包含独立单源根。
+    fast_track（多源簇）在 ORDER BY 中优先于普通多源与独立单源，避免被 LIMIT 截断；
+    独立单源根排在最后作为补充产能。每条新闻根至多合成一次
+    （events.article_count 非空即从已合成集合剔除）。
     """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
     # 权威/一手信源名称（与 prefilter.is_official_source 的 name 分支一致），
@@ -249,11 +254,33 @@ async def _find_candidate_clusters(
     official_names = settings.PREFILTER_OFFICIAL_SOURCES or DEFAULT_OFFICIAL_NAMES
     official_patterns = [f"%{n}%" for n in official_names]
     sql = text("""
-        WITH fresh AS (
+        -- 独立单源根：窗口内、足够重要、且没有任何子报道指向它的新闻根。
+        -- 此前因「无子报道」被排除在多源候选外，导致 events 缺行、简报事件链接被丢弃。
+        -- 仅纳入「从未合成过」的（events.article_count 空或 0），每条只合成一次。
+        recent_singles AS (
+            SELECT p.id AS pid
+            FROM news p
+            WHERE p.related_to_id IS NULL
+              AND p.created_at >= :cutoff
+              AND NOT EXISTS (
+                  SELECT 1 FROM news c WHERE c.related_to_id = p.id
+              )
+              AND (
+                  p.is_highlight = TRUE
+                  OR (p.ai_score IS NOT NULL AND p.ai_score >= :fast_ai_threshold)
+                  OR p.source ILIKE ANY(:official_patterns)
+              )
+        ),
+        fresh AS (
             SELECT DISTINCT related_to_id AS pid
             FROM news
             WHERE related_to_id IS NOT NULL
               AND created_at >= :cutoff
+        ),
+        candidate_pids AS (
+            SELECT pid FROM fresh
+            UNION
+            SELECT pid FROM recent_singles
         ),
         agg AS (
             SELECT c.related_to_id AS pid,
@@ -287,23 +314,34 @@ async def _find_candidate_clusters(
                e.last_alerted_version AS event_last_alerted_version,
                (e.embedding IS NOT NULL
                 AND e.embedding_model = :emb_tag) AS has_embedding,
-               a.child_cnt, a.event_source_cnt, a.children,
-               ( (a.child_cnt + 1) >= :min_sources
-                 OR p.is_highlight = TRUE
-                 OR (p.ai_score IS NOT NULL AND p.ai_score >= :fast_ai_threshold)
-                 OR p.source ILIKE ANY(:official_patterns)
-               ) AS fast_track
+               COALESCE(a.child_cnt, 0) AS child_cnt,
+               COALESCE(a.event_source_cnt, 1) AS event_source_cnt,
+               COALESCE(a.children, '[]'::jsonb) AS children,
+               -- 多源簇走原 fast_track 规则优先合成；独立单源根故意置 FALSE，
+               -- 仅作为 LIMIT 名额用尽后的补充产能，不抢占多源事件合成配额。
+               ( a.pid IS NOT NULL
+                 AND ( (a.child_cnt + 1) >= :min_sources
+                       OR p.is_highlight = TRUE
+                       OR (p.ai_score IS NOT NULL AND p.ai_score >= :fast_ai_threshold)
+                       OR p.source ILIKE ANY(:official_patterns)
+                     )
+               ) AS fast_track,
+               (a.pid IS NULL) AS is_standalone
         FROM news p
-        JOIN fresh f ON f.pid = p.id
-        JOIN agg a ON a.pid = p.id
+        JOIN candidate_pids cp ON cp.pid = p.id
+        LEFT JOIN agg a ON a.pid = p.id
         LEFT JOIN events e ON p.event_id = e.id
         WHERE p.related_to_id IS NULL
-          AND (e.article_count IS NULL OR (a.child_cnt + 1) > COALESCE(e.article_count, 0))
-          AND ( (a.child_cnt + 1) >= :min_sources
-             OR p.is_highlight = TRUE
-             OR (p.ai_score IS NOT NULL AND p.ai_score >= :fast_ai_threshold)
-             OR p.source ILIKE ANY(:official_patterns)
-              )
+          AND (
+              -- 多源簇：仅在新子报道使报道总数超过已合成 article_count 时重合成（增量）。
+              (a.pid IS NOT NULL
+               AND (e.article_count IS NULL
+                    OR (a.child_cnt + 1) > COALESCE(e.article_count, 0)))
+              -- 独立单源根：仅当从未合成过（article_count 空或 0）时合成一次。
+              OR (a.pid IS NULL
+                  AND (e.article_count IS NULL
+                       OR COALESCE(e.article_count, 0) = 0))
+          )
         ORDER BY fast_track DESC, a.child_cnt DESC, p.ai_score DESC
         LIMIT :max_events
     """)
