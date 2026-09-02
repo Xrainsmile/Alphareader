@@ -73,14 +73,14 @@ class Settings(BaseSettings):
     TENCENTMAAS_API_KEY: str = Field("", repr=False)                          # API 密钥（同时供评分复用，见 LLM_API_KEY）
     DEEPSEEK_API_KEY: str = Field("", repr=False, validation_alias=AliasChoices("TENCENTMAAS_API_KEY"))  # 兼容旧名（内部复用 tencentmaas key）
     DEEPSEEK_API_URL: str = "https://tokenhub.tencentmaas.com/v1/chat/completions"  # API 地址（OpenAI 兼容）
-    DEEPSEEK_MODEL: str = "deepseek-v4-flash"                        # 摘要/研报模型（digest / briefing 使用）
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash-202605"                # 摘要/研报模型（digest / briefing 使用）
 
     # ── LLM 评分/翻译/分析/公司名映射（deepseek-v4-flash）──
     # 评分等高频结构化任务用 v4-flash（便宜），摘要等长文本用 DEEPSEEK_MODEL。
     # LLM_API_KEY 通过 AliasChoices 复用 TENCENTMAAS_API_KEY：只配一个 key 即可同时驱动评分与摘要。
     LLM_API_KEY: str = Field("", repr=False, validation_alias=AliasChoices("LLM_API_KEY", "TENCENTMAAS_API_KEY", "DEEPSEEK_API_KEY"))  # 评分/分析用 key（默认复用 tencentmaas key）
     LLM_API_URL: str = "https://tokenhub.tencentmaas.com/v1/chat/completions"  # 评分/分析 API 地址（OpenAI 兼容）
-    LLM_MODEL: str = "deepseek-v4-flash"                            # 评分/分析模型（结构化 JSON 输出）
+    LLM_MODEL: str = "deepseek-v4-flash-202605"                     # 评分/分析模型（结构化 JSON 输出）
 
     # ── LLM 评分参数（AliasChoices 兼容旧 DEEPSEEK_* 环境变量名）──
     LLM_BATCH_SIZE: int = Field(30, validation_alias=AliasChoices("LLM_BATCH_SIZE", "DEEPSEEK_BATCH_SIZE"))                        # 每批评分条数（P1 实验：30 在零质量退化下较 20 省 ~9% prompt/item 且少 1/3 API 往返；40 仅再降 5% 却抬升 p95 延迟至 ~21s，故不取）
