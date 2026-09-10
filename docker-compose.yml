@@ -4,8 +4,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        VITE_API_KEY: ${NEWS_API_KEY}
+      # 注意：不要在此传 VITE_API_KEY。VITE_ 变量会被 Vite 内联进 H5 产物，
+      # 而 H5 是公开可下载的，等于公开密钥。前端不再持有密钥，
+      # 改由下方 NGINX_API_KEY 在反向代理时注入。
     container_name: alpha-frontend
     ports:
       - "80:80"

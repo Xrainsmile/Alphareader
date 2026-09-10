@@ -9,7 +9,16 @@ import { cacheGet, cachePeek, CACHE_TTL } from './requestCache'
 // 开发环境用 localhost:8000
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.MODE === 'production' ? '' : 'http://localhost:8000')
 
-// API Key — 通过环境变量注入
+// API Key — 生产环境不再内联，改由服务端注入
+//
+// 背景：此前 VITE_API_KEY 会在构建时被硬编码进公开 H5 bundle，
+// 导致密钥轮换后必须重建前端，否则浏览器仍携带旧 Key 触发 403（页面空白）。
+//
+// 现在：生产环境不设置 VITE_API_KEY（构建期 .env.production 已被 Dockerfile 删除），
+// 请求不带 X-API-Key，由 Nginx 反向代理统一注入（见 deploy/nginx/conf.d/default.conf.template）。
+// 密钥轮换只需改服务器根目录 .env，无需重建前端。
+//
+// 本地开发直连后端（localhost:8000）且后端启用了鉴权时，可通过 .env.development 设置该变量。
 const API_KEY = import.meta.env.VITE_API_KEY || ''
 
 /**

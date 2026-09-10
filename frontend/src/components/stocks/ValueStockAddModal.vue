@@ -153,7 +153,6 @@ const doSearch = async () => {
       url: `${import.meta.env.VITE_API_BASE_URL || (import.meta.env.MODE === 'production' ? '' : 'http://localhost:8000')}/api/v1/sandbox/stock-search?q=${encodeURIComponent(q)}`,
       method: 'GET',
       header: {
-        'X-API-Key': import.meta.env.VITE_API_KEY || '',
         'X-Access-Token': token,
       },
     })
@@ -208,7 +207,6 @@ const submit = async () => {
       method: 'POST',
       header: {
         'Content-Type': 'application/json',
-        'X-API-Key': import.meta.env.VITE_API_KEY || '',
         'X-Access-Token': token,
       },
       data: {
