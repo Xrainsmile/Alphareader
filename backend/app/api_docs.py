@@ -500,6 +500,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
 @router.get("/api-docs", response_class=HTMLResponse, include_in_schema=False)
 async def api_docs_page():
-    """RS Rating API 文档页面。"""
-    html = _API_DOCS_HTML.replace("{{ api_key }}", settings.NEWS_API_KEY or "")
+    """RS Rating API 文档页面。
+
+    安全说明：不再把 NEWS_API_KEY 注入页面（此前任何访客查看源码即可拿到全站读凭据）。
+    调试时请在页面输入框内手动粘贴 Key，Key 只存在于本次浏览器会话，不落盘、不回传。
+    """
+    html = _API_DOCS_HTML.replace("{{ api_key }}", "")
     return HTMLResponse(html)

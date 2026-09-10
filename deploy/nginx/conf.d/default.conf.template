@@ -8,11 +8,21 @@ map $http_x_api_key $final_api_key {
 }
 
 # Rate limiting zones
+# 关键：先还原真实客户端 IP，否则 $binary_remote_addr 取到的是 Docker 网桥/宿主地址，
+# 会让所有访客被算进同一个限流桶（要么全放行、要么误伤全站）。
+# 这里只信任由本机 Nginx 追加的一跳 XFF（公网直连场景），避免伪造 XFF 绕过限流。
+map $http_x_forwarded_for $real_client_ip {
+    default              $remote_addr;
+    "~^(?P<first>[^,]+)," $first;
+}
+
 # General API: 10 requests/second per IP (burst up to 30)
 # 个人应用，前端页面切换时会并发多个 API 请求，需要足够的 burst 空间
-limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+limit_req_zone $real_client_ip zone=api:10m rate=10r/s;
 # AI-heavy endpoints (briefings/digests generate): 3 requests/minute per IP
-limit_req_zone $binary_remote_addr zone=api_ai:10m rate=3r/m;
+limit_req_zone $real_client_ip zone=api_ai:10m rate=3r/m;
+# 登录/验密端点：5 requests/minute per IP，防暴力破解
+limit_req_zone $real_client_ip zone=auth:10m rate=5r/m;
 
 # Redirect HTTP → HTTPS
 server {
@@ -45,11 +55,11 @@ server {
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 1d;
 
-    # Security headers
-    add_header X-Frame-Options DENY always;
-    add_header X-Content-Type-Options nosniff always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    # 不暴露 Nginx 版本号，避免被按 CVE 定向
+    server_tokens off;
+
+    # Security headers（统一片段，见 security-headers.conf）
+    include /etc/nginx/templates/security-headers.conf;
 
     # Docker DNS resolver
     resolver 127.0.0.11 valid=30s;
@@ -61,9 +71,29 @@ server {
     # HTML 不缓存：SPA 入口必须每次重验证，否则发版后浏览器启发式缓存
     # 会持续引用旧 bundle，用户看不到更新（js/css 走下方 30d 缓存不受影响）
     location / {
+        # 本块有 add_header → 必须重复引入安全头，否则上层安全头被整体丢弃
+        include /etc/nginx/templates/security-headers.conf;
         add_header Cache-Control "no-cache, must-revalidate" always;
         expires -1;
         try_files $uri $uri/ /index.html;
+    }
+
+    # ── 认证端点：严格限流，防暴力破解 ──
+    # /dashboard/login（POST 提交密码）与 /api/v1/sandbox/verify-access（模拟仓验密）
+    location ~ ^/(dashboard/login|api/v1/sandbox/verify-access)$ {
+        limit_req zone=auth burst=3 nodelay;
+        limit_req_status 429;
+
+        set $backend web;
+        proxy_pass http://$backend:8000$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+        proxy_connect_timeout 10s;
+
+        proxy_set_header X-API-Key $final_api_key;
     }
 
     # AI-heavy endpoints: stricter rate limit (3 req/min per IP)
@@ -132,6 +162,7 @@ server {
 
     # Static asset caching
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        include /etc/nginx/templates/security-headers.conf;
         expires 30d;
         add_header Cache-Control "public, no-transform";
     }

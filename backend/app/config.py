@@ -45,7 +45,8 @@ class Settings(BaseSettings):
     LOG_FORMAT: str = "text"         # 日志格式："text" 人类可读 / "json" 结构化
 
     # ── 跨域（CORS）──
-    CORS_ORIGINS: str = "https://alphareader.site,http://localhost:5173"  # 逗号分隔的允许源
+    # 生产默认只允许自有域名；本地开发源请在 .env 中显式追加，不要改默认值。
+    CORS_ORIGINS: str = "https://alphareader.site"  # 逗号分隔的允许源
 
     # ── Finnhub 市场新闻 ──
     FINNHUB_API_KEY: str = Field("", repr=False)                        # Finnhub API Token (https://finnhub.io)

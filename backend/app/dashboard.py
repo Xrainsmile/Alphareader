@@ -7,7 +7,7 @@
 """
 
 import hashlib
-import secrets
+import hmac
 import time
 
 from fastapi import APIRouter, Cookie
@@ -17,13 +17,19 @@ from app.config import settings
 
 router = APIRouter(tags=["dashboard"])
 
-# 简单的 token 签名：HMAC(password + timestamp)
-_TOKEN_TTL = 7200  # 2 小时
+# Token 签名：HMAC-SHA256(signing_key, timestamp)，完整 256bit 签名
+_TOKEN_TTL = 7200  # 2 小时# 由密码派生独立签名密钥（而非直接用密码拼接），避免密码本身参与可预测的拼接结构
+_SIGNING_KEY = hashlib.pbkdf2_hmac(
+    "sha256",
+    (settings.DASHBOARD_PASSWORD or "").encode(),
+    b"alphareader-dashboard-v2",
+    200_000,
+).hex()
 
 
 def _make_token() -> str:
     ts = str(int(time.time()))
-    sig = hashlib.sha256(f"{settings.DASHBOARD_PASSWORD}:{ts}".encode()).hexdigest()[:16]
+    sig = hmac.new(_SIGNING_KEY.encode(), ts.encode(), hashlib.sha256).hexdigest()
     return f"{ts}:{sig}"
 
 
@@ -35,8 +41,8 @@ def _verify_token(token: str) -> bool:
         ts = int(ts_str)
         if time.time() - ts > _TOKEN_TTL:
             return False
-        expected = hashlib.sha256(f"{settings.DASHBOARD_PASSWORD}:{ts_str}".encode()).hexdigest()[:16]
-        return secrets.compare_digest(sig, expected)
+        expected = hmac.new(_SIGNING_KEY.encode(), ts_str.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(sig, expected)
     except Exception:
         return False
 
@@ -358,5 +364,5 @@ async def dashboard_page(dash_token: str = Cookie(None)):
     # 如果设置了密码且 token 验证失败，跳转登录
     if settings.DASHBOARD_PASSWORD and not _verify_token(dash_token or ""):
         return RedirectResponse("/dashboard/login", status_code=303)
-    html = DASHBOARD_HTML.replace("{{ api_key }}", settings.NEWS_API_KEY or "")
+    html = DASHBOARD_HTML.replace("{{ api_key }}", "")
     return HTMLResponse(html)
