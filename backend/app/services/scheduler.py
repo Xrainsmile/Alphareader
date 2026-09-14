@@ -1139,17 +1139,21 @@ async def _run_scheduler_jobs():
         misfire_grace_time=MISFIRE_GRACE_TIME,
     )
 
-    # 15:50 盘后：基于全天新闻更新催化剂标的（在 Briefing 16:00 之前跑完）
+    # 19:00 盘后：基于全天新闻更新催化剂标的
+    # 成本优化（2026-09-14）：原为 15:50，落在 DeepSeek 高峰计费时段
+    # （北京时间周一至周五 09:00-12:00、14:00-18:00），LLM 单价是闲时的 2 倍。
+    # 挪至 19:00 后为闲时价；且 19:00 仍是收盘后，新闻覆盖比 15:50 更完整。
+    # 与 18:30 digest 错开，避免两个 LLM 任务争抢并发额度。
     scheduler.add_job(
         _catalyst_job,
         trigger=CronTrigger(
             day_of_week="mon-fri",
-            hour="15",
-            minute="50",
+            hour="19",
+            minute="0",
             timezone=settings.TIMEZONE,
         ),
-        id="catalyst_1550",
-        name=f"Catalyst Aggregation PM (Mon-Fri 15:50 {settings.TIMEZONE})",
+        id="catalyst_1900",
+        name=f"Catalyst Aggregation PM (Mon-Fri 19:00 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,
@@ -1258,9 +1262,9 @@ async def _run_scheduler_jobs():
     # Catalyst Aggregation status
     cat_am = scheduler.get_job("catalyst_0845")
     cat_am_next = cat_am.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if cat_am and cat_am.next_run_time else "N/A"
-    cat_pm = scheduler.get_job("catalyst_1550")
+    cat_pm = scheduler.get_job("catalyst_1900")
     cat_pm_next = cat_pm.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if cat_pm and cat_pm.next_run_time else "N/A"
-    logger.info("Catalyst Aggregation scheduled Mon-Fri 08:45 (next: %s) & 15:50 (next: %s)", cat_am_next, cat_pm_next)
+    logger.info("Catalyst Aggregation scheduled Mon-Fri 08:45 (next: %s) & 19:00 (next: %s)", cat_am_next, cat_pm_next)
 
     # US Market jobs status
     us_q = scheduler.get_job("us_quotes_daily")
