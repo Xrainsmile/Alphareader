@@ -69,19 +69,22 @@ class Settings(BaseSettings):
     SILICONFLOW_API_KEY: str = Field("", repr=False)                    # SiliconFlow API Key (https://cloud.siliconflow.cn)
     SILICONFLOW_EMBEDDING_MODEL: str = "BAAI/bge-m3"               # Embedding 模型：BAAI/bge-m3(1024维) / BAAI/bge-large-zh-v1.5(1024维)
 
-    # ── 腾讯云 tencentmaas AI（摘要/研报专用，流式调用）──
-    # 从 DeepSeek 官网迁移至腾讯云 tencentmaas（OpenAI 兼容，请求方式不变）
-    TENCENTMAAS_API_KEY: str = Field("", repr=False)                          # API 密钥（同时供评分复用，见 LLM_API_KEY）
-    DEEPSEEK_API_KEY: str = Field("", repr=False, validation_alias=AliasChoices("TENCENTMAAS_API_KEY"))  # 兼容旧名（内部复用 tencentmaas key）
-    DEEPSEEK_API_URL: str = "https://tokenhub.tencentmaas.com/v1/chat/completions"  # API 地址（OpenAI 兼容）
-    DEEPSEEK_MODEL: str = "deepseek-v4-flash-202605"                # 摘要/研报模型（digest / briefing 使用）
+    # ── DeepSeek 官方 API（摘要/研报专用，流式调用）──
+    # 2026-09 从腾讯云 tencentmaas 切回 DeepSeek 官方直连（OpenAI 兼容，请求方式不变）。
+    # 注意：pydantic-settings 下 validation_alias 会覆盖字段名本身，故必须显式把
+    # DEEPSEEK_API_KEY 放在首位，否则 .env 里写 DEEPSEEK_API_KEY 不会被读取（旧代码的坑）。
+    TENCENTMAAS_API_KEY: str = Field("", repr=False)                          # 【已废弃】仅作旧值兼容，不再作为主 key
+    DEEPSEEK_API_KEY: str = Field("", repr=False, validation_alias=AliasChoices("DEEPSEEK_API_KEY", "TENCENTMAAS_API_KEY"))  # DeepSeek 官方 key（优先）；无则回退旧 tencentmaas key
+    DEEPSEEK_API_URL: str = "https://api.deepseek.com/chat/completions"      # DeepSeek 官方地址（OpenAI 兼容）
+    DEEPSEEK_MODEL: str = "deepseek-flash"                                    # 摘要/研报模型（digest / briefing 使用）= V4.1-Flash
 
-    # ── LLM 评分/翻译/分析/公司名映射（deepseek-v4-flash）──
-    # 评分等高频结构化任务用 v4-flash（便宜），摘要等长文本用 DEEPSEEK_MODEL。
-    # LLM_API_KEY 通过 AliasChoices 复用 TENCENTMAAS_API_KEY：只配一个 key 即可同时驱动评分与摘要。
-    LLM_API_KEY: str = Field("", repr=False, validation_alias=AliasChoices("LLM_API_KEY", "TENCENTMAAS_API_KEY", "DEEPSEEK_API_KEY"))  # 评分/分析用 key（默认复用 tencentmaas key）
-    LLM_API_URL: str = "https://tokenhub.tencentmaas.com/v1/chat/completions"  # 评分/分析 API 地址（OpenAI 兼容）
-    LLM_MODEL: str = "deepseek-v4-flash-202605"                     # 评分/分析模型（结构化 JSON 输出）
+    # ── LLM 评分/翻译/分析/公司名映射（deepseek-flash）──
+    # 评分等高频结构化任务与摘要统一用 deepseek-flash（V4.1-Flash，官方当前主推，成本最低）。
+    # 官方已下线 V4 Flash / V4 Flash Vision Exp：旧名 deepseek-v4-flash 会临时路由到 V4.1-Flash。
+    # LLM_API_KEY 读取优先级：LLM_API_KEY > DEEPSEEK_API_KEY > TENCENTMAAS_API_KEY（旧值兜底）。
+    LLM_API_KEY: str = Field("", repr=False, validation_alias=AliasChoices("LLM_API_KEY", "DEEPSEEK_API_KEY", "TENCENTMAAS_API_KEY"))  # 评分/分析用 key（默认复用 DeepSeek 官方 key）
+    LLM_API_URL: str = "https://api.deepseek.com/chat/completions"            # 评分/分析 API 地址（OpenAI 兼容）
+    LLM_MODEL: str = "deepseek-flash"                                         # 评分/分析模型（结构化 JSON 输出）
 
     # ── LLM 评分参数（AliasChoices 兼容旧 DEEPSEEK_* 环境变量名）──
     LLM_BATCH_SIZE: int = Field(30, validation_alias=AliasChoices("LLM_BATCH_SIZE", "DEEPSEEK_BATCH_SIZE"))                        # 每批评分条数（P1 实验：30 在零质量退化下较 20 省 ~9% prompt/item 且少 1/3 API 往返；40 仅再降 5% 却抬升 p95 延迟至 ~21s，故不取）
