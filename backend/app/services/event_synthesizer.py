@@ -254,6 +254,7 @@ async def _find_candidate_clusters(
     official_names = settings.PREFILTER_OFFICIAL_SOURCES or DEFAULT_OFFICIAL_NAMES
     official_patterns = [f"%{n}%" for n in official_names]
     sql = text("""
+        WITH
         -- 独立单源根：窗口内、足够重要、且没有任何子报道指向它的新闻根。
         -- 此前因「无子报道」被排除在多源候选外，导致 events 缺行、简报事件链接被丢弃。
         -- 仅纳入「从未合成过」的（events.article_count 空或 0），每条只合成一次。

@@ -762,6 +762,16 @@ class TestCandidateFastPath:
         assert "is_standalone" in sql
         assert "COALESCE(e.article_count, 0) = 0" in sql
 
+        # 6) 防回归：CTE 必须以 WITH 开头。
+        #    曾因漏写 WITH 导致整段 SQL 语法错误（PostgresSyntaxError at or near
+        #    "recent_singles"），线上持续数周静默失败——因为本测试从不真正执行 SQL，
+        #    只断言子串存在，所以漏检。此处强制校验语法骨架。
+        stripped = sql.strip()
+        assert stripped.upper().startswith("WITH"), (
+            "CTE 必须以 WITH 开头，否则整段 SQL 语法错误："
+            f"{stripped[:60]!r}"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 独立单源根：真实 PostgreSQL 集成测试
