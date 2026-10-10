@@ -93,6 +93,17 @@
     <template v-else-if="name === 'moon'">
       <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
     </template>
+    <!-- 日历（日期筛选）-->
+    <template v-else-if="name === 'calendar'">
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18" />
+      <path d="M8 3v4M16 3v4" />
+    </template>
+    <!-- 清除 / 关闭 -->
+    <template v-else-if="name === 'close'">
+      <path d="M18 6 6 18" />
+      <path d="M6 6l12 12" />
+    </template>
     <template v-else>
       <circle cx="12" cy="12" r="9" />
     </template>

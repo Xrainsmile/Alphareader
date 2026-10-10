@@ -5,6 +5,6 @@ export default defineConfig({
   plugins: [uni()],
   server: {
     host: true,
-    port: 4598,
+    port: Number(process.env.PORT) || 53805,
   },
 })

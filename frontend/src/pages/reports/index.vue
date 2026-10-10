@@ -10,6 +10,68 @@
         <GateButton class="gate-mobile-only" />
       </view>
       <text class="reports-subtitle">阶段简报 · 事件追踪</text>
+
+      <!-- 时间筛选：按日期 + 时段过滤简报 -->
+      <view class="rpt-filter">
+        <view class="rf-row">
+          <view class="rf-label">
+            <IconSvg name="calendar" :size="15" class="rf-label-ico" />
+            <text class="rf-label-text">日期</text>
+          </view>
+          <scroll-view class="rf-scroll" scroll-x :show-scrollbar="false">
+            <view class="rf-chips">
+              <view
+                class="rf-chip"
+                :class="{ 'rf-chip-on': filterDate === '' }"
+                @click="pickDate('')"
+              >
+                <text class="rf-chip-text">全部</text>
+              </view>
+              <view
+                v-for="d in dateOptions"
+                :key="d.value"
+                class="rf-chip"
+                :class="{ 'rf-chip-on': filterDate === d.value }"
+                @click="pickDate(d.value)"
+              >
+                <text class="rf-chip-text">{{ d.label }}</text>
+              </view>
+            </view>
+          </scroll-view>
+          <picker mode="date" :value="pickerValue" :end="todayStr" @change="onDateChange">
+            <view class="rf-date" :class="{ 'rf-date-on': filterDate }">
+              <IconSvg name="calendar" :size="13" class="rf-date-ico" />
+              <text class="rf-date-text">{{ filterDate || '自定义' }}</text>
+            </view>
+          </picker>
+        </view>
+
+        <view class="rf-row rf-row-period">
+          <view class="rf-label">
+            <IconSvg name="clock" :size="15" class="rf-label-ico" />
+            <text class="rf-label-text">时段</text>
+          </view>
+          <scroll-view class="rf-scroll" scroll-x :show-scrollbar="false">
+            <view class="rf-chips">
+              <view
+                v-for="p in PERIOD_OPTIONS"
+                :key="p.value"
+                class="rf-chip"
+                :class="{ 'rf-chip-on': filterPeriod === p.value }"
+                @click="pickPeriod(p.value)"
+              >
+                <text class="rf-chip-text">{{ p.label }}</text>
+              </view>
+            </view>
+          </scroll-view>
+        </view>
+
+        <view v-if="filterDate || filterPeriod" class="rf-reset" @click="resetFilter">
+          <IconSvg name="close" :size="12" class="rf-reset-ico" />
+          <text class="rf-reset-text">清除筛选</text>
+        </view>
+      </view>
+
       <!-- 移动端解锁后：Stocks / SEPA 入口（原生 tabBar 已默认隐藏）-->
       <view v-if="isOpen" class="gate-reveal-mobile">
         <view class="gate-reveal-chip" @click="goHidden('stocks')">Stocks</view>
@@ -32,24 +94,33 @@
       <!-- Empty -->
       <EmptyState
         v-if="!digestLoading && digestList.length === 0"
-        text="暂无新闻概览"
+        :text="filterDate || filterPeriod !== 'all' ? '该条件下暂无简报' : '暂无新闻概览'"
         mobile-padding="120rpx 0"
         desktop-padding="60px 0"
       />
 
       <!-- Timeline -->
       <view v-if="!digestLoading && digestList.length > 0" class="timeline">
-        <view
-          v-for="(item, idx) in digestList"
-          :key="item.id"
-          :id="'digest-' + item.id"
-          class="timeline-item"
-        >
-          <!-- Timeline connector -->
-          <view class="timeline-rail">
-            <view class="timeline-dot" :class="'dot-' + item.period_label"></view>
-            <view v-if="idx < digestList.length - 1" class="timeline-line"></view>
+        <view v-for="(g, gi) in groupedDigests" :key="g.key" class="tl-group">
+          <!-- 日期分组标题：26.10.10 周六 -->
+          <view class="tl-date">
+            <view class="tl-date-bar"></view>
+            <text class="tl-date-main">{{ g.dateMain }}</text>
+            <text class="tl-date-week">{{ g.weekday }}</text>
+            <text class="tl-date-count">{{ g.items.length }} 份简报</text>
           </view>
+
+          <view
+            v-for="(item, idx) in g.items"
+            :key="item.id"
+            :id="'digest-' + item.id"
+            class="timeline-item"
+          >
+            <!-- Timeline connector -->
+            <view class="timeline-rail">
+              <view class="timeline-dot" :class="'dot-' + item.period_label"></view>
+              <view v-if="showRailLine(gi, idx)" class="timeline-line"></view>
+            </view>
 
           <!-- Card -->
           <view class="digest-card">
@@ -145,12 +216,11 @@
 
             <!-- 旧版 Markdown 兼容（schema_version != 2）-->
             <mp-html v-if="!(item.schema_version === 2 && item.structured_content)" :content="renderMd(item.content)" :tag-style="tagStyle" :lazy-load="true" />
-          </view>
-        </view>
-      </view>
-
-      <!-- Load more -->
-      <view v-if="!digestLoading && digestList.length > 0 && digestDays < 30" class="load-more" @click="loadMoreDigests">
+          </view><!-- /digest-card -->
+        </view><!-- /timeline-item -->
+        </view><!-- /tl-group -->
+      </view><!-- /timeline -->
+      <view v-if="!digestLoading && digestList.length > 0 && digestDays < 30 && !filterDate" class="load-more" @click="loadMoreDigests">
         <text class="load-more-text">加载更多</text>
       </view>
     </view>
@@ -162,7 +232,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
 import { fetchDigests } from '@/utils/api'
 import { renderMarkdown } from '@/utils/markdown'
@@ -170,6 +240,7 @@ import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PcSidebar from '@/components/common/PcSidebar.vue'
 import GateButton from '@/components/common/GateButton.vue'
+import IconSvg from '@/components/common/IconSvg.vue'
 import { useGate } from '@/utils/useGate'
 import { listTagStyle, listTagStyleMobile } from '@/utils/formatters'
 import { exportDigestImage, canExportImage } from '@/utils/digestExport'
@@ -190,6 +261,96 @@ const digestDays = ref(7)
 const expandedIds = reactive(new Set())
 // 深链：从企微推送 / ?id=<digest_id> 进入时，定位到对应简报
 const targetDigestId = ref(null)
+
+// ── 时间筛选：日期 + 时段 ──
+const filterDate = ref('')      // '' = 全部；否则 'YYYY-MM-DD'
+const filterPeriod = ref('all') // all / morning / midday / evening / night
+const PERIOD_OPTIONS = [
+  { value: 'all', label: '全部' },
+  { value: 'morning', label: '早间' },
+  { value: 'midday', label: '午间' },
+  { value: 'evening', label: '晚间' },
+  { value: 'night', label: '夜间' },
+]
+
+// 日期工具：本地时区，避免 toISOString 的 UTC 偏移
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const todayStr = toDateStr(new Date())
+const pickerValue = computed(() => filterDate.value || todayStr)
+
+// 快捷日期：今天 / 昨天 / 前天 / 更早（最近 7 天，倒序）
+const dateOptions = computed(() => {
+  const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  const out = []
+  for (let i = 0; i < 4; i++) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    out.push({
+      value: toDateStr(d),
+      label: i === 0 ? '今天' : i === 1 ? '昨天' : i === 2 ? '前天' : `${d.getMonth() + 1}.${d.getDate()}`,
+    })
+  }
+  return out
+})
+
+// 前端过滤后的列表（时段在前端过滤，日期走后端 date 参数）
+const visibleDigests = computed(() =>
+  filterPeriod.value === 'all'
+    ? digestList.value
+    : digestList.value.filter((d) => d.period_label === filterPeriod.value)
+)
+
+// 按日期分组：26.10.10 周六 · N 份简报
+const groupedDigests = computed(() => {
+  const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  const groups = []
+  const map = new Map()
+  for (const item of visibleDigests.value) {
+    const raw = item.digest_date || (item.period_start || '').slice(0, 10)
+    if (!raw) continue
+    const d = new Date(`${raw}T00:00:00`)
+    if (!map.has(raw)) {
+      const g = {
+        key: raw,
+        dateMain: `${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`,
+        weekday: WEEK[d.getDay()] || '',
+        items: [],
+      }
+      map.set(raw, g)
+      groups.push(g)
+    }
+    map.get(raw).items.push(item)
+  }
+  return groups
+})
+
+// 时间轴竖线：仅在本组还有下一条、或后面还有分组时延续
+function showRailLine(gi, idx) {
+  const g = groupedDigests.value[gi]
+  if (!g) return false
+  if (idx < g.items.length - 1) return true
+  return gi < groupedDigests.value.length - 1
+}
+
+function pickDate(v) {
+  if (filterDate.value === v) return
+  filterDate.value = v
+  loadDigests()
+}
+function onDateChange(e) {
+  filterDate.value = e.detail.value || ''
+  loadDigests()
+}
+function pickPeriod(v) {
+  filterPeriod.value = v
+}
+function resetFilter() {
+  filterDate.value = ''
+  filterPeriod.value = 'all'
+  loadDigests()
+}
 
 // Markdown tag styles (from shared formatters)
 // 按屏宽选择字号体系：PC 15px 正文 / 移动端 13px，均对齐 news 页面
@@ -241,7 +402,7 @@ async function applyDigestDeepLink() {
   if (!digestList.value.some((d) => d.id === id) && digestDays.value < 30) {
     // 超出默认 7 天窗口，扩大范围重试
     digestDays.value = 30
-    const data = await fetchDigests(digestDays.value)
+    const data = await fetchDigests(digestDays.value, filterDate.value)
     digestList.value = data || []
   }
   expandedIds.add(id)
@@ -280,7 +441,9 @@ async function exportDigest(item) {
 async function loadDigests() {
   digestLoading.value = true
   try {
-    const data = await fetchDigests(digestDays.value)
+    // 选了具体日期时放宽 days（后端按 date 精确过滤，days 仅作兜底）
+    const days = filterDate.value ? 30 : digestDays.value
+    const data = await fetchDigests(days, filterDate.value)
     digestList.value = data || []
     // 自动展开第一条
     if (digestList.value.length > 0 && expandedIds.size === 0) {
@@ -355,6 +518,176 @@ onMounted(() => {
   margin-top: 6rpx;
   letter-spacing: 1rpx;
   display: block;
+}
+
+/* ── 时间筛选（日期 + 时段）── */
+.rpt-filter {
+  margin-top: 12rpx;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  max-width: none;
+}
+.rf-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+}
+.rf-row-period {
+  margin-top: 8rpx;
+}
+.rf-label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  width: 60rpx;
+  height: 44rpx;
+  color: var(--color-text-muted, #8c8c9a);
+}
+.rf-label-ico {
+  flex: none;
+  opacity: 0.7;
+}
+.rf-label-text {
+  font-size: 22rpx;
+  font-weight: 500;
+  color: var(--color-text-muted, #8c8c9a);
+  letter-spacing: 0;
+}
+.rf-scroll {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+.rf-chips {
+  display: inline-flex;
+  gap: 8rpx;
+  padding: 2rpx 0;
+}
+.rf-chip {
+  flex: none;
+  padding: 6rpx 16rpx;
+  border-radius: 20rpx;
+  background: var(--color-bg-secondary, #f5f7fa);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.rf-chip:active {
+  background: var(--color-bg-active, #f5f6f8);
+}
+.rf-chip-on {
+  background: var(--color-bg-info-soft, #e8f0fe);
+}
+.rf-chip-text {
+  font-size: 22rpx;
+  color: var(--color-text-tertiary, #5a5a6e);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.rf-chip-on .rf-chip-text {
+  color: var(--color-brand, #4285f4);
+  font-weight: 600;
+}
+.rf-chip-on .rf-chip-text {
+  color: var(--color-brand, #4285f4);
+  font-weight: 600;
+}
+.rf-date {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 6rpx 14rpx;
+  border-radius: 20rpx;
+  background: var(--color-bg-secondary, #f5f7fa);
+  border: none;
+  cursor: pointer;
+}
+.rf-date-on {
+  background: var(--color-bg-info-soft, #e8f0fe);
+}
+.rf-date-ico {
+  flex: none;
+  color: var(--color-text-muted, #8c8c9a);
+}
+.rf-date-on {
+  background: var(--color-brand-light, rgba(66, 133, 244, 0.08));
+  border-color: var(--color-brand, #4285f4);
+}
+.rf-date-on .rf-date-ico,
+.rf-date-on .rf-date-text {
+  color: var(--color-brand, #4285f4);
+}
+.rf-date-text {
+  font-size: 22rpx;
+  color: var(--color-text-tertiary, #5a5a6e);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.rf-date-on .rf-date-text {
+  color: var(--color-brand, #4285f4);
+  font-weight: 600;
+}
+.rf-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 4rpx;
+  align-self: flex-start;
+  margin-top: 8rpx;
+  padding: 4rpx 0;
+  background: transparent;
+  cursor: pointer;
+}
+.rf-reset-ico {
+  flex: none;
+  color: var(--color-text-muted, #8c8c9a);
+}
+.rf-reset-text {
+  font-size: 22rpx;
+  color: var(--color-text-muted, #8c8c9a);
+  font-weight: 500;
+}
+
+/* ── 日期分组标题：26.10.10 周六 · 2 份简报 ── */
+.tl-group {
+  margin-bottom: 8rpx;
+}
+.tl-date {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 16rpx 0 8rpx 0;
+}
+.tl-date-bar {
+  width: 4rpx;
+  height: 22rpx;
+  border-radius: 2rpx;
+  background: var(--color-brand, #4285f4);
+  flex: none;
+}
+.tl-date-main {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--color-text-secondary, #3a3a4a);
+  letter-spacing: 0;
+}
+.tl-date-week {
+  flex: none;
+  padding: 2rpx 10rpx;
+  border-radius: 20rpx;
+  background: var(--color-bg-info-soft, #e8f0fe);
+  font-size: 20rpx;
+  font-weight: 500;
+  color: var(--color-text-tertiary, #5a5a6e);
+}
+.tl-date-count {
+  margin-left: auto;
+  font-size: 22rpx;
+  color: var(--color-text-muted, #8c8c9a);
 }
 
 /* ═══════════════════════════════════
@@ -781,6 +1114,37 @@ onMounted(() => {
     margin-top: 4px;
   }
 
+  /* 时间筛选 */
+  .rpt-filter {
+    margin-top: 14px;
+    padding: 0;
+    border-radius: 0;
+    border-width: 0;
+    max-width: 760px;
+  }
+  .rf-row { gap: 8px; align-items: flex-start; }
+  .rf-row-period { margin-top: 6px; }
+  .rf-label { width: 48px; height: 26px; gap: 3px; }
+  .rf-label-text { font-size: 13px; }
+  .rf-chips { gap: 6px; }
+  .rf-chip {
+    padding: 3px 10px;
+    border-radius: 12px;
+  }
+  .rf-chip-text { font-size: 13px; }
+  .rf-date { padding: 3px 10px; border-radius: 12px; gap: 4px; }
+  .rf-date-text { font-size: 13px; }
+  .rf-reset { margin-top: 8px; padding: 2px 0; gap: 3px; }
+  .rf-reset-text { font-size: 13px; }
+
+  /* 日期分组标题 */
+  .tl-group { margin-bottom: 4px; }
+  .tl-date { gap: 8px; padding: 18px 0 8px 0; }
+  .tl-date-bar { width: 3px; height: 15px; border-radius: 2px; }
+  .tl-date-main { font-size: 15px; font-weight: 600; }
+  .tl-date-week { font-size: 13px; padding: 2px 8px; border-radius: 12px; }
+  .tl-date-count { font-size: 13px; }
+
   /* Timeline */
   .timeline-rail {
     width: 24px;
@@ -857,29 +1221,53 @@ onMounted(() => {
 }
 
 @media screen and (min-width: 1200px) {
-  /* ── Reports 字号放大（再次上调 ~20%）── */
-  .digest-card { padding: 32px 36px; margin: 28px 32px; max-width: none; }
-  .dc-title { font-size: 27px; }
-  .dc-range { font-size: 17px; }
-  .dc-stats { font-size: 16px; }
-  .dc-section-title { font-size: 19px; }
-  .dc-core-text { font-size: 19px; line-height: 1.7; }
-  .dc-core-summary { font-size: 16px; }
-  .dc-overview-text { font-size: 19px; line-height: 1.7; }
-  .dc-change-label { font-size: 15px; }
-  .dc-change-text { font-size: 19px; line-height: 1.7; }
-  .dc-mk-rank { font-size: 19px; min-width: 28px; }
-  .dc-mk-title { font-size: 19px; line-height: 1.6; }
-  .dc-mk-change { font-size: 18px; line-height: 1.65; }
-  .dc-mk-impact { font-size: 18px; line-height: 1.65; }
-  .dc-mk-watch { font-size: 16px; }
-  .dc-mk-src { font-size: 15px; }
-  .dc-watch-src { font-size: 16px; }
-  .dc-conf { font-size: 14px; }
-  .dc-mk-detail { font-size: 16px; }
-  .dc-watch-text { font-size: 18px; }
-  .dc-upcoming-text { font-size: 18px; }
-  .reports-title { font-size: 32px; }
+  /* ── Reports 桌面档：原为100%缩放下的放大版，现固化80%缩放的紧凑观感 ── */
+  .digest-card { padding: 26px 29px; margin: 22px 26px; max-width: none; }
+  .dc-title { font-size: 22px; }
+  .dc-range { font-size: 14px; }
+  .dc-stats { font-size: 13px; }
+  .dc-section-title { font-size: 15px; }
+  .dc-core-text { font-size: 15px; line-height: 1.7; }
+  .dc-core-summary { font-size: 13px; }
+  .dc-overview-text { font-size: 15px; line-height: 1.7; }
+  .dc-change-label { font-size: 12px; }
+  .dc-change-text { font-size: 15px; line-height: 1.7; }
+  .dc-mk-rank { font-size: 15px; min-width: 22px; }
+  .dc-mk-title { font-size: 15px; line-height: 1.6; }
+  .dc-mk-change { font-size: 14px; line-height: 1.65; }
+  .dc-mk-impact { font-size: 14px; line-height: 1.65; }
+  .dc-mk-watch { font-size: 13px; }
+  .dc-mk-src { font-size: 12px; }
+  .dc-watch-src { font-size: 13px; }
+  .dc-conf { font-size: 11px; }
+  .dc-mk-detail { font-size: 13px; }
+  .dc-watch-text { font-size: 14px; }
+  .dc-upcoming-text { font-size: 14px; }
+  .reports-title { font-size: 26px; }
+
+  /* 时间筛选 —— 对齐现网 .filter-tag：无边框、紧凑文字 */
+  .rpt-filter { padding: 0; max-width: none; }
+  .rf-row { gap: 6px; align-items: flex-start; }
+  .rf-row-period { margin-top: 5px; }
+  .rf-label { width: 44px; height: 22px; gap: 3px; }
+  .rf-label-text { font-size: 11px; }
+  .rf-chips { gap: 5px; }
+  .rf-chip {
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+  .rf-chip-text { font-size: 11px; }
+  .rf-date { padding: 2px 8px; border-radius: 10px; gap: 3px; }
+  .rf-date-text { font-size: 11px; }
+  .rf-reset { margin-top: 6px; padding: 2px 0; gap: 3px; }
+  .rf-reset-text { font-size: 11px; }
+
+  /* 日期分组标题 —— 轻量分组标记，不抢卡片标题层级 */
+  .tl-date { gap: 5px; padding: 12px 0 5px 0; }
+  .tl-date-bar { width: 3px; height: 12px; border-radius: 2px; }
+  .tl-date-main { font-size: 12px; font-weight: 600; }
+  .tl-date-week { font-size: 11px; padding: 2px 7px; border-radius: 10px; }
+  .tl-date-count { font-size: 11px; }
 }
 /* ── IconSvg 适配（替代 emoji）── */
 .badge-icon { flex: none; }

@@ -91,6 +91,9 @@
     ]
   },
   "globalStyle": {
+    "rpxCalcMaxDeviceWidth": 480,
+    "rpxCalcBaseDeviceWidth": 375,
+    "rpxCalcIncludeWidth": 750,
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "AlphaReader",
     "navigationBarBackgroundColor": "#ffffff",

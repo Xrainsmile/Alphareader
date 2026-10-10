@@ -7,7 +7,7 @@ Endpoints:
 """
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -77,17 +77,26 @@ def _to_item(d: NewsDigest) -> dict:
 @router.get("/")
 async def list_digests(
     days: int = Query(7, ge=1, le=30, description="获取最近几天的概览"),
+    date_filter: date | None = Query(None, alias="date", description="只看某一天，格式 YYYY-MM-DD"),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取新闻概览列表，按时间倒序（最新在前）。默认最近 7 天。"""
-    from datetime import timedelta
-    cutoff = date.today() - timedelta(days=days)
+    """获取新闻概览列表，按时间倒序（最新在前）。默认最近 7 天。
 
-    stmt = (
-        select(NewsDigest)
-        .where(NewsDigest.digest_date >= cutoff)
-        .order_by(NewsDigest.digest_date.desc(), NewsDigest.period_end.desc())
-    )
+    传 date=YYYY-MM-DD 时忽略 days，只返回该天的简报（用于前端日期筛选）。
+    """
+    if date_filter is not None:
+        stmt = (
+            select(NewsDigest)
+            .where(NewsDigest.digest_date == date_filter)
+            .order_by(NewsDigest.period_end.desc())
+        )
+    else:
+        cutoff = date.today() - timedelta(days=days)
+        stmt = (
+            select(NewsDigest)
+            .where(NewsDigest.digest_date >= cutoff)
+            .order_by(NewsDigest.digest_date.desc(), NewsDigest.period_end.desc())
+        )
     result = await db.execute(stmt)
     digests = result.scalars().all()
 

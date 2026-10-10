@@ -11,7 +11,7 @@
       "mode": "hash"
     },
     "devServer": {
-      "port": 4598,
+      "port": 53805,
       "proxy": {
         "/api": {
           "target": "http://localhost:8000",
@@ -19,5 +19,10 @@
         }
       }
     }
+  },
+  "globalStyle": {
+    "rpxCalcMaxDeviceWidth": 480,
+    "rpxCalcBaseDeviceWidth": 375,
+    "rpxCalcIncludeWidth": 750
   }
 }

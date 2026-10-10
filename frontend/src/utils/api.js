@@ -190,9 +190,16 @@ export function fetchReportDetail(id) {
 /**
  * 获取新闻概览列表（按时间倒序）
  * @param {number} days 获取最近几天，默认 7
+ * @param {string} targetDate 仅返回该日期的简报 YYYY-MM-DD，留空则按 days 取范围
  */
-export function fetchDigests(days = 7) {
-  return request(`/api/v1/digests/?days=${days}`)
+export function fetchDigests(days = 7, targetDate = '') {
+  // ── 本地静态预览：VITE_MOCK=1 时不请求后端，直接返回假数据 ──
+  if (import.meta.env.VITE_MOCK === '1') {
+    return import('./mockDigests').then((m) => m.mockDigests(days, targetDate))
+  }
+  const query = [`days=${days}`]
+  if (targetDate) query.push(`date=${encodeURIComponent(targetDate)}`)
+  return request(`/api/v1/digests/?${query.join('&')}`)
 }
 
 // ── Stocks API（RS Rating + VCP 排行榜使用）──
