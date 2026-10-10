@@ -14,6 +14,8 @@
   3. 容器日志近 24h 的 ERROR / TRACEBACK 计数（静默失败探测）
   4. 事件产出量（events 表近 24h 新增 —— recent_singles SQL 长期挂掉的探测）
   5. 磁盘空间
+  6. journal 日志占用（2026-10-11 磁盘告警根因：journald 无上限积累 3.9G，
+     已设 SystemMaxUse=500M；本项探测上限配置被改动或失效）
 """
 from __future__ import annotations
 
@@ -31,6 +33,8 @@ CONTAINERS = ["alpha-frontend", "alpha-web", "alpha-db", "alpha-cache", "alpha-h
 CERT_WARN_DAYS = 21
 DISK_WARN_PCT = 85
 ERROR_LOG_WARN = 20
+JOURNAL_WARN_BYTES = 600 * 1024 * 1024  # 上限500M，超60%余量即600M告警
+JOURNALD_CONF = "/etc/systemd/journald.conf"
 REPO = "/home/Alphareader"
 STATE_FILE = "/home/ubuntu/.alphareader_watchdog_state.json"
 
@@ -157,6 +161,44 @@ def check_disk() -> dict:
     return {"ok": pct < DISK_WARN_PCT, "pct": pct, "msg": f"磁盘使用率 {pct}%"}
 
 
+def check_journal() -> dict:
+    """检查 journal 日志：上限配置存在且实际占用未超限。
+
+    背景：2026-10-11 磁盘告警根因是 journald 无上限积累 3.9G，
+    已设 SystemMaxUse=500M。本项探测配置被改动/失效或日志异常膨胀。
+    """
+    # 1) 上限配置必须存在（防配置被回滚或系统升级重置）
+    code, out = sh(["grep", "-E", r"^SystemMaxUse=", JOURNALD_CONF])
+    if code != 0:
+        return {"ok": False, "msg": "journald 未配置 SystemMaxUse 上限（可能被回滚，请重新配置）"}
+
+    # 2) 实际占用（journalctl --disk-usage 输出形如 "Archived and active journals take up 3.9G in the file system."）
+    code, out = sh(["sudo", "-n", "journalctl", "--disk-usage"])
+    if code != 0:
+        return {"ok": True, "msg": "journal 占用查询失败（跳过）"}
+    text = out.strip().lower()
+    size_bytes = 0
+    for token in text.replace(",", "").split():
+        suffixes = {
+            "k": 1024, "kb": 1024,
+            "m": 1024**2, "mb": 1024**2,
+            "g": 1024**3, "gb": 1024**3,
+        }
+        body = token.rstrip(".")
+        for suf, mult in suffixes.items():
+            if body.endswith(suf):
+                try:
+                    size_bytes = max(size_bytes, int(float(body[: -len(suf)]) * mult))
+                except ValueError:
+                    pass
+                break
+    if size_bytes == 0:
+        return {"ok": True, "msg": "journal 占用解析失败（跳过）"}
+    mb = size_bytes // (1024**2)
+    ok = size_bytes <= JOURNAL_WARN_BYTES
+    return {"ok": ok, "mb": mb, "msg": f"journal 占用 {mb}M（上限 500M，超 600M 告警）"}
+
+
 def load_state() -> dict:
     try:
         with open(STATE_FILE, encoding="utf-8") as f:
@@ -200,6 +242,7 @@ def main() -> int:
         ("错误日志", check_error_logs()),
         ("事件产出", check_events()),
         ("磁盘空间", check_disk()),
+        ("journal日志", check_journal()),
     ]
     failed = [(n, r) for n, r in checks if not r["ok"]]
 
