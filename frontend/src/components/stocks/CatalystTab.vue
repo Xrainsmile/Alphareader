@@ -258,7 +258,7 @@ onMounted(() => init())
 
 /* ── 确认级别徽章 ── */
 .confirm-badge {
-  padding: 2rpx 10rpx;
+  padding: 8rpx 14rpx;
   border-radius: 8rpx;
   flex-shrink: 0;
 }
@@ -269,7 +269,7 @@ onMounted(() => init())
 
 /* ── 热度徽章 ── */
 .heat-badge {
-  padding: 4rpx 14rpx;
+  padding: 8rpx 14rpx;
   border-radius: 12rpx;
 }
 .heat-fire { background: rgba(239, 68, 68, 0.15); }
@@ -302,14 +302,14 @@ onMounted(() => init())
 }
 .catalyst-type-tag {
   font-size: 22rpx;
-  padding: 2rpx 12rpx;
+  padding: 8rpx 14rpx;
   border-radius: 6rpx;
   background: rgba(139, 92, 246, 0.1);
   color: var(--color-text-secondary);
 }
 .cross-tag {
   font-size: 22rpx;
-  padding: 2rpx 12rpx;
+  padding: 8rpx 14rpx;
   border-radius: 6rpx;
   font-weight: 600;
 }

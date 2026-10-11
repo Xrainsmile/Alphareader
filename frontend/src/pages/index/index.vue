@@ -705,7 +705,7 @@ onReachBottom(() => {
   line-height: 1.4;
 }
 :deep(.search-clear) {
-  padding: 4rpx 8rpx;
+  padding: 8rpx 14rpx;
   margin-left: 8rpx;
   flex-shrink: 0;
   cursor: pointer;
@@ -806,7 +806,7 @@ onReachBottom(() => {
   display: flex;
   align-items: center;
   gap: 4rpx;
-  padding: 2rpx 12rpx;
+  padding: 8rpx 14rpx;
   background: rgba(66, 133, 244, 0.08);
   border-radius: 16rpx;
 }
@@ -824,7 +824,7 @@ onReachBottom(() => {
 /* ── Filter Anchor (定位容器) ── */
 :deep(.filter-anchor) {
   position: relative;
-  z-index: 100;
+  z-index: var(--z-overlay);
 }
 
 /* ── Filter Trigger Bar ── */
@@ -933,7 +933,7 @@ onReachBottom(() => {
   left: 0;
   right: 0;
   top: 100%;
-  z-index: 101;
+  z-index: var(--z-overlay);
   padding-top: 8rpx;
 }
 :deep(.filter-popover-body) {
@@ -951,7 +951,7 @@ onReachBottom(() => {
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 99;
+  z-index: var(--z-overlay);
   background: rgba(0, 0, 0, 0.08);
 }
 :deep(.filter-row) {
@@ -1040,7 +1040,7 @@ onReachBottom(() => {
     line-height: 1.6;
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-    z-index: 10;
+    z-index: var(--z-sticky);
     pointer-events: none;
     white-space: normal;
   }
@@ -1358,7 +1358,7 @@ onReachBottom(() => {
   color: var(--color-brand);
   background: rgba(66, 133, 244, 0.08);
   border-radius: 6rpx;
-  padding: 4rpx 12rpx;
+  padding: 8rpx 14rpx;
   line-height: 1.6;
 }
 
@@ -1422,7 +1422,7 @@ onReachBottom(() => {
   display: flex;
   align-items: center;
   gap: 4rpx;
-  padding: 2rpx 12rpx;
+  padding: 8rpx 14rpx;
   border-radius: 16rpx;
 }
 :deep(.gravity-value) {
@@ -1998,7 +1998,7 @@ onReachBottom(() => {
   display: flex;
   align-items: center;
   gap: 4rpx;
-  padding: 2rpx 12rpx;
+  padding: 8rpx 14rpx;
   background: rgba(255, 59, 48, 0.1);
   border-radius: 16rpx;
 }

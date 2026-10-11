@@ -55,7 +55,7 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
   align-items: center;
   justify-content: center;
   /* 已 teleport 到 body，处于根层叠上下文；取足够高的层级兜底 */
-  z-index: 99999;
+  z-index: var(--z-modal);
   animation: fadeIn 0.2s ease;
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -164,7 +164,7 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
 .cancel-text { color: var(--color-text-muted); }
 .confirm-text { color: var(--color-text-white); }
 
-@media (min-width: 750px) {
+@media (min-width: 768px) {
   .pwd-card { padding: 36px 32px 28px; border-radius: 16px; }
   .pwd-icon { font-size: 32px; }
   .pwd-title { font-size: 18px; }

@@ -245,7 +245,7 @@ const submit = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  z-index: var(--z-modal);
   animation: fadeIn 0.2s ease;
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -311,7 +311,7 @@ const submit = async () => {
 .search-clear {
   font-size: 26rpx;
   color: var(--color-text-muted);
-  padding: 4rpx 8rpx;
+  padding: 8rpx 14rpx;
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -439,7 +439,7 @@ const submit = async () => {
 .cancel-text { color: var(--color-text-muted); }
 .confirm-text { color: var(--color-text-white); }
 
-@media (min-width: 750px) {
+@media (min-width: 768px) {
   .modal-card { padding: 32px 28px 24px; border-radius: 16px; max-width: 360px; }
   .modal-icon { font-size: 28px; }
   .modal-title { font-size: 18px; }

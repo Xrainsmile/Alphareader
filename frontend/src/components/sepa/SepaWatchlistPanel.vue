@@ -328,7 +328,7 @@ load()
   position: fixed; inset: 0;
   background: rgba(26, 26, 46, 0.5);
   display: flex; align-items: center; justify-content: center;
-  z-index: 9999;
+  z-index: var(--z-modal);
 }
 .sepa-form-modal {
   width: 660rpx; max-width: 92vw;
@@ -342,7 +342,7 @@ load()
   height: 240rpx;
   min-height: 240rpx;
 }
-@media (min-width: 750px) {
+@media (min-width: 768px) {
   .sepa-form-modal { width: 460px; padding: 24px; }
 }
 </style>

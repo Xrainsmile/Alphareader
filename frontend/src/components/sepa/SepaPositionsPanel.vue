@@ -141,7 +141,7 @@ load()
 </script>
 
 <style scoped>
-.pwd-overlay { position: fixed; inset: 0; background: rgba(26,26,46,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+.pwd-overlay { position: fixed; inset: 0; background: rgba(26,26,46,0.5); display: flex; align-items: center; justify-content: center; z-index: var(--z-modal); }
 .sepa-form-modal { width: 640rpx; max-width: 92vw; background: var(--color-bg-card); border-radius: 20rpx; padding: 32rpx; }
-@media (min-width: 750px) { .sepa-form-modal { width: 440px; padding: 24px; } }
+@media (min-width: 768px) { .sepa-form-modal { width: 440px; padding: 24px; } }
 </style>

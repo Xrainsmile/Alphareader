@@ -87,7 +87,7 @@ defineEmits(['close', 'open-futu', 'search-news'])
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 1000;
+  z-index: var(--z-modal);
   background: rgba(0, 0, 0, 0.35);
   display: flex;
   align-items: center;

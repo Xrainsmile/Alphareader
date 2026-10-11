@@ -102,7 +102,7 @@
 .icf-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 50;
+  z-index: var(--z-overlay);
   background: transparent;
 }
 
@@ -110,13 +110,13 @@
 .vcp-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 50;
+  z-index: var(--z-overlay);
   background: transparent;
 }
 .vcp-filters {
   margin: 8rpx 0 12rpx;
   position: relative;
-  z-index: 60;
+  z-index: var(--z-overlay);
 }
 .vcp-search-section {
   margin-bottom: 12rpx;
@@ -165,7 +165,7 @@
   margin-left: 8rpx;
   flex-shrink: 0;
 }
-.vcp-search-clear { padding: 4rpx 8rpx; margin-left: 8rpx; flex-shrink: 0; cursor: pointer; }
+.vcp-search-clear { padding: 8rpx 14rpx; margin-left: 8rpx; flex-shrink: 0; cursor: pointer; }
 .vcp-search-clear-icon { font-size: 32rpx; color: var(--color-text-placeholder); font-weight: 500; }
 
 /* 下拉选项列表 */
@@ -173,7 +173,7 @@
   position: absolute;
   left: 0; right: 0;
   top: 100%;
-  z-index: 100;
+  z-index: var(--z-overlay);
   margin-top: 8rpx;
   background: var(--color-bg-card);
   border: 2rpx solid var(--color-border);
@@ -293,7 +293,7 @@
   font-size: 20rpx;
   color: var(--color-brand-alt);
   background: rgba(22, 119, 255, 0.08);
-  padding: 4rpx 14rpx;
+  padding: 8rpx 14rpx;
   border-radius: 6rpx;
   line-height: 1.4;
 }
@@ -305,7 +305,7 @@
 
 /* VCP badge */
 .vcp-badge {
-  padding: 4rpx 12rpx; border-radius: 8rpx;
+  padding: 8rpx 14rpx; border-radius: 8rpx;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .vcp-val {
@@ -361,7 +361,7 @@
 
 /* 价投状态徽章 */
 .value-status-badge {
-  padding: 4rpx 14rpx; border-radius: 10rpx;
+  padding: 8rpx 14rpx; border-radius: 10rpx;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .value-status-text { font-size: 22rpx; font-weight: 600; }
@@ -704,7 +704,7 @@
   .sb-position-bar-wrap { height: 4px; margin-bottom: 6px; }
   .sb-card-highlight { border-width: 1px; }
   .sb-highlight-bar { margin-bottom: 8px; padding-bottom: 8px; gap: 5px; }
-  .sb-highlight-icon { font-size: 9px; }
+  .sb-highlight-icon { font-size: 11px; }
   .sb-highlight-text { font-size: 12px; }
   .arrow-icon { font-size: 22px; }
 

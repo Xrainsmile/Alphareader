@@ -17,7 +17,7 @@
   border-bottom: 1rpx solid var(--color-border);
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: var(--z-sticky);
 }
 .sepa-market-tab {
   flex: 1;
@@ -206,7 +206,7 @@
   top: 100%;
   left: 0;
   right: 0;
-  z-index: 50;
+  z-index: var(--z-overlay);
   margin-top: 4rpx;
   max-height: 480rpx;
   overflow-y: auto;
@@ -393,7 +393,7 @@
 }
 .sepa-wl-head { display: flex; justify-content: space-between; align-items: center; }
 .sepa-wl-status {
-  font-size: 22rpx; font-weight: 700; padding: 4rpx 14rpx; border-radius: 8rpx;
+  font-size: 22rpx; font-weight: 700; padding: 8rpx 14rpx; border-radius: 8rpx;
 }
 .sepa-wl-status.passed { background: var(--color-bg-success-light); color: var(--color-success-dark); }
 .sepa-wl-status.rejected { background: var(--color-bg-danger-light); color: var(--color-up); }
@@ -402,7 +402,7 @@
   display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 14rpx;
 }
 .sepa-tmpl-chip {
-  font-size: 20rpx; padding: 4rpx 10rpx; border-radius: 8rpx;
+  font-size: 20rpx; padding: 8rpx 14rpx; border-radius: 8rpx;
   background: var(--color-bg-active); color: var(--color-text-tertiary);
 }
 .sepa-tmpl-chip.pass { background: var(--color-bg-success-light); color: var(--color-success-dark); }
@@ -478,7 +478,7 @@
 .sepa-trade-head { display: flex; justify-content: space-between; align-items: baseline; }
 .sepa-trade-title { font-size: 28rpx; font-weight: 700; color: var(--color-text-primary); }
 .sepa-trade-badge {
-  font-size: 20rpx; padding: 3rpx 12rpx; border-radius: 8rpx; margin-left: 10rpx;
+  font-size: 20rpx; padding: 8rpx 14rpx; border-radius: 8rpx; margin-left: 10rpx;
 }
 .sepa-trade-badge.open { background: var(--color-bg-info-light); color: var(--color-info-hover); }
 .sepa-trade-badge.closed { background: var(--color-bg-neutral-light); color: var(--color-text-muted); }
@@ -527,7 +527,7 @@
 }
 
 /* ── PC 适配 ── */
-@media (min-width: 750px) {
-  .sepa-equity { font-size: 34px; }
-  .sepa-kpi-ring { font-size: 48px; }
+@media (min-width: 768px) {
+  .sepa-equity { font-size: 30px; }
+  .sepa-kpi-ring { font-size: 36px; }
 }

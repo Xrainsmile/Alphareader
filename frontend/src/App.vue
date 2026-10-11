@@ -11,6 +11,7 @@ export default {
 :root {
   /* 基础色 */
   --color-bg: #f0f2f5;
+  --color-bg-primary: #ffffff;
   --color-bg-card: #ffffff;
   --color-bg-secondary: #f5f7fa;
   --color-bg-hover: #fafbfc;
@@ -120,6 +121,20 @@ export default {
   --shadow-sm: 0 0.03125rem 0.25rem rgba(0, 0, 0, 0.04);
   --shadow-md: 0 0.0625rem 0.5rem rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 0.25rem 1.25rem rgba(0, 0, 0, 0.12);
+
+  /* 层级（z-index）规范：基础1 / 吸顶10 / 浮层100 / 模态1000 */
+  --z-base: 1;
+  --z-sticky: 10;
+  --z-overlay: 100;
+  --z-modal: 1000;
+
+  /* 间距刻度（4 的倍数） */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
 }
 
 /* 全局样式 — page 兼容小程序，body/uni-page-body 兼容 H5 */
