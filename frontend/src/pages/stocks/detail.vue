@@ -30,7 +30,7 @@
       <!-- 推演卡片流 -->
       <view class="section-header">
         <text class="section-title">Scenario Log</text>
-        <text class="section-count">{{ analyses.length }} 条</text>
+        <text class="section-count">{{ analyses.length }} records</text>
       </view>
 
       <view v-if="analyses.length === 0" class="empty-card">
@@ -284,7 +284,7 @@ onLoad(async (options) => {
 }
 .a-score-high { color: var(--color-text-primary); }
 .a-score-mid { color: var(--color-warning-alt); }
-.a-score-low { color: var(--color-up-alt); }
+.a-score-low { color: var(--color-text-placeholder); font-weight: 500; }
 .a-score-max { font-size: 24rpx; color: var(--color-text-placeholder); font-weight: 500; }
 .a-created-time { font-size: 22rpx; color: var(--color-text-placeholder); white-space: nowrap; }
 

@@ -398,3 +398,39 @@ onMounted(() => {
   init()
 })
 </script>
+
+<style scoped>
+/* 评分色阶（SandboxTab 原本缺失全部样式，此处补齐）：
+   低分弱化（灰、常规字重），高分增强（主色、加粗） */
+.sb-score-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+}
+.sb-score-label {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+}
+.sb-score-big {
+  font-size: 40rpx;
+  font-weight: 700;
+  font-family: var(--font-numeric);
+  line-height: 1;
+}
+.sb-score-max {
+  font-size: 22rpx;
+  color: var(--color-text-placeholder);
+}
+.sb-score-high {
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+.sb-score-mid {
+  color: var(--color-warning-alt);
+  font-weight: 600;
+}
+.sb-score-low {
+  color: var(--color-text-placeholder);
+  font-weight: 500;
+}
+</style>

@@ -17,7 +17,7 @@
           </view>
         </view>
       </view>
-      <text class="stats-text-inline">{{ total }} 条</text>
+      <text class="stats-text-inline">{{ total }} items</text>
     </view>
 
     <!-- 筛选浮窗 -->

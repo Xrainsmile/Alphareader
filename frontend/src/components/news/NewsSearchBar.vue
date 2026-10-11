@@ -54,7 +54,7 @@
   <!-- 搜索结果 -->
   <view v-if="searchMode && searchQuery && searchSubmitted" class="search-results">
     <view class="search-results-header">
-      <text class="search-results-count">找到 {{ searchTotal }} 条结果</text>
+      <text class="search-results-count">{{ searchTotal }} results</text>
     </view>
 
     <view v-if="searchLoading && searchList.length === 0" class="loading-container">

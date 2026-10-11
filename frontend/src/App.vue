@@ -83,6 +83,19 @@ export default {
   --gradient-vcp-warm: linear-gradient(135deg, #ff9500, #ffb340);
   --gradient-vcp-normal: linear-gradient(135deg, #34c759, #5dd67a);
   --gradient-vcp-cool: linear-gradient(135deg, #8e8e93, #a8a8ae);
+  /* ── 评分专用色阶（与情绪色解耦，按分数逐级增强视觉权重）──
+     设计原则：<7 属低优先级，用中性灰并降低对比；≥7 才逐级加色加重。
+     注意：此处的红仅表示「重要/值得关注」，不表示涨跌（涨跌用 --color-up/down）。*/
+  --score-5-bg: #e8e8ee;
+  --score-5-text: #9a9aa8;
+  --score-4-bg: #eceef4;
+  --score-4-text: #8a8a99;
+  --score-3-bg: var(--color-brand-light);
+  --score-3-text: var(--color-brand);
+  --score-2-bg: rgba(255, 149, 0, 0.16);
+  --score-2-text: #e8870e;
+  --score-1-bg: var(--gradient-sentiment-strong-bull);
+  --score-1-text: #ffffff;
   --gradient-sentiment-strong-bull: linear-gradient(135deg, #ff3b30, #e02b20);
   --gradient-sentiment-mild-bull: linear-gradient(135deg, #ff9500, #e8870e);
   --gradient-sentiment-caution: linear-gradient(135deg, #f0b429, #d4981e);

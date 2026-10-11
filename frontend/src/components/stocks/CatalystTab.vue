@@ -56,7 +56,7 @@
             </view>
           </view>
           <view class="col catalyst-col-news">
-            <text class="news-count">{{ item.news_count }}条</text>
+            <text class="news-count">{{ item.news_count }} items</text>
             <text class="top-score">最高{{ item.top_score }}分</text>
           </view>
           <view class="col catalyst-col-action">

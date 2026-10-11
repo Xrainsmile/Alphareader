@@ -18,8 +18,9 @@
       </view>
       <view v-if="showScoreInfo" class="info-panel" @click="showScoreInfo = false">
         <view class="info-panel-item"><text class="info-panel-label">10-Point Scale</text><text class="info-panel-desc">AI composite score (0–10, 1 decimal): impact, recency and source authority</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">7.0–10</text><text class="info-panel-desc">Worth attention: ≥9 red (major), 8–9 orange (important), 7–8 blue (normal)</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">&lt;7.0</text><text class="info-panel-desc">Low priority: 6–7 muted, &lt;6 grey (noise) — safe to skip</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">7.0–10</text><text class="info-panel-desc">Worth attention — ≥9 red solid (major), 8–9 orange tint (important), 7–8 blue tint (normal)</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">&lt;7.0</text><text class="info-panel-desc">Low priority — 6–7 light grey (de-emphasized), &lt;6 pale grey (noise). Safe to skip</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">Color Note</text><text class="info-panel-desc">Score colors show importance only, not price direction — red means high attention</text></view>
         <view class="info-panel-item"><text class="info-panel-label">▲／▽</text><text class="info-panel-desc">Sentiment: derived from catalyst type and expectation gap, not random</text></view>
         <view class="info-panel-item"><text class="info-panel-label">Sources</text><text class="info-panel-desc">Source count when multiple outlets report the same event</text></view>
       </view>
@@ -1302,26 +1303,69 @@ onReachBottom(() => {
   margin-right: 24rpx;
   margin-top: 6rpx;
 }
+/* ── 评分色阶：<7 弱化（浅底深字，视觉后退），≥7 逐级加重 ── */
+:deep(.score-badge) {
+  width: var(--score-badge-size, 72rpx);
+  height: var(--score-badge-size, 72rpx);
+  border-radius: var(--radius-p-md, 12rpx);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
 :deep(.score-num) {
-  font-size: 28rpx;
+  font-size: 26rpx;
   font-weight: 700;
-  color: var(--color-text-white);
   font-family: var(--font-numeric);
+  line-height: 1;
 }
+
+/* ≥9 重大：实心红渐变 + 白字（最强） */
 :deep(.score-high) {
-  background: var(--gradient-sentiment-strong-bull);
+  background: var(--score-1-bg);
 }
+:deep(.score-high) :deep(.score-num),
+:deep(.score-high) .score-num {
+  color: var(--score-1-text);
+  font-size: 28rpx;
+}
+
+/* 8–9 重要：橙底 */
 :deep(.score-medium) {
-  background: var(--gradient-sentiment-mild-bull);
+  background: var(--score-2-bg);
 }
+:deep(.score-medium) .score-num {
+  color: var(--score-2-text);
+  font-size: 27rpx;
+}
+
+/* 7–8 一般：浅蓝底 */
 :deep(.score-normal) {
-  background: var(--gradient-sentiment-caution);
+  background: var(--score-3-bg);
 }
+:deep(.score-normal) .score-num {
+  color: var(--score-3-text);
+  font-size: 27rpx;
+}
+
+/* 6–7 低优先级：浅灰底 + 灰字 + 降字重（明显弱化） */
 :deep(.score-low) {
-  background: var(--gradient-sentiment-mild-bear);
+  background: var(--score-4-bg);
 }
+:deep(.score-low) .score-num {
+  color: var(--score-4-text);
+  font-size: 25rpx;
+  font-weight: 600;
+}
+
+/* <6 噪音：更浅灰 + 更淡字（视觉最弱） */
 :deep(.score-muted) {
-  background: var(--gradient-sentiment-neutral);
+  background: var(--score-5-bg);
+}
+:deep(.score-muted) .score-num {
+  color: var(--score-5-text);
+  font-size: 25rpx;
+  font-weight: 500;
 }
 
 /* ── News Body ── */
