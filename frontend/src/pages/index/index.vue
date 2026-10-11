@@ -629,7 +629,7 @@ onReachBottom(() => {
 
 /* ── 紧凑模式卡片 ── */
 :deep(.density-compact) { padding: 20rpx 28rpx; }
-:deep(.density-compact .news-title) { -webkit-line-clamp: 1; font-size: 28rpx; }
+:deep(.density-compact .news-title) { -webkit-line-clamp: 1; }
 :deep(.density-compact .news-tags) { margin-top: 6rpx; }
 :deep(.density-compact .news-meta) { margin-top: 8rpx; }
 :deep(.density-compact .score-badge) { height: 44rpx; margin-top: 2rpx; }
@@ -1546,8 +1546,7 @@ onReachBottom(() => {
     border-width: 1px;
   }
   :deep(.density-compact) { padding: 12px 20px; }
-  :deep(.density-compact .news-title) { font-size: 14px; }
-  :deep(.density-compact .score-badge) { height: 32px; }
+  :deep(.score-badge) { height: 32px; }
 
   /* ── Search Bar (PC) ── */
   :deep(.search-bar) {
