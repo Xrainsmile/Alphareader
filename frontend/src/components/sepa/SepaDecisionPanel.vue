@@ -35,7 +35,7 @@
 
       <view class="sepa-check-row">
         <text class="sepa-check-label">VCP 形态已确认（收缩次数、波动递减）</text>
-        <switch :checked="form.vcp_confirmed" color="#34c759" @change="onVcp" />
+        <switch :checked="form.vcp_confirmed" color="var(--color-down)" @change="onVcp" />
       </view>
 
       <view class="sepa-field" style="margin-top:14rpx;">
@@ -75,7 +75,7 @@
 
       <view class="sepa-check-row" v-if="check.pivot.within_5pct === false">
         <text class="sepa-check-label">强制确认追高下单（记录为风险操作）</text>
-        <switch :checked="form.force_risky" color="#ff9500" @change="form.force_risky = $event.detail.value" />
+        <switch :checked="form.force_risky" color="var(--color-warning)" @change="form.force_risky = $event.detail.value" />
       </view>
 
       <view class="sepa-mindcard">💡 「我是来执行系统的，不是来证明自己对的。」</view>

@@ -217,7 +217,7 @@ onLoad(async (options) => {
 }
 .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8rpx; }
 .status-badge {
-  padding: 6rpx 18rpx; border-radius: 16rpx;
+  padding: 6rpx 18rpx; border-radius: var(--radius-r-md);
 }
 .status-text { font-size: 24rpx; font-weight: 600; }
 .status-holding { background: var(--color-bg-success-light); }
@@ -230,7 +230,7 @@ onLoad(async (options) => {
 /* ── Reason Card ── */
 .reason-card {
   background: var(--color-bg-card);
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   padding: 20rpx 24rpx;
   margin-bottom: 16rpx;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
@@ -251,7 +251,7 @@ onLoad(async (options) => {
 /* ── Empty Card ── */
 .empty-card {
   background: var(--color-bg-card);
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   padding: 80rpx 0;
   text-align: center;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
@@ -262,7 +262,7 @@ onLoad(async (options) => {
 .analysis-list { }
 .analysis-card {
   background: var(--color-bg-card);
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   padding: 28rpx;
   margin-bottom: 16rpx;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
@@ -297,7 +297,7 @@ onLoad(async (options) => {
   margin-bottom: 20rpx;
 }
 .a-logic-bar {
-  width: 6rpx; height: 28rpx; background: var(--color-info); border-radius: 3rpx;
+  width: 6rpx; height: 28rpx; background: var(--color-info); border-radius: var(--radius-r-xs);
 }
 .a-logic-title {
   font-size: 28rpx; font-weight: 700; color: var(--color-text-primary);
@@ -321,7 +321,7 @@ onLoad(async (options) => {
 
 /* 哨子 Verdict 特殊背景 */
 .a-block-verdict {
-  background: var(--color-bg-info-blend); border-radius: 12rpx;
+  background: var(--color-bg-info-blend); border-radius: var(--radius-r-md);
   padding: 16rpx 20rpx;
 }
 .a-verdict-body {
@@ -333,7 +333,7 @@ onLoad(async (options) => {
 /* ── Trade List ── */
 .trade-list {
   background: var(--color-bg-card);
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   overflow: hidden;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
 }
@@ -347,7 +347,7 @@ onLoad(async (options) => {
 .trade-row:last-child { border-bottom: none; }
 .trade-left { display: flex; align-items: center; gap: 14rpx; }
 .trade-action {
-  padding: 6rpx 16rpx; border-radius: 8rpx;
+  padding: 6rpx 16rpx; border-radius: var(--radius-r-md);
 }
 .action-text { font-size: 24rpx; font-weight: 700; }
 .action-buy { background: rgba(255, 59, 48, 0.1); }
@@ -374,10 +374,10 @@ onLoad(async (options) => {
   .detail-header { padding: 18px 0 12px; }
   .detail-name { font-size: 22px; }
   .detail-code { font-size: 14px; }
-  .status-badge { padding: 3px 12px; border-radius: 10px; }
+  .status-badge { padding: 3px 12px; border-radius: var(--radius-p-xl); }
   .status-text { font-size: 13px; }
 
-  .reason-card { padding: 14px 18px; border-radius: 12px; }
+  .reason-card { padding: 14px 18px; border-radius: var(--radius-p-2xl); }
   .reason-label { font-size: 12px; }
   .reason-text { font-size: 14px; }
 
@@ -385,10 +385,10 @@ onLoad(async (options) => {
   .section-title { font-size: 17px; }
   .section-count { font-size: 13px; }
 
-  .empty-card { border-radius: 12px; padding: 48px 0; }
+  .empty-card { border-radius: var(--radius-p-2xl); padding: 48px 0; }
   .empty-text { font-size: 15px; }
 
-  .analysis-card { padding: 20px; margin-bottom: 12px; border-radius: 12px; }
+  .analysis-card { padding: var(--space-5); margin-bottom: 12px; border-radius: var(--radius-p-2xl); }
 
   .a-score-label { font-size: 13px; }
   .a-score-big { font-size: 30px; }
@@ -401,14 +401,14 @@ onLoad(async (options) => {
   .a-block-heading { font-size: 15px; margin-bottom: 4px; }
   .a-block-body { font-size: 13px; }
   .a-block-item { margin-bottom: 16px; }
-  .a-block-verdict { padding: 10px 14px; border-radius: 8px; }
+  .a-block-verdict { padding: 10px 14px; border-radius: var(--radius-p-lg); }
   .a-verdict-body { font-size: 14px; }
 
 
 
-  .trade-list { border-radius: 12px; }
+  .trade-list { border-radius: var(--radius-p-2xl); }
   .trade-row { padding: 14px 18px; }
-  .trade-action { padding: 3px 12px; border-radius: 5px; }
+  .trade-action { padding: 3px 12px; border-radius: var(--radius-p-md); }
   .action-text { font-size: 13px; }
   .trade-date { font-size: 13px; }
   .trade-note { font-size: 12px; }

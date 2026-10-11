@@ -255,7 +255,7 @@ const submit = async () => {
   max-width: 340px;
   max-height: 80vh;
   background: var(--color-bg-card);
-  border-radius: 24rpx;
+  border-radius: var(--radius-r-3xl);
   padding: 44rpx 36rpx 32rpx;
   box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.12);
   animation: slideUp 0.25s ease;
@@ -289,7 +289,7 @@ const submit = async () => {
   display: flex;
   align-items: center;
   background: var(--color-bg-active);
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   padding: 20rpx 24rpx;
   border: 2rpx solid var(--color-border);
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -322,7 +322,7 @@ const submit = async () => {
   overflow-y: auto;
   margin-top: 16rpx;
   background: var(--color-bg-hover);
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
   border: 1rpx solid var(--color-border);
 }
 .result-item {
@@ -365,7 +365,7 @@ const submit = async () => {
   padding: 20rpx 24rpx;
   background: var(--color-bg-info-blend);
   border: 2rpx solid var(--color-info);
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
 }
 .selected-info { display: flex; align-items: center; gap: 16rpx; }
 .selected-name {
@@ -397,7 +397,7 @@ const submit = async () => {
   font-size: 26rpx;
   color: var(--color-text-primary);
   background: var(--color-bg-active);
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
   padding: 20rpx 24rpx;
   border: 2rpx solid var(--color-border);
   box-sizing: border-box;
@@ -426,7 +426,7 @@ const submit = async () => {
 .btn {
   flex: 1;
   padding: 22rpx 0;
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
   text-align: center;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -440,23 +440,23 @@ const submit = async () => {
 .confirm-text { color: var(--color-text-white); }
 
 @media (min-width: 768px) {
-  .modal-card { padding: 32px 28px 24px; border-radius: 16px; max-width: 360px; }
+  .modal-card { padding: 32px 28px 24px; border-radius: var(--radius-p-4xl); max-width: 360px; }
   .modal-icon { font-size: 28px; }
   .modal-title { font-size: 18px; }
   .modal-desc { font-size: 13px; }
-  .search-wrap { padding: 10px 14px; border-radius: 10px; }
+  .search-wrap { padding: 10px 14px; border-radius: var(--radius-p-xl); }
   .search-input { font-size: 15px; }
   .result-list { max-height: 200px; }
   .result-item { padding: 10px 14px; }
   .result-name { font-size: 15px; }
   .result-code { font-size: 13px; }
-  .selected-card { padding: 10px 14px; border-radius: 10px; }
+  .selected-card { padding: 10px 14px; border-radius: var(--radius-p-xl); }
   .selected-name { font-size: 16px; }
   .selected-code { font-size: 13px; }
-  .reason-input { font-size: 14px; padding: 10px 14px; min-height: 60px; border-radius: 10px; }
+  .reason-input { font-size: 14px; padding: 10px 14px; min-height: 60px; border-radius: var(--radius-p-xl); }
   .error-text { font-size: 12px; }
-  .modal-actions { gap: 12px; margin-top: 20px; }
-  .btn { padding: 12px 0; border-radius: 10px; }
+  .modal-actions { gap: var(--space-3); margin-top: 20px; }
+  .btn { padding: 12px 0; border-radius: var(--radius-p-xl); }
   .btn-text { font-size: 15px; }
 }
 </style>

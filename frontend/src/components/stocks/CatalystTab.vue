@@ -209,7 +209,7 @@ onMounted(() => init())
   align-items: center;
   gap: 6rpx;
   padding: 10rpx 18rpx;
-  border-radius: 20rpx;
+  border-radius: var(--radius-r-2xl);
   background: var(--color-bg-card);
   border: 1rpx solid var(--color-border);
   cursor: pointer;
@@ -259,7 +259,7 @@ onMounted(() => init())
 /* ── 确认级别徽章 ── */
 .confirm-badge {
   padding: 8rpx 14rpx;
-  border-radius: 8rpx;
+  border-radius: var(--radius-r-md);
   flex-shrink: 0;
 }
 .confirm-double { background: rgba(34, 197, 94, 0.15); }
@@ -270,7 +270,7 @@ onMounted(() => init())
 /* ── 热度徽章 ── */
 .heat-badge {
   padding: 8rpx 14rpx;
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
 }
 .heat-fire { background: rgba(239, 68, 68, 0.15); }
 .heat-warm { background: rgba(245, 158, 11, 0.12); }
@@ -303,14 +303,14 @@ onMounted(() => init())
 .catalyst-type-tag {
   font-size: 22rpx;
   padding: 8rpx 14rpx;
-  border-radius: 6rpx;
+  border-radius: var(--radius-r-sm);
   background: rgba(139, 92, 246, 0.1);
   color: var(--color-text-secondary);
 }
 .cross-tag {
   font-size: 22rpx;
   padding: 8rpx 14rpx;
-  border-radius: 6rpx;
+  border-radius: var(--radius-r-sm);
   font-weight: 600;
 }
 .vcp-tag { background: rgba(34, 197, 94, 0.12); color: var(--color-up); }
@@ -322,7 +322,7 @@ onMounted(() => init())
   margin-top: 12rpx;
   padding: 12rpx 16rpx;
   background: var(--color-bg-hover);
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
 }
 .catalyst-expand-row {
   display: flex;
@@ -358,8 +358,8 @@ onMounted(() => init())
 
 /* ── 响应式 ── */
 @media screen and (min-width: 768px) {
-  .catalyst-filter-bar { gap: 8px; margin-bottom: 12px; }
-  .catalyst-filter-item { padding: 6px 14px; border-radius: 14px; }
+  .catalyst-filter-bar { gap: var(--space-2); margin-bottom: 12px; }
+  .catalyst-filter-item { padding: 6px 14px; border-radius: var(--radius-p-3xl); }
   .catalyst-filter-icon { font-size: 14px; }
   .catalyst-filter-label { font-size: 13px; }
   .catalyst-filter-count { font-size: 12px; }
@@ -372,11 +372,11 @@ onMounted(() => init())
   .catalyst-tags-row { padding-left: 40px; gap: 6px; }
   .confirm-badge { padding: 1px 8px; }
   .confirm-text { font-size: 11px; }
-  .heat-badge { padding: 2px 10px; border-radius: 8px; }
+  .heat-badge { padding: 2px 10px; border-radius: var(--radius-p-lg); }
   .heat-val { font-size: 13px; }
   .news-count { font-size: 13px; }
   .top-score { font-size: 11px; }
-  .catalyst-expand { margin-top: 8px; padding: 8px 12px; border-radius: 8px; }
+  .catalyst-expand { margin-top: 8px; padding: 8px 12px; border-radius: var(--radius-p-lg); }
   .catalyst-expand-label { font-size: 13px; width: 90px; }
   .catalyst-expand-val { font-size: 13px; }
   .catalyst-news-item { font-size: 12px; }

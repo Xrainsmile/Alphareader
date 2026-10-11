@@ -77,19 +77,19 @@ function navTo(url, isTab) {
     border-right: 1px solid var(--color-border);
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
   .pc-sidebar-brand {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
     margin-bottom: 20px;
   }
   .pc-sidebar-logo-img {
     width: 26px;
     height: 26px;
-    border-radius: 6px;
+    border-radius: var(--radius-p-md);
     flex-shrink: 0;
   }
   .pc-sidebar-logo {
@@ -102,7 +102,7 @@ function navTo(url, isTab) {
   }
   .pc-nav-item {
     padding: 10px 14px;
-    border-radius: 8px;
+    border-radius: var(--radius-p-lg);
     cursor: pointer;
     transition: background-color 0.15s;
   }

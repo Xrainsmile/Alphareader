@@ -98,7 +98,7 @@ defineEmits([
   display: flex;
   gap: 0;
   background: var(--color-bg-card);
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
   margin: 16rpx 0 12rpx;
   padding: 4rpx;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
@@ -107,7 +107,7 @@ defineEmits([
   flex: 1;
   padding: 16rpx 0;
   text-align: center;
-  border-radius: 10rpx;
+  border-radius: var(--radius-r-md);
   transition: all 0.2s;
   cursor: pointer;
 }
@@ -124,8 +124,8 @@ defineEmits([
 }
 
 @media screen and (min-width: 768px) {
-  .tab-bar { margin: 12px 0 8px; padding: 3px; border-radius: 8px; }
-  .tab-item { padding: 10px 0; border-radius: 7px; }
+  .tab-bar { margin: 12px 0 8px; padding: 3px; border-radius: var(--radius-p-lg); }
+  .tab-item { padding: 10px 0; border-radius: var(--radius-p-lg); }
   .tab-text { font-size: 15px; }
 }
 </style>

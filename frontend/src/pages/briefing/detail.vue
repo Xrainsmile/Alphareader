@@ -139,7 +139,7 @@ onMounted(async () => {
 }
 .status-badge {
   padding: 4rpx 16rpx;
-  border-radius: 8rpx;
+  border-radius: var(--radius-r-md);
 }
 .status-ok {
   background: var(--color-bg-success-soft);
@@ -181,7 +181,7 @@ onMounted(async () => {
   color: var(--color-brand);
   background: var(--color-bg-info-soft);
   padding: 4rpx 16rpx;
-  border-radius: 8rpx;
+  border-radius: var(--radius-r-md);
   font-weight: 500;
 }
 
@@ -193,7 +193,7 @@ onMounted(async () => {
   margin-top: 20rpx;
   padding: 16rpx 24rpx;
   background: var(--gradient-briefing-bg);
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
 }
 .sentiment-emoji {
   font-size: 32rpx;
@@ -211,7 +211,7 @@ onMounted(async () => {
   margin-top: 24rpx;
   padding: 20rpx 24rpx;
   background: var(--color-bg-section);
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
 }
 .stat-item {
   display: flex;
@@ -330,7 +330,7 @@ onMounted(async () => {
   }
   .status-badge {
     padding: 2px 10px;
-    border-radius: 4px;
+    border-radius: var(--radius-p-sm);
   }
   .status-ok .status-text,
   .status-failed .status-text,
@@ -338,7 +338,7 @@ onMounted(async () => {
     font-size: 12px;
   }
   .article-meta {
-    gap: 12px;
+    gap: var(--space-3);
     margin-top: 12px;
   }
   .article-date {
@@ -347,15 +347,15 @@ onMounted(async () => {
   .article-badge {
     font-size: 12px;
     padding: 2px 10px;
-    border-radius: 4px;
+    border-radius: var(--radius-p-sm);
   }
 
   /* Sentiment Bar */
   .sentiment-bar {
-    gap: 8px;
+    gap: var(--space-2);
     margin-top: 14px;
     padding: 10px 16px;
-    border-radius: 8px;
+    border-radius: var(--radius-p-lg);
   }
   .sentiment-emoji {
     font-size: 18px;
@@ -366,10 +366,10 @@ onMounted(async () => {
 
   /* Meta Stats */
   .meta-stats {
-    gap: 16px;
+    gap: var(--space-4);
     margin-top: 16px;
     padding: 14px 20px;
-    border-radius: 8px;
+    border-radius: var(--radius-p-lg);
   }
   .stat-value {
     font-size: 20px;
@@ -390,7 +390,7 @@ onMounted(async () => {
   /* Failed */
   .failed-state {
     padding: 80px 0;
-    gap: 12px;
+    gap: var(--space-3);
   }
   .failed-icon {
     font-size: 36px;
@@ -402,7 +402,7 @@ onMounted(async () => {
   /* Footer */
   .article-footer {
     padding: 24px 0;
-    gap: 12px;
+    gap: var(--space-3);
   }
   .footer-detail {
     font-size: 12px;

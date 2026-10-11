@@ -26,7 +26,7 @@
             </defs>
             <path :d="navAreaPath" fill="url(#navFill)" />
             <path :d="navCurvePath" fill="none" :stroke="navTrendColor" stroke-width="2" stroke-linecap="round" />
-            <line x1="0" :y1="navBaseY" :x2="navChartWidth" :y2="navBaseY" stroke="#d0d0d8" stroke-width="0.5" stroke-dasharray="4,3" />
+            <line x1="0" :y1="navBaseY" :x2="navChartWidth" :y2="navBaseY" stroke="var(--color-border-separator)" stroke-width="0.5" stroke-dasharray="4,3" />
           </svg>
           <!-- #endif -->
         </view>
@@ -81,10 +81,10 @@
             :stroke-dashoffset="seg.offset"
             style="transition: stroke-dasharray 0.5s, stroke-dashoffset 0.5s"
           />
-          <text x="100" y="94" text-anchor="middle" font-size="22" font-weight="800" fill="#1a1a2e">
+          <text x="100" y="94" text-anchor="middle" font-size="22" font-weight="800" fill="var(--color-text-primary)">
             {{ sbSummary.holding_count || 0 }}
           </text>
-          <text x="100" y="116" text-anchor="middle" font-size="11" fill="#8c8c9a">只持仓</text>
+          <text x="100" y="116" text-anchor="middle" font-size="11" fill="var(--color-text-muted)">只持仓</text>
         </svg>
         <!-- #endif -->
         <view class="sb-pie-legend">
@@ -225,7 +225,7 @@ const sbHoldingOnly = ref(false)
 const sbSearchQuery = ref('')
 
 // 环状图配色
-const pieColors = ['#3b82f6', '#f59e0b', '#22c55e', '#a855f7', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#d0d0d8']
+const pieColors = ['var(--color-info)', 'var(--color-warning-alt)', 'var(--color-down-alt)', '#a855f7', 'var(--color-up-alt)', '#06b6d4', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', 'var(--color-border-separator)']
 
 // 仓位百分比
 const holdingsPositionPct = computed(() => {
@@ -331,8 +331,8 @@ const navChartHeight = 100
 
 const navTrendColor = computed(() => {
   const series = navSeries.value
-  if (series.length < 2) return '#3b82f6'
-  return series[series.length - 1].nav >= 1.0 ? '#3b82f6' : '#22c55e'
+  if (series.length < 2) return 'var(--color-info)'
+  return series[series.length - 1].nav >= 1.0 ? 'var(--color-info)' : 'var(--color-down-alt)'
 })
 
 const navSvgPoints = computed(() => {

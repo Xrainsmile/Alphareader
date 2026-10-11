@@ -471,9 +471,9 @@ onMounted(() => {
 }
 .gate-reveal-chip {
   padding: 8rpx 28rpx;
-  border-radius: 999rpx;
-  background: var(--color-bg-brand-light, #eef4ff);
-  color: var(--color-brand, #4285f4);
+  border-radius: var(--radius-r-full);
+  background: var(--color-bg-brand-light, var(--color-bg-brand-softer));
+  color: var(--color-brand, var(--color-brand));
   font-size: 24rpx;
   font-weight: 600;
   cursor: pointer;
@@ -501,14 +501,14 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   background: var(--color-bg-primary, #fff);
-  border: 1rpx solid var(--color-border-light, #e5eaf1);
-  border-radius: 24rpx;
+  border: 1rpx solid var(--color-border-light, var(--color-bg-neutral-tint));
+  border-radius: var(--radius-r-3xl);
   padding: 4rpx;
   box-shadow: 0 1rpx 4rpx rgba(15, 23, 42, 0.04);
 }
 .rf-seg-item {
   padding: 8rpx 24rpx;
-  border-radius: 18rpx;
+  border-radius: var(--radius-r-2xl);
   cursor: pointer;
   transition: background 0.15s ease;
 }
@@ -516,11 +516,11 @@ onMounted(() => {
   background: var(--color-bg-secondary, #f4f6f9);
 }
 .rf-seg-on {
-  background: var(--color-brand, #2563eb);
+  background: var(--color-brand, var(--color-info-hover));
   box-shadow: 0 1px 2px rgba(37, 99, 235, 0.18);
 }
 .rf-seg-on:active {
-  background: var(--color-brand, #2563eb);
+  background: var(--color-brand, var(--color-info-hover));
 }
 .rf-seg-text {
   font-size: 24rpx;
@@ -540,17 +540,17 @@ onMounted(() => {
   gap: 8rpx;
   padding: 12rpx 20rpx;
   background: var(--color-bg-primary, #fff);
-  border: 1rpx solid var(--color-border-light, #e5eaf1);
-  border-radius: 24rpx;
+  border: 1rpx solid var(--color-border-light, var(--color-bg-neutral-tint));
+  border-radius: var(--radius-r-3xl);
   box-shadow: 0 1rpx 4rpx rgba(15, 23, 42, 0.04);
   cursor: pointer;
 }
 .rf-cal:active {
-  border-color: var(--color-brand, #2563eb);
+  border-color: var(--color-brand, var(--color-info-hover));
 }
 .rf-cal-ico {
   flex: none;
-  color: var(--color-brand, #2563eb);
+  color: var(--color-brand, var(--color-info-hover));
 }
 .rf-cal-text {
   font-size: 24rpx;
@@ -569,7 +569,7 @@ onMounted(() => {
   border-color: rgba(37, 99, 235, 0.4);
 }
 .rf-cal-on .rf-cal-text {
-  color: var(--color-brand, #2563eb);
+  color: var(--color-brand, var(--color-info-hover));
   font-weight: 600;
 }
 .rf-reset {
@@ -589,7 +589,7 @@ onMounted(() => {
   font-weight: 500;
 }
 .rf-reset-text:active {
-  color: var(--color-brand, #2563eb);
+  color: var(--color-brand, var(--color-info-hover));
 }
 
 /* ── 日期分组标题：26.10.10 周六 · 2 份简报 ── */
@@ -605,29 +605,29 @@ onMounted(() => {
 .tl-date-bar {
   width: 4rpx;
   height: 22rpx;
-  border-radius: 2rpx;
-  background: var(--color-brand, #4285f4);
+  border-radius: var(--radius-r-xs);
+  background: var(--color-brand, var(--color-brand));
   flex: none;
 }
 .tl-date-main {
   font-size: 24rpx;
   font-weight: 600;
-  color: var(--color-text-secondary, #3a3a4a);
+  color: var(--color-text-secondary, var(--color-text-secondary));
   letter-spacing: 0;
 }
 .tl-date-week {
   flex: none;
   padding: 8rpx 14rpx;
-  border-radius: 20rpx;
+  border-radius: var(--radius-r-2xl);
   background: var(--color-bg-info-soft, #e8f0fe);
   font-size: 20rpx;
   font-weight: 500;
-  color: var(--color-text-tertiary, #5a5a6e);
+  color: var(--color-text-tertiary, var(--color-text-tertiary));
 }
 .tl-date-count {
   margin-left: auto;
   font-size: 22rpx;
-  color: var(--color-text-muted, #8c8c9a);
+  color: var(--color-text-muted, var(--color-text-muted));
 }
 
 /* ═══════════════════════════════════
@@ -683,7 +683,7 @@ onMounted(() => {
   flex: 1;
   margin-left: 16rpx;
   background: var(--color-bg-hover);
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   padding: 24rpx;
   border: 1rpx solid var(--color-border-light);
   margin-bottom: 20rpx;
@@ -703,7 +703,7 @@ onMounted(() => {
   align-items: center;
   gap: 8rpx;
   padding: 6rpx 16rpx;
-  border-radius: 20rpx;
+  border-radius: var(--radius-r-2xl);
   background: var(--color-bg-info-soft);
 }
 .badge-morning { background: var(--color-bg-time-morning); }
@@ -803,7 +803,7 @@ onMounted(() => {
   font-size: 22rpx;
   color: var(--color-brand);
   border: 1rpx solid var(--color-brand);
-  border-radius: 999rpx;
+  border-radius: var(--radius-r-full);
   padding: 4rpx 18rpx;
   line-height: 1.6;
   cursor: pointer;
@@ -835,8 +835,8 @@ onMounted(() => {
 
 /* 时段概览 + 本期变化：阶段简报最有价值信息，置于卡片顶部 */
 .dc-overview {
-  background: var(--color-bg-brand-light, #eef4ff);
-  border-radius: 12rpx;
+  background: var(--color-bg-brand-light, var(--color-bg-brand-softer));
+  border-radius: var(--radius-r-md);
   padding: 16rpx 20rpx;
 }
 .dc-overview-text {
@@ -858,8 +858,8 @@ onMounted(() => {
   font-size: 22rpx;
   font-weight: 700;
   color: #fff;
-  background: var(--color-brand, #4285f4);
-  border-radius: 8rpx;
+  background: var(--color-brand, var(--color-brand));
+  border-radius: var(--radius-r-md);
   padding: 8rpx 14rpx;
   line-height: 1.5;
   margin-top: 2rpx;
@@ -873,8 +873,8 @@ onMounted(() => {
 
 /* 核心变化：唯一强调色，浅底突出 */
 .dc-core {
-  background: var(--color-bg-brand-light, #eef4ff);
-  border-radius: 12rpx;
+  background: var(--color-bg-brand-light, var(--color-bg-brand-softer));
+  border-radius: var(--radius-r-md);
   padding: 16rpx 20rpx;
 }
 .dc-core-item {
@@ -883,7 +883,7 @@ onMounted(() => {
   gap: 10rpx;
   margin-top: 8rpx;
 }
-.dc-core-dot { color: var(--color-brand, #4285f4); font-weight: 700; line-height: 1.6; flex: none; }
+.dc-core-dot { color: var(--color-brand, var(--color-brand)); font-weight: 700; line-height: 1.6; flex: none; }
 .dc-core-body { flex: 1; min-width: 0; }
 .dc-core-text {
   font-size: 26rpx;
@@ -906,14 +906,14 @@ onMounted(() => {
   align-items: flex-start;
   gap: 14rpx;
   padding: 14rpx 0;
-  border-bottom: 1rpx solid var(--color-border-light, #f0f0f4);
+  border-bottom: 1rpx solid var(--color-border-light, var(--color-bg-active-press));
 }
 .dc-mk:last-child { border-bottom: none; }
 .dc-mk-rank {
   flex: none;
   font-size: 26rpx;
   font-weight: 800;
-  color: var(--color-brand, #4285f4);
+  color: var(--color-brand, var(--color-brand));
   font-family: var(--font-sans);
   line-height: 1.5;
   min-width: 36rpx;
@@ -937,7 +937,7 @@ onMounted(() => {
   flex: none;
   font-size: 20rpx;
   font-weight: 600;
-  border-radius: 8rpx;
+  border-radius: var(--radius-r-md);
   padding: 8rpx 14rpx;
   line-height: 1.5;
   margin-top: 4rpx;
@@ -977,7 +977,7 @@ onMounted(() => {
 .dc-mk-foot { margin-top: 8rpx; }
 .dc-mk-detail {
   font-size: 22rpx;
-  color: var(--color-brand, #4285f4);
+  color: var(--color-brand, var(--color-brand));
   font-weight: 500;
 }
 
@@ -1055,19 +1055,19 @@ onMounted(() => {
   }
 
   /* 时间筛选：分段控件 */
-  .rpt-filter { gap: 8px; }
+  .rpt-filter { gap: var(--space-2); }
   .rf-seg {
-    border-radius: 12px;
+    border-radius: var(--radius-p-2xl);
     padding: 3px;
   }
   .rf-seg-item {
     padding: 4px 14px;
-    border-radius: 9px;
+    border-radius: var(--radius-p-xl);
   }
   .rf-seg-text { font-size: 13px; }
   .rf-cal {
     padding: 6px 12px;
-    border-radius: 12px;
+    border-radius: var(--radius-p-2xl);
     gap: 6px;
   }
   .rf-cal-text { font-size: 13px; }
@@ -1076,10 +1076,10 @@ onMounted(() => {
 
   /* 日期分组标题 */
   .tl-group { margin-bottom: 4px; }
-  .tl-date { gap: 8px; padding: 18px 0 8px 0; }
-  .tl-date-bar { width: 3px; height: 15px; border-radius: 2px; }
+  .tl-date { gap: var(--space-2); padding: 18px 0 8px 0; }
+  .tl-date-bar { width: 3px; height: 15px; border-radius: var(--radius-p-sm); }
   .tl-date-main { font-size: 15px; font-weight: 600; }
-  .tl-date-week { font-size: 13px; padding: 2px 8px; border-radius: 12px; }
+  .tl-date-week { font-size: 13px; padding: 2px 8px; border-radius: var(--radius-p-2xl); }
   .tl-date-count { font-size: 13px; }
 
   /* Timeline */
@@ -1097,8 +1097,8 @@ onMounted(() => {
 
   .digest-card {
     margin-left: 12px;
-    padding: 20px;
-    border-radius: 12px;
+    padding: var(--space-5);
+    border-radius: var(--radius-p-2xl);
     border-width: 1px;
     margin-bottom: 12px;
     max-width: 760px;
@@ -1113,7 +1113,7 @@ onMounted(() => {
   .digest-badge {
     gap: 6px;
     padding: 4px 12px;
-    border-radius: 12px;
+    border-radius: var(--radius-p-2xl);
   }
   .badge-icon {
     font-size: 14px;
@@ -1129,7 +1129,7 @@ onMounted(() => {
     max-height: 140px;
   }
   .digest-toggle {
-    gap: 4px;
+    gap: var(--space-1);
     padding: 8px 0 2px;
   }
   .toggle-text {
@@ -1184,19 +1184,19 @@ onMounted(() => {
 
   /* 时间筛选 —— 80%紧凑档分段控件 */
   .rpt-filter { gap: 10px; }
-  .rf-seg { border-radius: 12px; padding: 3px; }
-  .rf-seg-item { padding: 4px 13px; border-radius: 9px; }
+  .rf-seg { border-radius: var(--radius-p-2xl); padding: 3px; }
+  .rf-seg-item { padding: 4px 13px; border-radius: var(--radius-p-xl); }
   .rf-seg-text { font-size: 13px; }
-  .rf-cal { padding: 6px 13px; border-radius: 12px; gap: 6px; }
+  .rf-cal { padding: 6px 13px; border-radius: var(--radius-p-2xl); gap: 6px; }
   .rf-cal-text { font-size: 13px; }
   .rf-cal-arrow { font-size: 10px; }
   .rf-reset-text { font-size: 12px; }
 
   /* 日期分组标题 —— 轻量分组标记，不抢卡片标题层级 */
   .tl-date { gap: 5px; padding: 12px 0 5px 0; }
-  .tl-date-bar { width: 3px; height: 12px; border-radius: 2px; }
+  .tl-date-bar { width: 3px; height: 12px; border-radius: var(--radius-p-sm); }
   .tl-date-main { font-size: 12px; font-weight: 600; }
-  .tl-date-week { font-size: 11px; padding: 2px 7px; border-radius: 10px; }
+  .tl-date-week { font-size: 11px; padding: 2px 7px; border-radius: var(--radius-p-xl); }
   .tl-date-count { font-size: 11px; }
 }
 /* ── IconSvg 适配（替代 emoji）── */

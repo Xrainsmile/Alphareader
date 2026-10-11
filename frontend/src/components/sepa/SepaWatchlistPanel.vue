@@ -83,7 +83,7 @@
             <view class="sepa-field" style="display:flex;flex-direction:column;justify-content:flex-end;">
               <view class="sepa-check-row" style="border:none;padding:0;">
                 <text class="sepa-check-label">MA200 连升≥1月</text>
-                <switch :checked="form.ma200_rising" color="#34c759" @change="form.ma200_rising = $event.detail.value" />
+                <switch :checked="form.ma200_rising" color="var(--color-down)" @change="form.ma200_rising = $event.detail.value" />
               </view>
             </view>
           </view>
@@ -333,7 +333,7 @@ load()
 .sepa-form-modal {
   width: 660rpx; max-width: 92vw;
   background: var(--color-bg-card);
-  border-radius: 20rpx; padding: 32rpx;
+  border-radius: var(--radius-r-2xl); padding: 32rpx;
 }
 .sepa-form-scroll { max-height: 60vh; }
 .sepa-batch-textarea {
@@ -343,6 +343,6 @@ load()
   min-height: 240rpx;
 }
 @media (min-width: 768px) {
-  .sepa-form-modal { width: 460px; padding: 24px; }
+  .sepa-form-modal { width: 460px; padding: var(--space-6); }
 }
 </style>

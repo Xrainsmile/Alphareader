@@ -36,7 +36,7 @@ defineEmits(['switch'])
   display: flex;
   gap: 0;
   background: var(--color-bg-card);
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
   padding: 6rpx;
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
   margin-bottom: 4rpx;
@@ -48,7 +48,7 @@ defineEmits(['switch'])
   justify-content: center;
   gap: 8rpx;
   padding: 20rpx 0;
-  border-radius: 10rpx;
+  border-radius: var(--radius-r-md);
   cursor: pointer;
   transition: all 0.25s ease;
   position: relative;
@@ -74,13 +74,13 @@ defineEmits(['switch'])
 /* ── PC 适配 ── */
 @media screen and (min-width: 768px) {
   .market-switcher {
-    border-radius: 10px;
-    padding: 4px;
+    border-radius: var(--radius-p-xl);
+    padding: var(--space-1);
     margin-bottom: 2px;
   }
   .market-item {
     padding: 12px 0;
-    border-radius: 7px;
+    border-radius: var(--radius-p-lg);
     gap: 6px;
   }
   .market-flag { font-size: 16px; }

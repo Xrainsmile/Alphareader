@@ -72,7 +72,7 @@ defineEmits(['close', 'open-futu', 'search-news'])
 :deep(.news-tag-ticker) {
   cursor: pointer;
   background: rgba(255, 149, 0, 0.10);
-  color: var(--color-warning, #ff9500);
+  color: var(--color-warning, var(--color-warning));
   font-weight: 600;
   transition: background-color 0.15s;
 }
@@ -103,7 +103,7 @@ defineEmits(['close', 'open-futu', 'search-news'])
 /* ── 浮层卡片 ── */
 .ticker-overlay-card {
   background: var(--color-bg-card);
-  border-radius: 24rpx;
+  border-radius: var(--radius-r-3xl);
   width: 100%;
   max-width: 640rpx;
   padding: 36rpx 32rpx 28rpx;
@@ -137,7 +137,7 @@ defineEmits(['close', 'open-futu', 'search-news'])
 .ticker-overlay-code {
   font-size: 34rpx;
   font-weight: 700;
-  color: var(--color-warning, #ff9500);
+  color: var(--color-warning, var(--color-warning));
   font-family: var(--font-numeric);
 }
 .ticker-overlay-name {
@@ -182,7 +182,7 @@ defineEmits(['close', 'open-futu', 'search-news'])
   gap: 12rpx;
   padding: 14rpx 16rpx;
   background: var(--color-bg-code, rgba(0, 0, 0, 0.03));
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
 }
 .ticker-strategy-icon {
   font-size: 28rpx;
@@ -199,7 +199,7 @@ defineEmits(['close', 'open-futu', 'search-news'])
   font-weight: 600;
 }
 .ticker-strategy-in {
-  color: var(--color-down, #34c759);
+  color: var(--color-down, var(--color-down));
 }
 .ticker-strategy-score {
   font-size: 26rpx;
@@ -235,19 +235,19 @@ defineEmits(['close', 'open-futu', 'search-news'])
   align-items: center;
   justify-content: center;
   padding: 20rpx 0;
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   cursor: pointer;
   transition: background-color 0.15s, box-shadow 0.15s;
 }
 .ticker-action-futu {
-  background: var(--color-brand, #4285f4);
+  background: var(--color-brand, var(--color-brand));
 }
 .ticker-action-futu .ticker-action-text {
   color: var(--color-text-white, #fff);
   font-weight: 600;
 }
 .ticker-action-futu:active {
-  background: var(--color-brand-hover, #3b78dc);
+  background: var(--color-brand-hover, var(--color-brand-deep));
 }
 .ticker-action-search {
   background: var(--color-bg-code, rgba(0, 0, 0, 0.03));
@@ -271,11 +271,11 @@ defineEmits(['close', 'open-futu', 'search-news'])
   }
 
   .ticker-overlay {
-    padding: 24px;
+    padding: var(--space-6);
   }
   .ticker-overlay-card {
     max-width: 400px;
-    border-radius: 16px;
+    border-radius: var(--radius-p-4xl);
     padding: 24px 24px 20px;
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.2);
   }
@@ -286,7 +286,7 @@ defineEmits(['close', 'open-futu', 'search-news'])
     font-size: 15px;
   }
   .ticker-overlay-header {
-    gap: 8px;
+    gap: var(--space-2);
     margin-bottom: 20px;
   }
   .ticker-overlay-code {
@@ -310,9 +310,9 @@ defineEmits(['close', 'open-futu', 'search-news'])
     margin-bottom: 20px;
   }
   .ticker-strategy-row {
-    gap: 8px;
+    gap: var(--space-2);
     padding: 10px 14px;
-    border-radius: 8px;
+    border-radius: var(--radius-p-lg);
   }
   .ticker-strategy-icon {
     font-size: 16px;
@@ -341,13 +341,13 @@ defineEmits(['close', 'open-futu', 'search-news'])
   }
   .ticker-action-btn {
     padding: 11px 0;
-    border-radius: 10px;
+    border-radius: var(--radius-p-xl);
   }
   .ticker-action-btn:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   }
   .ticker-action-futu:hover {
-    background: var(--color-brand-hover, #3b78dc);
+    background: var(--color-brand-hover, var(--color-brand-deep));
   }
   .ticker-action-search:hover {
     background: var(--color-bg-section, rgba(0, 0, 0, 0.05));

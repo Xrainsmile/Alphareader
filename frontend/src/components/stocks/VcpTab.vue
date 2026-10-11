@@ -173,9 +173,9 @@
                   <rect v-for="(v,vi) in vcpChartOf(item.ts_code).volBars" :key="'v'+vi"
                     :x="v.x - vcpChartOf(item.ts_code).cw/2" :y="168 + (32 - v.h)" :width="vcpChartOf(item.ts_code).cw" :height="v.h"
                     :fill="v.up ? 'rgba(235,75,75,0.32)' : 'rgba(48,184,110,0.32)'"/>
-                  <line v-if="vcpChartOf(item.ts_code).pivotY != null" x1="0" :y1="vcpChartOf(item.ts_code).pivotY" x2="400" :y2="vcpChartOf(item.ts_code).pivotY" stroke="#f5a623" stroke-width="1" stroke-dasharray="4,3"/>
+                  <line v-if="vcpChartOf(item.ts_code).pivotY != null" x1="0" :y1="vcpChartOf(item.ts_code).pivotY" x2="400" :y2="vcpChartOf(item.ts_code).pivotY" stroke="var(--color-warning-soft)" stroke-width="1" stroke-dasharray="4,3"/>
                   <g v-for="(sp,spi) in vcpChartOf(item.ts_code).swings" :key="'sp'+spi">
-                    <circle :cx="sp.x" :cy="sp.y" r="2.6" :fill="sp.type==='H' ? '#eb4b4b' : '#30b86e'" stroke="#fff" stroke-width="0.6"/>
+                    <circle :cx="sp.x" :cy="sp.y" r="2.6" :fill="sp.type==='H' ? 'var(--color-danger)' : 'var(--color-success)'" stroke="var(--color-text-white)" stroke-width="0.6"/>
                   </g>
                 </svg>
                 <!-- #endif -->
@@ -380,7 +380,7 @@ const vcpChartOf = (code) => {
     const up = b.close >= b.open
     const yTop = Math.min(yOf(b.open), yOf(b.close))
     const h = Math.max(1.5, Math.abs(yOf(b.open) - yOf(b.close)))
-    return { x: xOf(i), yh: yOf(b.high), yl: yOf(b.low), yTop, h, color: up ? '#eb4b4b' : '#30b86e' }
+    return { x: xOf(i), yh: yOf(b.high), yl: yOf(b.low), yTop, h, color: up ? 'var(--color-danger)' : 'var(--color-success)' }
   })
   const volBars = bars.map((b, i) => ({
     x: xOf(i), h: ((b.volume || 0) / (maxVol || 1)) * volH, up: b.close >= b.open,

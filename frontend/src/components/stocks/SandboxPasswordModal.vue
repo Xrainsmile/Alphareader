@@ -64,7 +64,7 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
   width: 600rpx;
   max-width: 320px;
   background: var(--color-bg-card);
-  border-radius: 24rpx;
+  border-radius: var(--radius-r-3xl);
   padding: 48rpx 40rpx 36rpx;
   box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.12);
   animation: slideUp 0.25s ease;
@@ -98,7 +98,7 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
 
 .pwd-input-wrap {
   background: var(--color-bg-active);
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   padding: 24rpx 28rpx;
   border: 2rpx solid var(--color-border);
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -144,7 +144,7 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
 .pwd-btn {
   flex: 1;
   padding: 22rpx 0;
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
   text-align: center;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -165,15 +165,15 @@ defineEmits(['update:visible', 'update:password', 'confirm'])
 .confirm-text { color: var(--color-text-white); }
 
 @media (min-width: 768px) {
-  .pwd-card { padding: 36px 32px 28px; border-radius: 16px; }
+  .pwd-card { padding: 36px 32px 28px; border-radius: var(--radius-p-4xl); }
   .pwd-icon { font-size: 32px; }
   .pwd-title { font-size: 18px; }
   .pwd-desc { font-size: 13px; }
-  .pwd-input-wrap { padding: 12px 16px; border-radius: 10px; }
+  .pwd-input-wrap { padding: 12px 16px; border-radius: var(--radius-p-xl); }
   .pwd-input { font-size: 16px; }
   .pwd-error-text { font-size: 12px; }
-  .pwd-actions { gap: 12px; margin-top: 24px; }
-  .pwd-btn { padding: 12px 0; border-radius: 10px; }
+  .pwd-actions { gap: var(--space-3); margin-top: 24px; }
+  .pwd-btn { padding: 12px 0; border-radius: var(--radius-p-xl); }
   .pwd-btn-text { font-size: 15px; }
 }
 </style>

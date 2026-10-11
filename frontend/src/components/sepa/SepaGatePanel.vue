@@ -17,19 +17,19 @@
 
         <view class="sepa-check-row">
           <text class="sepa-check-label">① 指数站上 50 日均线</text>
-          <switch :checked="form.index_above_ma50" color="#34c759" @change="onSwitch('index_above_ma50', $event)" />
+          <switch :checked="form.index_above_ma50" color="var(--color-down)" @change="onSwitch('index_above_ma50', $event)" />
         </view>
         <view class="sepa-check-row">
           <text class="sepa-check-label">② 50 日均线斜率向上</text>
-          <switch :checked="form.ma50_trending_up" color="#34c759" @change="onSwitch('ma50_trending_up', $event)" />
+          <switch :checked="form.ma50_trending_up" color="var(--color-down)" @change="onSwitch('ma50_trending_up', $event)" />
         </view>
         <view class="sepa-check-row">
           <text class="sepa-check-label">③ 市场宽度健康（涨跌比 &gt; 1）</text>
-          <switch :checked="form.breadth_healthy" color="#34c759" @change="onSwitch('breadth_healthy', $event)" />
+          <switch :checked="form.breadth_healthy" color="var(--color-down)" @change="onSwitch('breadth_healthy', $event)" />
         </view>
         <view class="sepa-check-row">
           <text class="sepa-check-label">④ 新高家数 &gt; 新低家数</text>
-          <switch :checked="form.new_highs_gt_lows" color="#34c759" @change="onSwitch('new_highs_gt_lows', $event)" />
+          <switch :checked="form.new_highs_gt_lows" color="var(--color-down)" @change="onSwitch('new_highs_gt_lows', $event)" />
         </view>
 
         <view class="sepa-field" style="margin-top: 18rpx;">

@@ -99,7 +99,7 @@ async function onConfirm() {
   width: 40rpx;
   height: 40rpx;
   border-radius: 50%;
-  border: 2rpx solid var(--color-text-hint, #c0c4cc);
+  border: 2rpx solid var(--color-text-hint, var(--color-border-strong));
   background: transparent;
   display: flex;
   align-items: center;
@@ -109,29 +109,29 @@ async function onConfirm() {
 }
 .gate-btn:hover,
 .gate-hover {
-  border-color: var(--color-brand, #4285f4);
-  background: var(--color-bg-brand-light, #eef4ff);
+  border-color: var(--color-brand, var(--color-brand));
+  background: var(--color-bg-brand-light, var(--color-bg-brand-softer));
 }
 .gate-mark {
   font-size: 28rpx;
   font-weight: 800;
-  color: var(--color-text-hint, #c0c4cc);
+  color: var(--color-text-hint, var(--color-border-strong));
   line-height: 1;
   transition: color 0.2s;
 }
 .gate-btn:hover .gate-mark,
 .gate-hover .gate-mark {
-  color: var(--color-brand, #4285f4);
+  color: var(--color-brand, var(--color-brand));
 }
 
 /* 点击：俏皮的左右摇摆（重启式动画）*/
 .gate-wobble {
   animation: gateWobble 0.6s ease;
-  border-color: var(--color-brand, #4285f4);
-  background: var(--color-bg-brand-light, #eef4ff);
+  border-color: var(--color-brand, var(--color-brand));
+  background: var(--color-bg-brand-light, var(--color-bg-brand-softer));
 }
 .gate-wobble .gate-mark {
-  color: var(--color-brand, #4285f4);
+  color: var(--color-brand, var(--color-brand));
 }
 
 @keyframes gateWobble {

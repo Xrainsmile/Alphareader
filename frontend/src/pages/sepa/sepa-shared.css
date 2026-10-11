@@ -26,7 +26,7 @@
   font-size: 28rpx;
   font-weight: 600;
   color: var(--color-text-muted);
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
   transition: all 0.18s;
 }
 .sepa-market-tab.active {
@@ -43,7 +43,7 @@
 .sepa-account-card {
   margin: 20rpx 0;
   background: var(--color-bg-card);
-  border-radius: 20rpx;
+  border-radius: var(--radius-r-2xl);
   padding: 28rpx;
   box-shadow: var(--shadow-md);
 }
@@ -85,7 +85,7 @@
   margin: 0 0 12rpx;
   background: var(--color-bg-danger-light);
   border: 1rpx solid var(--color-up);
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
   padding: 18rpx 24rpx;
   display: flex;
   align-items: center;
@@ -105,7 +105,7 @@
   overflow-x: auto;
   background: var(--color-bg-card);
   margin: 0 0 16rpx;
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   padding: 8rpx;
   box-shadow: var(--shadow-sm);
 }
@@ -116,7 +116,7 @@
   padding: 16rpx 12rpx;
   font-size: 26rpx;
   color: var(--color-text-muted);
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
   white-space: nowrap;
   transition: all 0.18s;
 }
@@ -130,7 +130,7 @@
 .sepa-card {
   margin: 0 0 16rpx;
   background: var(--color-bg-card);
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   padding: 24rpx;
   box-shadow: var(--shadow-sm);
 }
@@ -164,7 +164,7 @@
   box-sizing: border-box;
   background: var(--color-bg-input);
   border: 1rpx solid var(--color-border);
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
   padding: 16rpx 20rpx;
   font-size: 28rpx;
   line-height: 1.5;
@@ -212,7 +212,7 @@
   overflow-y: auto;
   background: var(--color-bg-card, #fff);
   border: 1rpx solid var(--color-border);
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
   box-shadow: 0 8rpx 24rpx rgba(0,0,0,0.12);
 }
 .sepa-combo-item {
@@ -264,7 +264,7 @@
   display: block;
   text-align: center;
   padding: 22rpx 0;
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
   font-size: 28rpx;
   font-weight: 600;
   transition: opacity 0.15s;
@@ -294,7 +294,7 @@
   display: inline-block;
   padding: 10rpx 22rpx;
   font-size: 24rpx;
-  border-radius: 10rpx;
+  border-radius: var(--radius-r-md);
 }
 .sepa-btn-row {
   display: flex;
@@ -327,7 +327,7 @@
 /* ── 风险预演盒 ── */
 .sepa-risk-box {
   background: var(--color-bg-section);
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
   padding: 20rpx;
   margin-top: 16rpx;
 }
@@ -342,7 +342,7 @@
 .sepa-risk-warn {
   margin-top: 12rpx;
   background: var(--color-bg-danger-light);
-  border-radius: 10rpx;
+  border-radius: var(--radius-r-md);
   padding: 14rpx 18rpx;
   font-size: 24rpx;
   color: var(--color-danger-dark);
@@ -357,7 +357,7 @@
 /* ── 持仓 / 列表项 ── */
 .sepa-holding {
   border: 1rpx solid var(--color-border);
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
   padding: 20rpx;
   margin-bottom: 14rpx;
 }
@@ -387,13 +387,13 @@
 /* ── 股池条目 ── */
 .sepa-wl-item {
   border: 1rpx solid var(--color-border);
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
   padding: 20rpx;
   margin-bottom: 14rpx;
 }
 .sepa-wl-head { display: flex; justify-content: space-between; align-items: center; }
 .sepa-wl-status {
-  font-size: 22rpx; font-weight: 700; padding: 8rpx 14rpx; border-radius: 8rpx;
+  font-size: 22rpx; font-weight: 700; padding: 8rpx 14rpx; border-radius: var(--radius-r-md);
 }
 .sepa-wl-status.passed { background: var(--color-bg-success-light); color: var(--color-success-dark); }
 .sepa-wl-status.rejected { background: var(--color-bg-danger-light); color: var(--color-up); }
@@ -402,7 +402,7 @@
   display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 14rpx;
 }
 .sepa-tmpl-chip {
-  font-size: 20rpx; padding: 8rpx 14rpx; border-radius: 8rpx;
+  font-size: 20rpx; padding: 8rpx 14rpx; border-radius: var(--radius-r-md);
   background: var(--color-bg-active); color: var(--color-text-tertiary);
 }
 .sepa-tmpl-chip.pass { background: var(--color-bg-success-light); color: var(--color-success-dark); }
@@ -430,7 +430,7 @@
   width: calc(50% - 7rpx);
   box-sizing: border-box;
   background: var(--color-bg-section);
-  border-radius: 12rpx;
+  border-radius: var(--radius-r-md);
   padding: 18rpx;
 }
 .sepa-kpi-cell .num { font-size: 38rpx; font-weight: 800; font-family: var(--font-numeric); color: var(--color-text-primary); }
@@ -440,7 +440,7 @@
 .sepa-kpi-cell .tgt { font-size: 20rpx; color: var(--color-text-placeholder); margin-top: 2rpx; }
 .sepa-verdict {
   margin-top: 16rpx;
-  border-radius: 14rpx;
+  border-radius: var(--radius-r-md);
   padding: 22rpx;
   text-align: center;
   font-size: 28rpx;
@@ -452,9 +452,9 @@
 /* 进度条 */
 .sepa-progress {
   height: 14rpx; background: var(--color-bg-neutral-light);
-  border-radius: 8rpx; overflow: hidden; margin-top: 10rpx;
+  border-radius: var(--radius-r-md); overflow: hidden; margin-top: 10rpx;
 }
-.sepa-progress-fill { height: 100%; background: var(--color-brand); border-radius: 8rpx; }
+.sepa-progress-fill { height: 100%; background: var(--color-brand); border-radius: var(--radius-r-md); }
 .sepa-progress-fill.ok { background: var(--color-success-dark); }
 
 /* ── 日志筛选 ── */
@@ -463,7 +463,7 @@
 }
 .sepa-filter-chip {
   flex: 0 0 auto;
-  font-size: 24rpx; padding: 10rpx 22rpx; border-radius: 20rpx;
+  font-size: 24rpx; padding: 10rpx 22rpx; border-radius: var(--radius-r-2xl);
   background: var(--color-bg-active); color: var(--color-text-muted);
   white-space: nowrap;
 }
@@ -472,13 +472,13 @@
 /* 日志条目 */
 .sepa-trade {
   border: 1rpx solid var(--color-border);
-  border-radius: 14rpx; padding: 18rpx; margin-bottom: 12rpx;
+  border-radius: var(--radius-r-md); padding: 18rpx; margin-bottom: 12rpx;
 }
 .sepa-trade.violation { border-color: var(--color-up); background: var(--color-bg-danger-light); }
 .sepa-trade-head { display: flex; justify-content: space-between; align-items: baseline; }
 .sepa-trade-title { font-size: 28rpx; font-weight: 700; color: var(--color-text-primary); }
 .sepa-trade-badge {
-  font-size: 20rpx; padding: 8rpx 14rpx; border-radius: 8rpx; margin-left: 10rpx;
+  font-size: 20rpx; padding: 8rpx 14rpx; border-radius: var(--radius-r-md); margin-left: 10rpx;
 }
 .sepa-trade-badge.open { background: var(--color-bg-info-light); color: var(--color-info-hover); }
 .sepa-trade-badge.closed { background: var(--color-bg-neutral-light); color: var(--color-text-muted); }
@@ -489,7 +489,7 @@
 /* ── 闸门 ── */
 .sepa-gate-status {
   text-align: center; padding: 28rpx 0;
-  border-radius: 16rpx; margin-bottom: 16rpx;
+  border-radius: var(--radius-r-md); margin-bottom: 16rpx;
 }
 .sepa-gate-status.open { background: var(--color-bg-success-light); }
 .sepa-gate-status.closed { background: var(--color-bg-danger-light); }
@@ -509,7 +509,7 @@
   display: flex; align-items: center; justify-content: center; gap: 10rpx;
   margin: 0 24rpx 16rpx;
   background: var(--color-bg-warning-light);
-  border-radius: 12rpx; padding: 14rpx;
+  border-radius: var(--radius-r-md); padding: 14rpx;
   font-size: 24rpx; color: var(--color-warning-deep);
 }
 .sepa-lock-bar.unlocked { background: var(--color-bg-success-soft); color: var(--color-success-dark); }
@@ -518,7 +518,7 @@
 .sepa-mindcard {
   background: var(--color-bg-info-accent);
   border-left: 6rpx solid var(--color-brand);
-  border-radius: 10rpx;
+  border-radius: var(--radius-r-md);
   padding: 16rpx 20rpx;
   margin-top: 14rpx;
   font-size: 24rpx;

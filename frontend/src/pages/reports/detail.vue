@@ -126,7 +126,7 @@ onMounted(async () => {
   color: var(--color-brand);
   background: var(--color-bg-info-soft);
   padding: 4rpx 16rpx;
-  border-radius: 8rpx;
+  border-radius: var(--radius-r-md);
   font-weight: 500;
 }
 
@@ -195,7 +195,7 @@ onMounted(async () => {
     line-height: 1.45;
   }
   .article-meta {
-    gap: 12px;
+    gap: var(--space-3);
     margin-top: 12px;
   }
   .article-date {
@@ -204,7 +204,7 @@ onMounted(async () => {
   .article-badge {
     font-size: 12px;
     padding: 2px 10px;
-    border-radius: 4px;
+    border-radius: var(--radius-p-sm);
   }
   .article-divider {
     height: 1px;
@@ -215,7 +215,7 @@ onMounted(async () => {
   }
   .article-footer {
     padding: 24px 0;
-    gap: 12px;
+    gap: var(--space-3);
   }
   .footer-divider {
     width: 48px;

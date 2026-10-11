@@ -89,7 +89,7 @@ defineProps({
   gap: 18rpx;
   width: 100%;
   background: var(--color-bg-card);
-  border-radius: 16rpx;
+  border-radius: var(--radius-r-md);
   padding: 28rpx 32rpx;
   margin-bottom: 40rpx;
   box-shadow: 0 1rpx 8rpx rgba(0, 0, 0, 0.04);
@@ -112,7 +112,7 @@ defineProps({
 
 .us-coming-badge {
   padding: 14rpx 40rpx;
-  border-radius: 32rpx;
+  border-radius: var(--radius-r-4xl);
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%);
   border: 2rpx solid rgba(59, 130, 246, 0.2);
 }
@@ -130,10 +130,10 @@ defineProps({
   .us-icon-text { font-size: 36px; }
   .us-title { font-size: 22px; margin-bottom: 8px; }
   .us-subtitle { font-size: 14px; }
-  .us-feature-list { padding: 20px 24px; border-radius: 12px; margin-bottom: 28px; gap: 12px; }
+  .us-feature-list { padding: 20px 24px; border-radius: var(--radius-p-2xl); margin-bottom: 28px; gap: var(--space-3); }
   .us-feature-dot { font-size: 16px; }
   .us-feature-text { font-size: 14px; }
-  .us-coming-badge { padding: 8px 28px; border-radius: 20px; border-width: 1px; }
+  .us-coming-badge { padding: 8px 28px; border-radius: var(--radius-p-5xl); border-width: 1px; }
   .us-coming-text { font-size: 15px; letter-spacing: 1px; }
 }
 </style>

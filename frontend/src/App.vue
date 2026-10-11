@@ -83,10 +83,10 @@ export default {
   --gradient-vcp-warm: linear-gradient(135deg, #ff9500, #ffb340);
   --gradient-vcp-normal: linear-gradient(135deg, #34c759, #5dd67a);
   --gradient-vcp-cool: linear-gradient(135deg, #8e8e93, #a8a8ae);
-  --gradient-sentiment-strong-bull: linear-gradient(135deg, #34c759, #28a745);
+  --gradient-sentiment-strong-bull: linear-gradient(135deg, #ff3b30, #e02b20);
   --gradient-sentiment-mild-bull: linear-gradient(135deg, #ff9500, #e8870e);
   --gradient-sentiment-caution: linear-gradient(135deg, #f0b429, #d4981e);
-  --gradient-sentiment-mild-bear: linear-gradient(135deg, #5ac778, #48b066);
+  --gradient-sentiment-mild-bear: linear-gradient(135deg, #34c759, #28a745);
   --gradient-sentiment-neutral: linear-gradient(135deg, #a0a0b0, #8c8c9a);
   --gradient-info-bar: linear-gradient(90deg, #3b82f6, #60a5fa);
   --gradient-info-bg: linear-gradient(180deg, #f0f7ff 0%, #ffffff 40%);
@@ -137,6 +137,28 @@ export default {
   --radius-lg: 0.625rem;
   --radius-pill: 1.125rem;
 
+  /* 圆角刻度（全量令牌化新增，独立命名避免覆盖上方 rem 令牌）
+     rpx 系列用于移动端档，px 系列用于 PC 断点档 */
+  --radius-r-xs: 4rpx;
+  --radius-r-sm: 6rpx;
+  --radius-r-md: 8rpx;
+  --radius-r-lg: 12rpx;
+  --radius-r-xl: 16rpx;
+  --radius-r-2xl: 20rpx;
+  --radius-r-3xl: 24rpx;
+  --radius-r-4xl: 32rpx;
+  --radius-r-full: 999rpx;
+  --radius-p-xs: 3px;
+  --radius-p-sm: 4px;
+  --radius-p-md: 6px;
+  --radius-p-lg: 8px;
+  --radius-p-xl: 10px;
+  --radius-p-2xl: 12px;
+  --radius-p-3xl: 14px;
+  --radius-p-4xl: 16px;
+  --radius-p-5xl: 20px;
+  --radius-p-full: 999px;
+
   /* 阴影 */
   --shadow-sm: 0 0.03125rem 0.25rem rgba(0, 0, 0, 0.04);
   --shadow-md: 0 0.0625rem 0.5rem rgba(0, 0, 0, 0.05);
@@ -155,6 +177,19 @@ export default {
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
+  --space-half: 2px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* 间距刻度 rpx 系列（移动端档，1px ≈ 2rpx） */
+  --space-r-half: 4rpx;
+  --space-r-1: 8rpx;
+  --space-r-2: 16rpx;
+  --space-r-3: 24rpx;
+  --space-r-4: 32rpx;
+  --space-r-5: 40rpx;
+  --space-r-6: 48rpx;
 }
 
 /* 全局样式 — page 兼容小程序，body/uni-page-body 兼容 H5 */
