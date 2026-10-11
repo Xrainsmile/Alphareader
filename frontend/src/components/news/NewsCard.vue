@@ -73,7 +73,7 @@
           </view>
         </template>
         <!-- 情绪指标 -->
-        <template v-if="density === 'detailed' && item.sentiment_score != null">
+        <template v-if="density !== 'compact' && item.sentiment_score != null">
           <text class="meta-dot">·</text>
           <view class="sentiment-badge" :class="sentimentClass(item.sentiment_score)">
             <view v-if="item.sentiment_score > 0" class="sentiment-icon-svg sentiment-icon-up"></view>
@@ -107,7 +107,7 @@ const props = defineProps({
   showGravity: { type: Boolean, default: false },
   /** 子新闻数量（用于计算聚合热度加成） */
   childrenCount: { type: Number, default: 0 },
-  /** 密度模式: compact(紧凑) / standard(标准) / detailed(详情) */
+  /** 密度模式: compact(紧凑) / standard(标准) */
   density: { type: String, default: 'standard' },
 })
 

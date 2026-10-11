@@ -32,8 +32,7 @@
       </view>
       <view class="density-toggle">
         <view class="density-btn" :class="{ 'density-btn-active': density === 'compact' }" @click="setDensity('compact')">紧凑</view>
-        <view class="density-btn" :class="{ 'density-btn-active': density === 'standard' }" @click="setDensity('standard')">标准</view>
-        <view class="density-btn" :class="{ 'density-btn-active': density === 'detailed' }" @click="setDensity('detailed')">详情</view>
+      <view class="density-btn" :class="{ 'density-btn-active': density === 'standard' }" @click="setDensity('standard')">标准</view>
       </view>
     </view>
 

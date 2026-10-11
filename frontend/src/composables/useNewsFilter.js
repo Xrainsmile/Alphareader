@@ -37,11 +37,11 @@ export function useNewsFilter() {
   const currentCategory = ref('')
   const onlyHighlight = ref(false)
 
-  // ── 密度模式（compact / standard / detailed）──
+  // ── 密度模式（compact / standard）──
   const density = ref('standard')
   try {
     const saved = uni.getStorageSync('news_density')
-    if (saved === 'compact' || saved === 'standard' || saved === 'detailed') {
+    if (saved === 'compact' || saved === 'standard') {
       density.value = saved
     }
   } catch (_) {}
