@@ -5,7 +5,7 @@
       <text class="article-title">{{ meta.title }}</text>
       <view class="article-meta">
         <text class="article-date">{{ formatDate(meta.date) }}</text>
-        <text class="article-badge">每日复盘</text>
+        <text class="article-badge">Daily Review</text>
       </view>
     </view>
 
@@ -19,7 +19,7 @@
 
     <!-- Loading -->
     <view class="loading-state" v-if="!meta.title">
-      <text class="loading-text">加载中...</text>
+      <text class="loading-text">Loading...</text>
     </view>
 
     <!-- Footer -->

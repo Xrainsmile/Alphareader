@@ -8,7 +8,7 @@
       @click="onGateClick"
     >
     <text class="gate-mark">!</text>
-    <text class="gate-label">更多功能</text>
+    <text class="gate-label">More</text>
     </view>
 
     <!-- 复用模拟仓密码弹窗（密码即 Stocks 自身密码）-->
@@ -82,7 +82,7 @@ async function onConfirm() {
     openGate({ token })
     modalVisible.value = false
     pwd.value = ''
-    uni.showToast({ title: '已解锁 Stocks / SEPA', icon: 'none' })
+    uni.showToast({ title: 'Unlocked Stocks / SEPA', icon: 'none' })
   } catch (_) {
     pwdError.value = true
   }

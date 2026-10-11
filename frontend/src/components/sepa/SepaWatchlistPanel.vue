@@ -3,20 +3,20 @@
     <!-- 操作栏 -->
     <view class="sepa-card">
       <view class="sepa-btn-row">
-        <view class="sepa-btn sepa-btn-brand sepa-btn-sm" style="flex:1" @click="openForm()">+ 添加标的</view>
-        <view class="sepa-btn sepa-btn-ghost sepa-btn-sm" style="flex:1" @click="openBatch">批量导入</view>
-        <view class="sepa-btn sepa-btn-ghost sepa-btn-sm" style="flex:1" @click="load">刷新</view>
+        <view class="sepa-btn sepa-btn-brand sepa-btn-sm" style="flex:1" @click="openForm()">+ Add Ticker</view>
+        <view class="sepa-btn sepa-btn-ghost sepa-btn-sm" style="flex:1" @click="openBatch">Bulk Import</view>
+        <view class="sepa-btn sepa-btn-ghost sepa-btn-sm" style="flex:1" @click="load">Refresh</view>
       </view>
       <view class="sepa-filter-bar" style="margin-top:16rpx;margin-bottom:0;">
-        <view class="sepa-filter-chip" :class="{ active: statusFilter === '' }" @click="setFilter('')">全部</view>
-        <view class="sepa-filter-chip" :class="{ active: statusFilter === 'passed' }" @click="setFilter('passed')">已入池</view>
-        <view class="sepa-filter-chip" :class="{ active: statusFilter === 'rejected' }" @click="setFilter('rejected')">未通过</view>
-        <view class="sepa-filter-chip" :class="{ active: statusFilter === 'candidate' }" @click="setFilter('candidate')">待录入</view>
+        <view class="sepa-filter-chip" :class="{ active: statusFilter === '' }" @click="setFilter('')">All</view>
+        <view class="sepa-filter-chip" :class="{ active: statusFilter === 'passed' }" @click="setFilter('passed')">In Pool</view>
+        <view class="sepa-filter-chip" :class="{ active: statusFilter === 'rejected' }" @click="setFilter('rejected')">Failed</view>
+        <view class="sepa-filter-chip" :class="{ active: statusFilter === 'candidate' }" @click="setFilter('candidate')">Pending</view>
       </view>
     </view>
 
-    <view v-if="loading" class="sepa-loading">加载中…</view>
-    <view v-else-if="!items.length" class="sepa-empty">暂无标的，点击「添加标的」录入候选股</view>
+    <view v-if="loading" class="sepa-loading">Loading...</view>
+    <view v-else-if="!items.length" class="sepa-empty">No tickers — click "Add Ticker" to add candidates</view>
 
     <view v-for="w in items" :key="w.id" class="sepa-card sepa-wl-item" style="margin-bottom:14rpx;">
       <view class="sepa-wl-head">
@@ -28,9 +28,9 @@
       </view>
 
       <view class="sepa-holding-meta">
-        <view class="cell"><view class="k">现价</view><view class="v">{{ sym }}{{ w.price ?? '—' }}</view></view>
+        <view class="cell"><view class="k">Last</view><view class="v">{{ sym }}{{ w.price ?? '—' }}</view></view>
         <view class="cell"><view class="k">RS</view><view class="v">{{ w.rs ?? '—' }}</view></view>
-        <view class="cell"><view class="k">枢轴</view><view class="v">{{ w.pivot_price ? sym + w.pivot_price : '—' }}</view></view>
+        <view class="cell"><view class="k">Pivot</view><view class="v">{{ w.pivot_price ? sym + w.pivot_price : '—' }}</view></view>
         <view class="cell"><view class="k">VCP</view><view class="v" style="font-size:22rpx">{{ w.vcp_stage || '—' }}</view></view>
       </view>
 
@@ -44,8 +44,8 @@
       <view v-if="w.fundamental_note" class="sepa-trade-note">基本面：{{ w.fundamental_note }}</view>
 
       <view class="sepa-btn-row">
-        <view class="sepa-btn sepa-btn-ghost sepa-btn-sm" style="flex:1" @click="openForm(w)">编辑</view>
-        <view class="sepa-btn sepa-btn-danger sepa-btn-sm" style="flex:1" @click="remove(w)">删除</view>
+        <view class="sepa-btn sepa-btn-ghost sepa-btn-sm" style="flex:1" @click="openForm(w)">Edit</view>
+        <view class="sepa-btn sepa-btn-danger sepa-btn-sm" style="flex:1" @click="remove(w)">Delete</view>
       </view>
     </view>
 
@@ -55,10 +55,10 @@
         <view class="sepa-section-title">{{ editing ? '编辑标的' : '添加标的' }}</view>
         <scroll-view scroll-y class="sepa-form-scroll">
           <view class="sepa-row2">
-            <view class="sepa-field"><text class="sepa-field-label">代码 *</text>
+            <view class="sepa-field"><text class="sepa-field-label">Ticker *</text>
               <input class="sepa-input" :value="form.symbol" :disabled="editing" placeholder="如 NVDA / 300750" @input="form.symbol = $event.detail.value" /></view>
-            <view class="sepa-field"><text class="sepa-field-label">名称</text>
-              <input class="sepa-input" :value="form.name" placeholder="名称" @input="form.name = $event.detail.value" /></view>
+            <view class="sepa-field"><text class="sepa-field-label">Name</text>
+              <input class="sepa-input" :value="form.name" placeholder="Name" @input="form.name = $event.detail.value" /></view>
           </view>
           <view style="margin:8rpx 0 12rpx;">
             <view class="sepa-btn sepa-btn-brand sepa-btn-sm" :style="{ opacity: (!form.symbol.trim() || autofilling) ? 0.5 : 1 }" @click="doAutofill">
@@ -66,7 +66,7 @@
             </view>
           </view>
           <view class="sepa-row2">
-            <view class="sepa-field"><text class="sepa-field-label">现价</text>
+            <view class="sepa-field"><text class="sepa-field-label">Last</text>
               <input class="sepa-input" type="digit" :value="form.price" @input="form.price = $event.detail.value" /></view>
             <view class="sepa-field"><text class="sepa-field-label">RS（0-100）</text>
               <input class="sepa-input" type="digit" :value="form.rs" @input="form.rs = $event.detail.value" /></view>
@@ -82,28 +82,28 @@
               <input class="sepa-input" type="digit" :value="form.ma200" @input="form.ma200 = $event.detail.value" /></view>
             <view class="sepa-field" style="display:flex;flex-direction:column;justify-content:flex-end;">
               <view class="sepa-check-row" style="border:none;padding:0;">
-                <text class="sepa-check-label">MA200 连升≥1月</text>
+                <text class="sepa-check-label">MA200 Rising ≥1M</text>
                 <switch :checked="form.ma200_rising" color="var(--color-down)" @change="form.ma200_rising = $event.detail.value" />
               </view>
             </view>
           </view>
           <view class="sepa-row2">
-            <view class="sepa-field"><text class="sepa-field-label">52周高</text>
+            <view class="sepa-field"><text class="sepa-field-label">52W High</text>
               <input class="sepa-input" type="digit" :value="form.high52w" @input="form.high52w = $event.detail.value" /></view>
-            <view class="sepa-field"><text class="sepa-field-label">52周低</text>
+            <view class="sepa-field"><text class="sepa-field-label">52W Low</text>
               <input class="sepa-input" type="digit" :value="form.low52w" @input="form.low52w = $event.detail.value" /></view>
           </view>
           <view class="sepa-row2">
-            <view class="sepa-field"><text class="sepa-field-label">枢轴价 Pivot</text>
+            <view class="sepa-field"><text class="sepa-field-label">Pivot Price</text>
               <input class="sepa-input" type="digit" :value="form.pivot_price" @input="form.pivot_price = $event.detail.value" /></view>
-            <view class="sepa-field"><text class="sepa-field-label">VCP 阶段</text>
+            <view class="sepa-field"><text class="sepa-field-label">VCP Stage</text>
               <input class="sepa-input" :value="form.vcp_stage" placeholder="如 3次收缩" @input="form.vcp_stage = $event.detail.value" /></view>
           </view>
-          <view class="sepa-field"><text class="sepa-field-label">基本面备注（EPS/营收/催化剂）</text>
+          <view class="sepa-field"><text class="sepa-field-label">Fundamental Notes (EPS / Revenue / Catalyst)</text>
             <input class="sepa-input" :value="form.fundamental_note" @input="form.fundamental_note = $event.detail.value" /></view>
         </scroll-view>
         <view class="sepa-btn-row">
-          <view class="sepa-btn sepa-btn-ghost" style="flex:1" @click="showForm = false">取消</view>
+          <view class="sepa-btn sepa-btn-ghost" style="flex:1" @click="showForm = false">Cancel</view>
           <view class="sepa-btn sepa-btn-primary" style="flex:1" @click="submit">{{ editing ? '保存（重判8条）' : '添加（自动判8条）' }}</view>
         </view>
       </view>
@@ -124,10 +124,10 @@
           @input="batchText = $event.detail.value"
         />
         <view class="sepa-field-label" style="margin-top:8rpx;">
-          识别到 <text style="color:var(--color-brand);font-weight:700;">{{ parsedCodes.length }}</text> 个代码，将自动拉取指标并判定 8 条模板
+          Detected <text style="color:var(--color-brand);font-weight:700;">{{ parsedCodes.length }}</text> tickers — indicators auto-fetched and checked against 8 templates
         </view>
         <view class="sepa-btn-row" style="margin-top:16rpx;">
-          <view class="sepa-btn sepa-btn-ghost" style="flex:1" @click="showBatch = false">取消</view>
+          <view class="sepa-btn sepa-btn-ghost" style="flex:1" @click="showBatch = false">Cancel</view>
           <view
             class="sepa-btn sepa-btn-primary"
             style="flex:1"
@@ -195,7 +195,7 @@ const load = async () => {
     const r = await fetchSepaWatchlist(props.market, statusFilter.value)
     items.value = r.items || []
   } catch (e) {
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    uni.showToast({ title: 'Failed to load', icon: 'none' })
   } finally {
     loading.value = false
   }
@@ -217,7 +217,7 @@ const doAutofill = async () => {
     if (data.ma200_rising != null) form.ma200_rising = data.ma200_rising
     if (data.high52w != null) form.high52w = String(data.high52w)
     if (data.low52w != null) form.low52w = String(data.low52w)
-    uni.showToast({ title: '指标已获取', icon: 'success' })
+    uni.showToast({ title: 'Indicators fetched', icon: 'success' })
   } catch (e) {
     uni.showToast({ title: e.message || '获取失败', icon: 'none' })
   } finally {
@@ -248,7 +248,7 @@ const submitBatch = async () => {
     if (nSkip) parts.push(`已存在 ${nSkip}`)
     if (nFail) parts.push(`失败 ${nFail}`)
     uni.showModal({
-      title: '批量导入完成',
+      title: 'Bulk import complete',
       content: parts.join(' · ') + (nFail ? `\n失败代码：${(r.failed || []).map(f => f.symbol).join('、')}` : ''),
       showCancel: false,
     })
@@ -278,7 +278,7 @@ const openForm = (w) => {
 const numOrNull = (v) => (v === '' || v == null ? null : Number(v))
 
 const submit = async () => {
-  if (!form.symbol && !editing.value) { uni.showToast({ title: '请填写代码', icon: 'none' }); return }
+  if (!form.symbol && !editing.value) { uni.showToast({ title: 'Please enter a ticker', icon: 'none' }); return }
   const payload = {
     name: form.name,
     price: numOrNull(form.price), rs: numOrNull(form.rs),
@@ -295,7 +295,7 @@ const submit = async () => {
       await addSepaWatchlist({ market: props.market, symbol: form.symbol, ...payload })
     }
     showForm.value = false
-    uni.showToast({ title: '已保存', icon: 'success' })
+    uni.showToast({ title: 'Saved', icon: 'success' })
     await load()
     emit('changed')
   } catch (e) {
@@ -306,7 +306,7 @@ const submit = async () => {
 const remove = (w) => {
   if (!props.unlocked) { emit('need-unlock'); return }
   uni.showModal({
-    title: '删除标的', content: `确认从股池删除 ${w.name || w.symbol}？`,
+    title: 'Delete Ticker', content: `确认从股池删除 ${w.name || w.symbol}？`,
     success: async (res) => {
       if (!res.confirm) return
       try {

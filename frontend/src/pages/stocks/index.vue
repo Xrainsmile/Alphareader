@@ -154,16 +154,16 @@ const usCatalystFeatures = [
 const strategyLinks = computed(() => {
   if (activeMarket.value === 'CN') {
     return [
-      { key: 'vcp', icon: '📐', label: 'VCP 收缩', desc: '波动率收缩蓄势' },
-      { key: 'trend', icon: '📈', label: '右侧趋势', desc: '突破回踩确认' },
-      { key: 'catalyst', icon: '⚡', label: '催化剂', desc: '事件驱动机会' },
-      { key: 'value', icon: '💎', label: '价投', desc: '低估价值挖掘' },
-      { key: 'sandbox', icon: '🧪', label: '模拟仓', desc: '组合与回测' },
+      { key: 'vcp', icon: '📐', label: 'VCP Contraction', desc: '波动率收缩蓄势' },
+      { key: 'trend', icon: '📈', label: 'Right-Side Trend', desc: '突破回踩确认' },
+      { key: 'catalyst', icon: '⚡', label: 'Catalyst', desc: '事件驱动机会' },
+      { key: 'value', icon: '💎', label: 'Value', desc: '低估价值挖掘' },
+      { key: 'sandbox', icon: '🧪', label: 'Sandbox', desc: '组合与回测' },
     ]
   }
   return [
     { key: 'us_vcp', icon: '📐', label: 'VCP (US)', desc: '美股波动率收缩' },
-    { key: 'us_trend', icon: '📈', label: '趋势 (US)', desc: '美股右侧趋势' },
+    { key: 'us_trend', icon: '📈', label: 'Trend (US)', desc: '美股右侧趋势' },
   ]
 })
 

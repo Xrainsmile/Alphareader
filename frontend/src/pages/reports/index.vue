@@ -10,13 +10,13 @@
           <!-- 移动端：侧门「!」入口（桌面端由左侧导航承载，此处隐藏）-->
           <GateButton class="gate-mobile-only" />
         </view>
-        <text class="reports-subtitle">阶段简报 · 事件追踪</text>
+        <text class="reports-subtitle">Periodic Briefings · Event Tracking</text>
       </view>
 
       <!-- 时间筛选：分段控件（快捷日期）+ 日历按钮，桌面端居 header 右侧 -->
       <view class="rpt-filter">
         <view class="rf-reset" :class="{ 'rf-reset-on': !!filterDate }" @click="filterDate && resetFilter()">
-          <text class="rf-reset-text">清除筛选</text>
+          <text class="rf-reset-text">Clear</text>
         </view>
 
         <view class="rf-seg">
@@ -25,7 +25,7 @@
             :class="{ 'rf-seg-on': filterDate === '' }"
             @click="pickDate('')"
           >
-            <text class="rf-seg-text">全部</text>
+            <text class="rf-seg-text">All</text>
           </view>
           <view
             v-for="d in dateOptions"
@@ -82,7 +82,7 @@
             <view class="tl-date-bar"></view>
             <text class="tl-date-main">{{ g.dateMain }}</text>
             <text class="tl-date-week">{{ g.weekday }}</text>
-            <text class="tl-date-count">{{ g.items.length }} 份简报</text>
+            <text class="tl-date-count">{{ g.items.length }} briefings</text>
           </view>
 
           <view
@@ -105,29 +105,29 @@
               <text class="dc-range">{{ formatPeriodRange(item) }}</text>
               <!-- 导出本期为分享图（含扫码回看二维码，仅 H5） -->
               <text class="dc-export" @click.stop="exportDigest(item)">
-                {{ exportingId === item.id ? '导出中…' : '导出图片' }}
+                {{ exportingId === item.id ? 'Exporting…' : 'Export Image' }}
               </text>
             </view>
             <view class="dc-stats">
-              <text class="dc-stat">{{ item.event_count || 0 }} 个事件</text>
+              <text class="dc-stat">{{ item.event_count || 0 }} events</text>
               <text class="dc-sep">·</text>
-              <text class="dc-stat">{{ item.material_update_count || 0 }} 个重要变化</text>
+              <text class="dc-stat">{{ item.material_update_count || 0 }} updates</text>
               <text class="dc-sep">·</text>
-              <text class="dc-stat">{{ (sc(item).must_know || []).length }} 个必须知道</text>
+              <text class="dc-stat">{{ (sc(item).must_know || []).length }} must-know</text>
             </view>
 
             <!-- 时段概览 + 本期变化（阶段简报最有价值信息，优先呈现）-->
             <view v-if="sc(item).period_summary || sc(item).what_changed" class="dc-section dc-overview">
               <text v-if="sc(item).period_summary" class="dc-overview-text">{{ sc(item).period_summary }}</text>
               <view v-if="sc(item).what_changed" class="dc-change">
-                <text class="dc-change-label">本期变化</text>
+                <text class="dc-change-label">What Changed</text>
                 <text class="dc-change-text">{{ sc(item).what_changed }}</text>
               </view>
             </view>
 
             <!-- 核心变化（跨事件共同信号，一眼看本时段最重要变化）-->
             <view v-if="sc(item).cross_event_signals && sc(item).cross_event_signals.length" class="dc-section dc-core">
-              <text class="dc-section-title">核心变化</text>
+              <text class="dc-section-title">Key Changes</text>
               <view v-for="(s, si) in sc(item).cross_event_signals" :key="si" class="dc-core-item">
                 <text class="dc-core-dot">•</text>
                 <view class="dc-core-body">
@@ -139,7 +139,7 @@
 
             <!-- 必须知道（编号体现优先级，次级信息收进事件详情页）-->
             <view v-if="sc(item).must_know && sc(item).must_know.length" class="dc-section">
-              <text class="dc-section-title">必须知道</text>
+              <text class="dc-section-title">Must Know</text>
               <view
                 v-for="(e, ei) in sc(item).must_know"
                 :key="e.event_id"
@@ -152,11 +152,11 @@
                     <text v-if="e.confidence" class="dc-conf" :class="'dc-conf-' + e.confidence">{{ confLabel(e.confidence) }}</text>
                   </view>
                   <text v-if="e.latest_change" class="dc-mk-change">{{ e.latest_change }}</text>
-                  <text v-if="e.why_important" class="dc-mk-impact">影响：{{ e.why_important }}</text>
-                  <text v-if="e.watch_next" class="dc-mk-watch">关注：{{ e.watch_next }}</text>
-                  <text v-if="e.sources && e.sources.length" class="dc-mk-src">信源：{{ e.sources.join(' / ') }}</text>
+                  <text v-if="e.why_important" class="dc-mk-impact">Impact: {{ e.why_important }}</text>
+                  <text v-if="e.watch_next" class="dc-mk-watch">Watch: {{ e.watch_next }}</text>
+                  <text v-if="e.sources && e.sources.length" class="dc-mk-src">Sources: {{ e.sources.join(' / ') }}</text>
                   <view class="dc-mk-foot" @click.stop="goEventDetail(e.event_id)">
-                    <text class="dc-mk-detail">查看详情 →</text>
+                    <text class="dc-mk-detail">Details →</text>
                   </view>
                 </view>
               </view>
@@ -164,7 +164,7 @@
 
             <!-- 值得留意（紧凑列表）-->
             <view v-if="sc(item).worth_watching && sc(item).worth_watching.length" class="dc-section">
-              <text class="dc-section-title">值得留意</text>
+              <text class="dc-section-title">Worth Watching</text>
               <view v-for="e in sc(item).worth_watching" :key="e.event_id" class="dc-watch">
                 <text class="dc-watch-bullet">—</text>
                 <text class="dc-watch-text">{{ e.title }}<text v-if="e.sources && e.sources.length" class="dc-watch-src"> · {{ e.sources.join(' / ') }}</text></text>
@@ -173,7 +173,7 @@
 
             <!-- 持续关注（持续事件 + 此前关注暂无进展）-->
             <view v-if="ongoingList(item).length" class="dc-section">
-              <text class="dc-section-title">持续关注</text>
+              <text class="dc-section-title">Ongoing</text>
               <view v-for="e in ongoingList(item)" :key="e.event_id" class="dc-watch">
                 <text class="dc-watch-bullet">—</text>
                 <text class="dc-watch-text">{{ e.title }}<text v-if="e.sources && e.sources.length" class="dc-watch-src"> · {{ e.sources.join(' / ') }}</text><text v-if="e.note" class="dc-watch-note"> · {{ e.note }}</text></text>
@@ -182,7 +182,7 @@
 
             <!-- 接下来关注 -->
             <view v-if="sc(item).upcoming && sc(item).upcoming.length" class="dc-section">
-              <text class="dc-section-title">接下来关注</text>
+              <text class="dc-section-title">What's Next</text>
               <view v-for="(u, ui) in sc(item).upcoming" :key="ui" class="dc-upcoming">
                 <text v-if="u.time" class="dc-upcoming-time">{{ u.time }}</text>
                 <text class="dc-upcoming-text">{{ u.item }}</text>
@@ -196,7 +196,7 @@
         </view><!-- /tl-group -->
       </view><!-- /timeline -->
       <view v-if="!digestLoading && digestList.length > 0 && digestDays < 30 && !filterDate" class="load-more" @click="loadMoreDigests">
-        <text class="load-more-text">加载更多</text>
+        <text class="load-more-text">Load More</text>
       </view>
     </view>
 
@@ -251,29 +251,29 @@ function toDateStr(d) {
 const todayStr = toDateStr(new Date())
 const pickerValue = computed(() => filterDate.value || todayStr)
 
-// 日历按钮文案：无筛选显示「选日期」；快捷日期命中显示日期；自定义日期显示 2026.10.10 格式
+// Calendar button label: 'Pick Date' when unfiltered; matched quick date; else 2026.10.10
 const isQuickDate = computed(() => dateOptions.value.some((d) => d.value === filterDate.value))
 const calLabel = computed(() => {
-  if (!filterDate.value) return '选日期'
+  if (!filterDate.value) return 'Pick Date'
   if (isQuickDate.value) return filterDate.value.split('-').slice(1).join('.')
   const [y, m, dd] = filterDate.value.split('-')
   return `${y}.${m}.${dd}`
 })
 
-// 快捷日期：今天 / 昨天
+// Quick dates: Today / Yesterday
 const dateOptions = computed(() => {
   const out = []
   for (let i = 0; i < 2; i++) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    out.push({ value: toDateStr(d), label: i === 0 ? '今天' : '昨天' })
+    out.push({ value: toDateStr(d), label: i === 0 ? 'Today' : 'Yesterday' })
   }
   return out
 })
 
-// 按日期分组：26.10.10 周六 · N 份简报（日期过滤走后端 date 参数）
+// 按日期分组：26.10.10 Sat · N briefings（日期过滤走后端 date 参数）
 const groupedDigests = computed(() => {
-  const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const groups = []
   const map = new Map()
   for (const item of digestList.value) {
@@ -340,7 +340,7 @@ function sc(item) {
 }
 // 确定性标签：high/medium/low → 中文短标签（must_know 卡片展示）
 function confLabel(c) {
-  return { high: '高确定性', medium: '中等确定', low: '低确定性' }[c] || ''
+  return { high: 'High Confidence', medium: 'Medium Confidence', low: 'Low Confidence' }[c] || ''
 }
 // 持续关注 = 持续事件(ongoing_updates) + 此前关注暂无进展(quiet_topics)
 function ongoingList(item) {
@@ -414,7 +414,7 @@ function goEventDetail(eventId) {
 const exportingId = ref(null)
 async function exportDigest(item) {
   if (!canExportImage()) {
-    uni.showToast({ title: '请使用浏览器打开', icon: 'none' })
+    uni.showToast({ title: 'Open in a browser to export', icon: 'none' })
     return
   }
   if (exportingId.value) return // 防连点
@@ -423,7 +423,7 @@ async function exportDigest(item) {
     await exportDigestImage(item)
   } catch (e) {
     console.warn('导出简报图片失败:', e)
-    uni.showToast({ title: e.message || '导出失败', icon: 'none' })
+    uni.showToast({ title: e.message || 'Export failed', icon: 'none' })
   } finally {
     exportingId.value = null
   }
@@ -624,7 +624,7 @@ onMounted(() => {
   color: var(--color-brand, var(--color-info-hover));
 }
 
-/* ── 日期分组标题：26.10.10 周六 · 2 份简报 ── */
+/* ── 日期分组标题：26.10.10 Sat · 2 briefings ── */
 .tl-group {
   margin-bottom: 8rpx;
 }

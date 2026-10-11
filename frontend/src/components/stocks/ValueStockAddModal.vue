@@ -4,8 +4,8 @@
       <!-- 头部 -->
       <view class="modal-header">
         <text class="modal-icon">📋</text>
-        <text class="modal-title">录入价投标的</text>
-        <text class="modal-desc">搜索并选择要加入价投观察池的股票</text>
+        <text class="modal-title">Add Value Candidate</text>
+        <text class="modal-desc">Search and select a stock to add to the value watchlist</text>
       </view>
 
       <!-- 搜索框 -->
@@ -38,10 +38,10 @@
         </view>
       </view>
       <view v-if="!selectedStock && searched && searchResults.length === 0 && !searching" class="empty-hint">
-        <text class="empty-text">无匹配结果</text>
+        <text class="empty-text">No matches</text>
       </view>
       <view v-if="searching" class="empty-hint">
-        <text class="empty-text">搜索中...</text>
+        <text class="empty-text">Searching...</text>
       </view>
 
       <!-- 已选中的股票 -->
@@ -73,7 +73,7 @@
       <!-- 按钮 -->
       <view class="modal-actions">
         <view class="btn btn-cancel" @click="close">
-          <text class="btn-text cancel-text">取消</text>
+          <text class="btn-text cancel-text">Cancel</text>
         </view>
         <view
           class="btn btn-confirm"
@@ -225,7 +225,7 @@ const submit = async () => {
     // 成功
     emit('added')
     close()
-    uni.showToast({ title: '录入成功', icon: 'success' })
+    uni.showToast({ title: 'Added successfully', icon: 'success' })
   } catch (e) {
     console.error('录入失败:', e)
     submitError.value = e.message || '网络错误'

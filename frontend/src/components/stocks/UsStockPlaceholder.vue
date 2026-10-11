@@ -14,7 +14,7 @@
       </view>
     </view>
     <view class="us-coming-badge">
-      <text class="us-coming-text">🚀 即将上线</text>
+      <text class="us-coming-text">🚀 Coming Soon</text>
     </view>
   </view>
 </template>

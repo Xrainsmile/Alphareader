@@ -1,6 +1,6 @@
 <template>
   <view>
-    <view v-if="loading" class="sepa-loading">加载中…</view>
+    <view v-if="loading" class="sepa-loading">Loading...</view>
 
     <template v-else>
       <view class="sepa-card">
@@ -13,38 +13,38 @@
 
       <!-- 4 项指标编辑 -->
       <view class="sepa-card">
-        <view class="sepa-section-title">市场闸门指标 <text class="sepa-section-sub">4 项全满足 → 闸门开启</text></view>
+        <view class="sepa-section-title">Market Gate Indicators <text class="sepa-section-sub">All 4 conditions → Gate Open</text></view>
 
         <view class="sepa-check-row">
-          <text class="sepa-check-label">① 指数站上 50 日均线</text>
+          <text class="sepa-check-label">① Index above 50-day MA</text>
           <switch :checked="form.index_above_ma50" color="var(--color-down)" @change="onSwitch('index_above_ma50', $event)" />
         </view>
         <view class="sepa-check-row">
-          <text class="sepa-check-label">② 50 日均线斜率向上</text>
+          <text class="sepa-check-label">② 50-day MA slope rising</text>
           <switch :checked="form.ma50_trending_up" color="var(--color-down)" @change="onSwitch('ma50_trending_up', $event)" />
         </view>
         <view class="sepa-check-row">
-          <text class="sepa-check-label">③ 市场宽度健康（涨跌比 &gt; 1）</text>
+          <text class="sepa-check-label">③ Market breadth healthy (A/D ratio &gt; 1)</text>
           <switch :checked="form.breadth_healthy" color="var(--color-down)" @change="onSwitch('breadth_healthy', $event)" />
         </view>
         <view class="sepa-check-row">
-          <text class="sepa-check-label">④ 新高家数 &gt; 新低家数</text>
+          <text class="sepa-check-label">④ New highs &gt; new lows</text>
           <switch :checked="form.new_highs_gt_lows" color="var(--color-down)" @change="onSwitch('new_highs_gt_lows', $event)" />
         </view>
 
         <view class="sepa-field" style="margin-top: 18rpx;">
-          <text class="sepa-field-label">备注</text>
+          <text class="sepa-field-label">Notes</text>
           <input class="sepa-input" :value="form.note" placeholder="如：大盘转弱，缩量观望" @input="form.note = $event.detail.value" />
         </view>
 
         <view class="sepa-risk-box" style="margin-top: 0;">
           <view class="sepa-risk-line">
-            <text class="k">提交后闸门状态</text>
+            <text class="k">Gate Status After Submit</text>
             <text class="v" :class="computedOpen ? 'pnl-down' : 'pnl-up'">{{ computedOpen ? '开启' : '关闭' }}</text>
           </view>
         </view>
 
-        <view class="sepa-btn sepa-btn-primary" style="margin-top: 16rpx;" @click="save">保存闸门状态</view>
+        <view class="sepa-btn sepa-btn-primary" style="margin-top: 16rpx;" @click="save">Save Gate Status</view>
       </view>
     </template>
   </view>
@@ -85,7 +85,7 @@ const load = async () => {
     form.new_highs_gt_lows = g.new_highs_gt_lows
     form.note = g.note || ''
   } catch (e) {
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    uni.showToast({ title: 'Failed to load', icon: 'none' })
   } finally {
     loading.value = false
   }
@@ -97,7 +97,7 @@ const save = async () => {
   if (!props.unlocked) { emit('need-unlock'); return }
   try {
     await updateSepaGate({ market: props.market, ...form })
-    uni.showToast({ title: '已保存', icon: 'success' })
+    uni.showToast({ title: 'Saved', icon: 'success' })
     await load()
     emit('changed')
   } catch (e) {

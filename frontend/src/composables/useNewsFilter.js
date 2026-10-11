@@ -8,25 +8,25 @@ export function useNewsFilter() {
   // ── 常量配置 ──
   const scoreOptions = [5, 6, 7, 8, 9]
   const categoryTabs = [
-    { value: '', label: '全部' },
-    { value: '财经', label: '财经' },
-    { value: '科技', label: '科技' },
+    { value: '', label: 'All' },
+    { value: '财经', label: 'Finance' },
+    { value: '科技', label: 'Tech' },
   ]
   const cnSources = ['富途新闻', '英为财情']
   const enSources = ['MarketWatch', 'Seeking Alpha', 'Finnhub']
   const techSources = ['TechCrunch', 'Hacker News', 'OpenAI Blog', 'Google AI Blog', 'Anthropic', 'Hugging Face', 'MIT Tech Review']
   // 事件排序（对应 /api/v1/events 的 sort 参数，PRD 8.4）
   const sortTabs = [
-    { value: 'important', label: '重要' },
-    { value: 'latest_update', label: '最新更新' },
-    { value: 'first_seen', label: '首次出现' },
+    { value: 'important', label: 'Important' },
+    { value: 'latest_update', label: 'Latest Update' },
+    { value: 'first_seen', label: 'First Seen' },
   ]
   const ageOptions = [
     { value: 24, label: '24h' },
     { value: 48, label: '48h' },
-    { value: 72, label: '3天' },
-    { value: 168, label: '7天' },
-    { value: 0, label: '不限' },
+    { value: 72, label: '3 Days' },
+    { value: 168, label: '7 Days' },
+    { value: 0, label: 'Any' },
   ]
 
   // ── 实际生效的筛选值 ──
@@ -68,7 +68,7 @@ export function useNewsFilter() {
     if (onlyHighlight.value) tags.push('🔥 重点')
     const tab = sortTabs.find(t => t.value === currentSort.value)
     if (tab && currentSort.value !== 'important') tags.push(tab.label)
-    if (currentSort.value === 'important') tags.push('重要')
+    if (currentSort.value === 'important') tags.push('Important')
     const age = ageOptions.find(a => a.value === maxAgeHours.value)
     if (age && maxAgeHours.value !== 24) tags.push(age.label)
     if (currentSource.value) tags.push(currentSource.value)

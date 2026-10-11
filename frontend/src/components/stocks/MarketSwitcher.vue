@@ -6,7 +6,7 @@
       @click="$emit('switch', 'CN')"
     >
       <text class="market-flag">🇨🇳</text>
-      <text class="market-label">A股</text>
+      <text class="market-label">A-Shares</text>
     </view>
     <view
       class="market-item"
@@ -14,7 +14,7 @@
       @click="$emit('switch', 'US')"
     >
       <text class="market-flag">🇺🇸</text>
-      <text class="market-label">美股</text>
+      <text class="market-label">US Stocks</text>
     </view>
   </view>
 </template>

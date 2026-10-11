@@ -36,7 +36,7 @@
             <text class="vcp-dropdown-text">{{ ind }}</text>
           </view>
           <view v-if="filteredIndustries.length === 0" class="vcp-dropdown-empty">
-            <text>无匹配行业</text>
+            <text>No matching sector</text>
           </view>
         </scroll-view>
       </view>
@@ -84,7 +84,7 @@
             <text class="vcp-dropdown-text">{{ con }}</text>
           </view>
           <view v-if="filteredConcepts.length === 0" class="vcp-dropdown-empty">
-            <text>无匹配概念</text>
+            <text>No matching concept</text>
           </view>
         </scroll-view>
       </view>

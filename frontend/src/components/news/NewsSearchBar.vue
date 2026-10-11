@@ -6,7 +6,7 @@
       <input
         class="search-input"
         type="text"
-        placeholder="搜索财经新闻..."
+        placeholder="Search financial news..."
         :value="searchQuery"
         @input="$emit('input', $event)"
         @focus="$emit('focus')"
@@ -18,7 +18,7 @@
       </view>
     </view>
     <view v-if="searchMode" class="search-cancel" @click="$emit('exit')">
-      <text class="search-cancel-text">取消</text>
+      <text class="search-cancel-text">Cancel</text>
     </view>
   </view>
 
@@ -27,9 +27,9 @@
     <!-- 搜索历史 -->
     <view v-if="searchHistory.length" class="sp-section">
       <view class="sp-section-header">
-        <text class="sp-section-title">搜索历史</text>
+        <text class="sp-section-title">Recent Searches</text>
         <view class="sp-clear-btn" @click="$emit('clear-history')">
-          <text class="sp-clear-text">清除</text>
+          <text class="sp-clear-text">Clear</text>
         </view>
       </view>
       <view class="sp-tags">
@@ -41,7 +41,7 @@
     <!-- 热门话题 -->
     <view v-if="hotTopics.length" class="sp-section">
       <view class="sp-section-header">
-        <text class="sp-section-title">热门话题</text>
+        <text class="sp-section-title">Trending Topics</text>
       </view>
       <view class="sp-tags">
         <view v-for="t in hotTopics" :key="t" class="sp-tag sp-tag-hot" @click="$emit('quick-search', t)">
@@ -58,11 +58,11 @@
     </view>
 
     <view v-if="searchLoading && searchList.length === 0" class="loading-container">
-      <text class="loading-text">搜索中...</text>
+      <text class="loading-text">Searching...</text>
     </view>
 
     <view v-else-if="searchList.length === 0" class="empty-container">
-      <text class="empty-text">未找到相关新闻，换个关键词试试</text>
+      <text class="empty-text">No results found — try another keyword</text>
     </view>
 
     <view v-else class="card-wrapper">
@@ -79,8 +79,8 @@
     </view>
 
     <view v-if="searchList.length > 0" class="load-more">
-      <text v-if="searchLoadingMore" class="load-more-text">正在加载更多...</text>
-      <text v-else-if="searchNoMore" class="load-more-text">— 没有更多了 —</text>
+      <text v-if="searchLoadingMore" class="load-more-text">Loading more...</text>
+      <text v-else-if="searchNoMore" class="load-more-text">— End of results —</text>
     </view>
   </view>
 </template>

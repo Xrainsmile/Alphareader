@@ -68,7 +68,7 @@
         <template v-if="item.relevance_score != null">
           <text class="meta-dot">·</text>
           <view class="relevance-badge">
-            <text class="relevance-label">相关度</text>
+            <text class="relevance-label">Relevance</text>
             <text class="relevance-value">{{ formatRelevance(item.relevance_score) }}</text>
           </view>
         </template>

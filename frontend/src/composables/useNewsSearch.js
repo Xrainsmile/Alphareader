@@ -131,7 +131,7 @@ export function useNewsSearch() {
       searchNoMore.value = searchOffset.value >= searchTotal.value
     } catch (e) {
       console.error('搜索失败:', e)
-      uni.showToast({ title: '搜索失败', icon: 'none' })
+      uni.showToast({ title: 'Search failed', icon: 'none' })
     } finally {
       searchLoading.value = false
     }

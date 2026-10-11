@@ -2,7 +2,7 @@
   <view class="detail-container">
     <!-- Loading -->
     <view v-if="loading" class="loading-state">
-      <text class="loading-text">加载中...</text>
+      <text class="loading-text">Loading...</text>
     </view>
 
     <template v-else-if="stock">
@@ -23,18 +23,18 @@
 
       <!-- 加入理由 -->
       <view v-if="stock.reason" class="reason-card">
-        <text class="reason-label">加入理由</text>
+        <text class="reason-label">Thesis</text>
         <text class="reason-text">{{ stock.reason }}</text>
       </view>
 
       <!-- 推演卡片流 -->
       <view class="section-header">
-        <text class="section-title">推演记录</text>
+        <text class="section-title">Scenario Log</text>
         <text class="section-count">{{ analyses.length }} 条</text>
       </view>
 
       <view v-if="analyses.length === 0" class="empty-card">
-        <text class="empty-text">暂无推演记录</text>
+        <text class="empty-text">No scenarios yet</text>
       </view>
 
       <view v-else class="analysis-list">
@@ -46,7 +46,7 @@
           <!-- 时间 + 综合评分 -->
           <view class="a-score-section">
             <view class="a-score-left">
-              <text class="a-score-label">综合评分：</text>
+              <text class="a-score-label">Composite Score: </text>
               <text class="a-score-big" :class="scoreClass(item.score)">{{ item.score.toFixed(1) }}</text>
               <text class="a-score-max">/ 5.0</text>
             </view>
@@ -57,42 +57,42 @@
           <view class="a-logic-section">
             <view class="a-logic-header">
               <view class="a-logic-bar"></view>
-              <text class="a-logic-title">盘面逻辑推演</text>
+              <text class="a-logic-title">Price Action Scenarios</text>
             </view>
 
             <!-- 趋势 -->
             <view class="a-block-item">
-              <text class="a-block-heading">趋势 (TREND)</text>
+              <text class="a-block-heading">Trend (TREND)</text>
               <text class="a-block-body">{{ item.trend }}</text>
             </view>
 
             <!-- 形态 -->
             <view class="a-block-item">
-              <text class="a-block-heading">形态 (SETUP)</text>
+              <text class="a-block-heading">Setup (SETUP)</text>
               <text class="a-block-body">{{ item.pattern }}</text>
             </view>
 
             <!-- 量价 -->
             <view class="a-block-item">
-              <text class="a-block-heading">量价 (P&V)</text>
+              <text class="a-block-heading">Price & Volume (P&V)</text>
               <text class="a-block-body">{{ item.volume_price }}</text>
             </view>
 
             <!-- 交易计划 Plan -->
             <view v-if="item.plan" class="a-block-item">
-              <text class="a-block-heading">交易计划 (PLAN)</text>
+              <text class="a-block-heading">Trade Plan (PLAN)</text>
               <text class="a-block-body">{{ item.plan }}</text>
             </view>
 
             <!-- 亏盈思考 -->
             <view v-if="item.pnl_thinking" class="a-block-item">
-              <text class="a-block-heading">亏盈思考</text>
+              <text class="a-block-heading">P&L Review</text>
               <text class="a-block-body">{{ item.pnl_thinking }}</text>
             </view>
 
             <!-- 哨子 Verdict -->
             <view class="a-block-item a-block-verdict">
-              <text class="a-block-heading">哨子 Verdict</text>
+              <text class="a-block-heading">Verdict</text>
               <text class="a-block-body a-verdict-body">{{ item.verdict }}</text>
             </view>
           </view>
@@ -101,12 +101,12 @@
 
       <!-- 交易记录 -->
       <view class="section-header">
-        <text class="section-title">交易记录</text>
+        <text class="section-title">Trade Log</text>
         <text class="section-count">{{ trades.length }} 笔</text>
       </view>
 
       <view v-if="trades.length === 0" class="empty-card">
-        <text class="empty-text">暂无交易记录</text>
+        <text class="empty-text">No trades yet</text>
       </view>
 
       <view v-else class="trade-list">
@@ -133,7 +133,7 @@
 
     <!-- 错误 -->
     <view v-else class="empty-card" style="margin-top: 60rpx">
-      <text class="empty-text">未找到该股票</text>
+      <text class="empty-text">Stock not found</text>
     </view>
   </view>
 </template>
@@ -168,7 +168,7 @@ onLoad(async (options) => {
   }
 
   // 设置导航标题
-  uni.setNavigationBarTitle({ title: '加载中...' })
+  uni.setNavigationBarTitle({ title: 'Loading...' })
 
   try {
     const data = await fetchSandboxStockDetail(id)
@@ -178,7 +178,7 @@ onLoad(async (options) => {
     uni.setNavigationBarTitle({ title: `${data.stock.name} ${data.stock.ts_code}` })
   } catch (e) {
     console.error('加载详情失败:', e)
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    uni.showToast({ title: 'Failed to load', icon: 'none' })
   } finally {
     loading.value = false
   }

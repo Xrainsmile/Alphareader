@@ -1,8 +1,8 @@
 <template>
   <view>
     <view class="stocks-header">
-      <text class="stocks-title">VCP 策略</text>
-      <text class="stocks-subtitle">波动收缩形态 · Volatility Contraction Pattern</text>
+      <text class="stocks-title">VCP Strategy</text>
+      <text class="stocks-subtitle">Volatility Contraction Pattern</text>
     </view>
 
     <view class="info-bar">
@@ -20,11 +20,11 @@
     <!-- VCP 表格头 -->
     <view class="vcp-table-header">
       <text class="vth vth-rank">#</text>
-      <text class="vth vth-name">名称/代码</text>
-      <text class="vth vth-price">收盘价</text>
+      <text class="vth vth-name">Name / Ticker</text>
+      <text class="vth vth-price">Close</text>
       <text class="vth vth-vcp">VCP</text>
-      <text class="vth vth-flow">资金流入</text>
-      <text class="vth vth-action">交易</text>
+      <text class="vth vth-flow">Capital Inflow</text>
+      <text class="vth vth-action">Trade</text>
     </view>
 
     <EmptyState v-if="vcpLoading" text="加载中..." bg="var(--color-bg-card)" radius="0 0 16rpx 16rpx" />
@@ -79,35 +79,35 @@
         <!-- 展开行：完整详情 -->
         <view v-if="expandedIdx === idx" class="vcp-expand">
           <view v-if="catalystMap[item.ts_code]" class="vcp-expand-row">
-            <text class="vcp-expand-label">🔥 催化剂</text>
+            <text class="vcp-expand-label">🔥 Catalyst</text>
             <text class="vcp-expand-val" style="color: var(--color-up);">
               {{ catalystMap[item.ts_code].catalyst_summary || `${catalystMap[item.ts_code].news_count}条高分新闻命中` }}
             </text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">行业</text>
+            <text class="vcp-expand-label">Sector</text>
             <text class="vcp-expand-val">{{ item.industry || '--' }}</text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">题材</text>
+            <text class="vcp-expand-label">Theme</text>
             <text class="vcp-expand-val vcp-concepts">{{ item.concepts || '--' }}</text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">主力净流入</text>
+            <text class="vcp-expand-label">Net Institutional Inflow</text>
             <text class="vcp-expand-val" :class="pctValClass(item.fund_flow_net)">
               {{ item.fund_flow_net != null ? (item.fund_flow_net >= 0 ? '+' : '') + item.fund_flow_net.toFixed(2) + '万' : '--' }}
             </text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">EPS增长</text>
+            <text class="vcp-expand-label">EPS Growth</text>
             <text class="vcp-expand-val" :class="pctValClass(item.eps_growth)">{{ formatPctVal(item.eps_growth) }}</text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">营收同比</text>
+            <text class="vcp-expand-label">Revenue YoY</text>
             <text class="vcp-expand-val" :class="pctValClass(item.revenue_yoy)">{{ formatPctVal(item.revenue_yoy) }}</text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">主营业务</text>
+            <text class="vcp-expand-label">Core Business</text>
             <text class="vcp-expand-val vcp-business">{{ item.main_business || '--' }}</text>
           </view>
           <view class="vcp-expand-row">
@@ -118,7 +118,7 @@
           <!-- VCP 形态识别（纯算法，人在环上复核） -->
           <view class="vcp-analysis" v-if="vcpAnalysis[item.ts_code]">
             <view class="vcp-ana-head">
-              <text class="vcp-ana-title">📐 VCP 形态识别</text>
+              <text class="vcp-ana-title">📐 VCP Pattern Detection</text>
               <text class="vcp-ana-badge" :class="vcpAnalysis[item.ts_code].vcp_detected ? 'on' : 'off'">
                 {{ vcpAnalysis[item.ts_code].vcp_detected ? '已识别' : '未识别' }}
               </text>
@@ -131,35 +131,35 @@
             <template v-else>
               <view class="vcp-metric-grid">
                 <view class="vcp-metric">
-                  <text class="vcp-m-label">收缩次数</text>
+                  <text class="vcp-m-label">Contractions</text>
                   <text class="vcp-m-val">{{ vcpAnalysis[item.ts_code].contractions }}</text>
                 </view>
                 <view class="vcp-metric">
-                  <text class="vcp-m-label">振幅递减</text>
+                  <text class="vcp-m-label">Range Contraction</text>
                   <text class="vcp-m-val" :class="vcpAnalysis[item.ts_code].decay_ok ? 'ok' : 'no'">{{ vcpAnalysis[item.ts_code].decay_ok ? '✓' : '✗' }}</text>
                 </view>
                 <view class="vcp-metric">
-                  <text class="vcp-m-label">量能递减</text>
+                  <text class="vcp-m-label">Volume Contraction</text>
                   <text class="vcp-m-val" :class="vcpAnalysis[item.ts_code].vol_decay_ok ? 'ok' : 'no'">{{ vcpAnalysis[item.ts_code].vol_decay_ok ? '✓' : '✗' }}</text>
                 </view>
                 <view class="vcp-metric">
-                  <text class="vcp-m-label">高点递减*</text>
+                  <text class="vcp-m-label">Lower Highs*</text>
                   <text class="vcp-m-val" :class="vcpAnalysis[item.ts_code].high_ok ? 'ok' : 'no'">{{ vcpAnalysis[item.ts_code].high_ok ? '✓' : '✗' }}</text>
                 </view>
                 <view class="vcp-metric">
-                  <text class="vcp-m-label">距枢轴</text>
+                  <text class="vcp-m-label">Vs Pivot</text>
                   <text class="vcp-m-val" :class="vcpAnalysis[item.ts_code].near_pivot ? 'ok' : 'warn'">
                     {{ vcpAnalysis[item.ts_code].pivot_distance_pct != null ? vcpAnalysis[item.ts_code].pivot_distance_pct + '%' : '—' }}
                   </text>
                 </view>
                 <view class="vcp-metric">
-                  <text class="vcp-m-label">枢轴价</text>
+                  <text class="vcp-m-label">Pivot Price</text>
                   <text class="vcp-m-val">{{ formatPrice(vcpAnalysis[item.ts_code].pivot_suggested) }}</text>
                 </view>
               </view>
 
               <text class="vcp-ana-reason">{{ vcpAnalysis[item.ts_code].reason }}</text>
-              <text class="vcp-ana-note">* 高点递减仅参考、非硬门槛（末次回升常逼近枢轴略高）。最终以你在决策面板拨「VCP 已确认」为准。</text>
+              <text class="vcp-ana-note">* Lower highs are indicative, not a hard rule (the final rally often exceeds the pivot). Confirm VCP manually in the decision panel.</text>
 
               <view class="vcp-kline-wrap" v-if="vcpChartOf(item.ts_code)">
                 <!-- #ifdef H5 -->
@@ -180,10 +180,10 @@
                 </svg>
                 <!-- #endif -->
                 <view class="vcp-kline-legend">
-                  <text class="vcp-leg"><text class="vcp-dot h"></text>摆动高点</text>
-                  <text class="vcp-leg"><text class="vcp-dot l"></text>摆动低点</text>
-                  <text class="vcp-leg"><text class="vcp-line"></text>枢轴价</text>
-                  <text class="vcp-leg"><text class="vcp-band"></text>收缩段</text>
+                  <text class="vcp-leg"><text class="vcp-dot h"></text>Swing High</text>
+                  <text class="vcp-leg"><text class="vcp-dot l"></text>Swing Low</text>
+                  <text class="vcp-leg"><text class="vcp-line"></text>Pivot Price</text>
+                  <text class="vcp-leg"><text class="vcp-band"></text>Contraction Leg</text>
                 </view>
               </view>
 
@@ -198,7 +198,7 @@
           </view>
 
           <view class="vcp-analysis" v-else-if="vcpAnalyzing === item.ts_code">
-            <text class="vcp-ana-reason">VCP 分析中…</text>
+            <text class="vcp-ana-reason">Analyzing VCP...</text>
           </view>
         </view>
       </view>
@@ -310,7 +310,7 @@ const loadData = async () => {
     await loadCatalyst(vcpList.value.map(i => i.ts_code).filter(Boolean))
   } catch (e) {
     console.error('加载 VCP 白名单失败:', e)
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    uni.showToast({ title: 'Failed to load', icon: 'none' })
   } finally {
     vcpLoading.value = false
   }

@@ -1,8 +1,8 @@
 <template>
   <view>
     <view class="stocks-header">
-      <text class="stocks-title">价投策略</text>
-      <text class="stocks-subtitle">巴菲特式价值投资 · Value Investing</text>
+      <text class="stocks-title">Value Strategy</text>
+      <text class="stocks-subtitle">Buffett-Style Value Investing</text>
     </view>
 
     <view class="info-bar">
@@ -36,10 +36,10 @@
     <!-- 价投表格头 -->
     <view class="vcp-table-header">
       <text class="vth vth-rank">#</text>
-      <text class="vth vth-name">名称/代码</text>
-      <text class="vth vth-price">收盘价</text>
-      <text class="vth vth-flow">状态</text>
-      <text class="vth vth-action">交易</text>
+      <text class="vth vth-name">Name / Ticker</text>
+      <text class="vth vth-price">Close</text>
+      <text class="vth vth-flow">Status</text>
+      <text class="vth vth-action">Trade</text>
     </view>
 
     <EmptyState v-if="valueLoading" text="加载中..." bg="var(--color-bg-card)" radius="0 0 16rpx 16rpx" />
@@ -86,19 +86,19 @@
         <!-- 展开行：详情 -->
         <view v-if="expandedIdx === idx" class="vcp-expand">
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">行业</text>
+            <text class="vcp-expand-label">Sector</text>
             <text class="vcp-expand-val">{{ item.industry || '--' }}</text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">题材</text>
+            <text class="vcp-expand-label">Theme</text>
             <text class="vcp-expand-val vcp-concepts">{{ item.concepts || '--' }}</text>
           </view>
           <view v-if="item.reason" class="vcp-expand-row">
-            <text class="vcp-expand-label">投资理由</text>
+            <text class="vcp-expand-label">Investment Thesis</text>
             <text class="vcp-expand-val vcp-business">{{ item.reason }}</text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">加入时间</text>
+            <text class="vcp-expand-label">Added</text>
             <text class="vcp-expand-val">{{ item.added_at ? item.added_at.split('T')[0] : '--' }}</text>
           </view>
         </view>
@@ -135,7 +135,7 @@ const loadData = async () => {
     valueList.value = data.items || []
   } catch (e) {
     console.error('加载价投白名单失败:', e)
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    uni.showToast({ title: 'Failed to load', icon: 'none' })
   } finally {
     valueLoading.value = false
   }

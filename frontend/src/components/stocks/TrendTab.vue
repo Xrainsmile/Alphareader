@@ -1,8 +1,8 @@
 <template>
   <view>
     <view class="stocks-header">
-      <text class="stocks-title">右侧趋势</text>
-      <text class="stocks-subtitle">双均线趋势突破 · Dual MA Trend Breakout</text>
+      <text class="stocks-title">Right-Side Trend</text>
+      <text class="stocks-subtitle">Dual MA Trend Breakout</text>
     </view>
 
     <view class="info-bar">
@@ -20,11 +20,11 @@
     <!-- 趋势表格头 -->
     <view class="vcp-table-header">
       <text class="vth vth-rank">#</text>
-      <text class="vth vth-name">名称/代码</text>
-      <text class="vth vth-price">收盘价</text>
-      <text class="vth vth-vcp">趋势分</text>
-      <text class="vth vth-flow">资金流入</text>
-      <text class="vth vth-action">交易</text>
+      <text class="vth vth-name">Name / Ticker</text>
+      <text class="vth vth-price">Close</text>
+      <text class="vth vth-vcp">Trend Score</text>
+      <text class="vth vth-flow">Capital Inflow</text>
+      <text class="vth vth-action">Trade</text>
     </view>
 
     <EmptyState v-if="trendLoading" text="加载中..." bg="var(--color-bg-card)" radius="0 0 16rpx 16rpx" />
@@ -79,21 +79,21 @@
         <!-- 展开行：完整详情 -->
         <view v-if="expandedIdx === idx" class="vcp-expand">
           <view v-if="catalystMap[item.ts_code]" class="vcp-expand-row">
-            <text class="vcp-expand-label">🔥 催化剂</text>
+            <text class="vcp-expand-label">🔥 Catalyst</text>
             <text class="vcp-expand-val" style="color: var(--color-up);">
               {{ catalystMap[item.ts_code].catalyst_summary || `${catalystMap[item.ts_code].news_count}条高分新闻命中` }}
             </text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">行业</text>
+            <text class="vcp-expand-label">Sector</text>
             <text class="vcp-expand-val">{{ item.industry || '--' }}</text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">题材</text>
+            <text class="vcp-expand-label">Theme</text>
             <text class="vcp-expand-val vcp-concepts">{{ item.concepts || '--' }}</text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">主力净流入</text>
+            <text class="vcp-expand-label">Net Institutional Inflow</text>
             <text class="vcp-expand-val" :class="pctValClass(item.fund_flow_net)">
               {{ item.fund_flow_net != null ? (item.fund_flow_net >= 0 ? '+' : '') + item.fund_flow_net.toFixed(2) + '万' : '--' }}
             </text>
@@ -107,11 +107,11 @@
             <text class="vcp-expand-val">{{ item.rsi != null ? item.rsi.toFixed(1) : '--' }}</text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">放量倍数</text>
+            <text class="vcp-expand-label">Volume Surge</text>
             <text class="vcp-expand-val">{{ item.volume_ratio != null ? item.volume_ratio.toFixed(1) + 'x' : '--' }}</text>
           </view>
           <view class="vcp-expand-row">
-            <text class="vcp-expand-label">主营业务</text>
+            <text class="vcp-expand-label">Core Business</text>
             <text class="vcp-expand-val vcp-business">{{ item.main_business || '--' }}</text>
           </view>
           <view class="vcp-expand-row">
@@ -199,7 +199,7 @@ const loadData = async () => {
     }
   } catch (e) {
     console.error('加载趋势白名单失败:', e)
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    uni.showToast({ title: 'Failed to load', icon: 'none' })
   } finally {
     trendLoading.value = false
   }

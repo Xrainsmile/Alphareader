@@ -13,12 +13,12 @@
       <view class="sepa-equity-label">总权益 · {{ curLabel }}（{{ account.currency }}）</view>
       <view class="sepa-equity">{{ sym }}{{ fmt(account.total_equity) }}</view>
       <view class="sepa-account-grid">
-        <view class="cell"><view class="k">现金</view><view class="v">{{ sym }}{{ fmt(account.cash) }}</view></view>
-        <view class="cell"><view class="k">持仓市值</view><view class="v">{{ sym }}{{ fmt(account.market_value) }}</view></view>
-        <view class="cell"><view class="k">累计盈亏</view><view class="v" :class="pnlClass(account.total_pnl_pct)">{{ fmtPct(account.total_pnl_pct) }}</view></view>
-        <view class="cell"><view class="k">初始资金</view><view class="v">{{ sym }}{{ fmt(account.initial_capital) }}</view></view>
-        <view class="cell"><view class="k">已实现盈亏</view><view class="v" :class="pnlClass(account.realized_pnl)">{{ sym }}{{ fmt(account.realized_pnl) }}</view></view>
-        <view class="cell"><view class="k">距熔断(-15%)</view><view class="v" :class="account.dist_to_breaker_pct < 5 ? 'pnl-up' : ''">{{ account.dist_to_breaker_pct }}%</view></view>
+        <view class="cell"><view class="k">Cash</view><view class="v">{{ sym }}{{ fmt(account.cash) }}</view></view>
+        <view class="cell"><view class="k">Positions Value</view><view class="v">{{ sym }}{{ fmt(account.market_value) }}</view></view>
+        <view class="cell"><view class="k">Cumulative P&L</view><view class="v" :class="pnlClass(account.total_pnl_pct)">{{ fmtPct(account.total_pnl_pct) }}</view></view>
+        <view class="cell"><view class="k">Initial Capital</view><view class="v">{{ sym }}{{ fmt(account.initial_capital) }}</view></view>
+        <view class="cell"><view class="k">Realized P&L</view><view class="v" :class="pnlClass(account.realized_pnl)">{{ sym }}{{ fmt(account.realized_pnl) }}</view></view>
+        <view class="cell"><view class="k">To Circuit Breaker (-15%)</view><view class="v" :class="account.dist_to_breaker_pct < 5 ? 'pnl-up' : ''">{{ account.dist_to_breaker_pct }}%</view></view>
       </view>
     </view>
 
@@ -53,14 +53,14 @@
     <!-- 右看板：账户速览 -->
     <view class="pc-right-panel">
       <view class="right-section">
-        <text class="right-section-title">账户速览</text>
+        <text class="right-section-title">Account Overview</text>
         <view v-if="account" class="right-account">
-          <view class="right-account-row"><text class="k">总权益</text><text class="v">{{ sym }}{{ fmt(account.total_equity) }}</text></view>
-          <view class="right-account-row"><text class="k">当日盈亏</text><text class="v" :class="pnlClass(account.total_pnl_pct)">{{ fmtPct(account.total_pnl_pct) }}</text></view>
-          <view class="right-account-row"><text class="k">持仓市值</text><text class="v">{{ sym }}{{ fmt(account.market_value) }}</text></view>
-          <view class="right-account-row"><text class="k">现金</text><text class="v">{{ sym }}{{ fmt(account.cash) }}</text></view>
+          <view class="right-account-row"><text class="k">Total Equity</text><text class="v">{{ sym }}{{ fmt(account.total_equity) }}</text></view>
+          <view class="right-account-row"><text class="k">Day P&L</text><text class="v" :class="pnlClass(account.total_pnl_pct)">{{ fmtPct(account.total_pnl_pct) }}</text></view>
+          <view class="right-account-row"><text class="k">Positions Value</text><text class="v">{{ sym }}{{ fmt(account.market_value) }}</text></view>
+          <view class="right-account-row"><text class="k">Cash</text><text class="v">{{ sym }}{{ fmt(account.cash) }}</text></view>
         </view>
-        <view v-else class="right-empty"><text class="right-empty-text">加载中...</text></view>
+        <view v-else class="right-empty"><text class="right-empty-text">Loading...</text></view>
       </view>
     </view>
   </view><!-- /page-layout -->
@@ -82,9 +82,9 @@ import SiteFooter from '@/components/common/SiteFooter.vue'
 import { fetchSepaMarkets, fetchSepaAccount, verifySandboxAccess } from '@/utils/api'
 
 const DEFAULT_MARKETS = [
-  { market: 'CN', label: 'A股', symbol: '¥', currency: 'CNY' },
-  { market: 'HK', label: '港股', symbol: 'HK$', currency: 'HKD' },
-  { market: 'US', label: '美股', symbol: '$', currency: 'USD' },
+  { market: 'CN', label: 'A-Shares', symbol: '¥', currency: 'CNY' },
+  { market: 'HK', label: 'HK Stocks', symbol: 'HK$', currency: 'HKD' },
+  { market: 'US', label: 'US Stocks', symbol: '$', currency: 'USD' },
 ]
 
 const markets = ref(DEFAULT_MARKETS)
@@ -92,12 +92,12 @@ const market = ref('CN')
 const account = ref(null)
 const tab = ref('decision')
 const tabs = [
-  { k: 'decision', label: '决策' },
-  { k: 'positions', label: '持仓' },
-  { k: 'watchlist', label: '股池' },
-  { k: 'journal', label: '日志' },
+  { k: 'decision', label: 'Decision' },
+  { k: 'positions', label: 'Positions' },
+  { k: 'watchlist', label: 'Stock Pool' },
+  { k: 'journal', label: 'Journal' },
   { k: 'kpi', label: 'KPI' },
-  { k: 'gate', label: '闸门' },
+  { k: 'gate', label: 'Gate' },
 ]
 
 const curInfo = computed(() => markets.value.find(m => m.market === market.value) || DEFAULT_MARKETS[0])

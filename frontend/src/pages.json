@@ -25,7 +25,7 @@
     {
       "path": "pages/events/detail",
       "style": {
-        "navigationBarTitleText": "事件详情",
+        "navigationBarTitleText": "Event Details",
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
         "backgroundColor": "#f0f2f5"
@@ -62,7 +62,7 @@
     {
       "path": "pages/sepa/index",
       "style": {
-        "navigationBarTitleText": "SEPA 训练",
+        "navigationBarTitleText": "SEPA Training",
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
         "enablePullDownRefresh": true,

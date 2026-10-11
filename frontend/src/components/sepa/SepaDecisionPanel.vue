@@ -1,10 +1,10 @@
 <template>
   <view>
     <view class="sepa-card">
-      <view class="sepa-section-title">📝 买入决策助手 <text class="sepa-section-sub">下单前强制走完检查清单</text></view>
+      <view class="sepa-section-title">📝 Buy Decision Assistant <text class="sepa-section-sub">Checklist must be completed before placing an order</text></view>
 
       <view class="sepa-row2">
-        <view class="sepa-field sepa-combo-field"><text class="sepa-field-label">标的代码 *</text>
+        <view class="sepa-field sepa-combo-field"><text class="sepa-field-label">Ticker *</text>
           <view class="sepa-combo">
             <input class="sepa-input" :value="form.symbol" placeholder="从股池选择或输入" @input="onSymbol" @focus="onComboFocus" @blur="onComboBlur" />
             <view class="sepa-combo-list" v-if="comboOpen && filteredSymbols.length">
@@ -15,70 +15,70 @@
             </view>
           </view>
         </view>
-        <view class="sepa-field"><text class="sepa-field-label">名称</text>
+        <view class="sepa-field"><text class="sepa-field-label">Name</text>
           <input class="sepa-input" :value="form.name" placeholder="选代码后自动带出" @input="form.name = $event.detail.value" /></view>
       </view>
 
       <view class="sepa-row2">
-        <view class="sepa-field"><text class="sepa-field-label">买入价 *</text>
+        <view class="sepa-field"><text class="sepa-field-label">Buy Price *</text>
           <input class="sepa-input" type="digit" :value="form.entry_price" @input="onNum('entry_price', $event)" /></view>
-        <view class="sepa-field"><text class="sepa-field-label">股数 *</text>
+        <view class="sepa-field"><text class="sepa-field-label">Shares *</text>
           <input class="sepa-input" type="number" :value="form.shares" @input="onNum('shares', $event)" /></view>
       </view>
 
       <view class="sepa-row2">
-        <view class="sepa-field"><text class="sepa-field-label">止损跌幅 % *（如 -7，必填）</text>
+        <view class="sepa-field"><text class="sepa-field-label">Stop-Loss % * (e.g. -7, required)</text>
           <input class="sepa-input" type="text" :value="form.stop_pct" placeholder="如 -7" @input="onStopPct" /></view>
-        <view class="sepa-field"><text class="sepa-field-label">枢轴价 Pivot</text>
+        <view class="sepa-field"><text class="sepa-field-label">Pivot Price</text>
           <input class="sepa-input" type="digit" :value="form.pivot_price" placeholder="留空取股池" @input="onNum('pivot_price', $event)" /></view>
       </view>
 
       <view class="sepa-check-row">
-        <text class="sepa-check-label">VCP 形态已确认（收缩次数、波动递减）</text>
+        <text class="sepa-check-label">VCP confirmed (contraction count, declining volatility)</text>
         <switch :checked="form.vcp_confirmed" color="var(--color-down)" @change="onVcp" />
       </view>
 
       <view class="sepa-field" style="margin-top:14rpx;">
-        <text class="sepa-field-label">买入理由</text>
+        <text class="sepa-field-label">Buy Thesis</text>
         <input class="sepa-input" :value="form.entry_reason" placeholder="如：突破3周收缩枢轴，放量" @input="form.entry_reason = $event.detail.value" />
       </view>
     </view>
 
     <!-- 检查清单 + 风险预演 -->
     <view class="sepa-card" v-if="check">
-      <view class="sepa-section-title">✅ 买入前检查清单</view>
+      <view class="sepa-section-title">✅ Pre-Buy Checklist</view>
       <view class="sepa-cl-item" v-for="it in check.checklist.items" :key="it.key">
         <view class="sepa-cl-icon" :class="clIcon(it)">{{ it.pass ? '✓' : (it.key === 'near_pivot' ? '!' : '✗') }}</view>
         <text class="sepa-cl-text">{{ it.label }}</text>
       </view>
 
       <view class="sepa-risk-box">
-        <view class="sepa-risk-line"><text class="k">止损幅度</text><text class="v">{{ check.risk.stop_pct }}%</text></view>
-        <view class="sepa-risk-line"><text class="k">仓位金额</text><text class="v">{{ sym }}{{ fmt(check.risk.position_amount) }}（占 {{ check.risk.position_pct }}%）</text></view>
+        <view class="sepa-risk-line"><text class="k">Stop Distance</text><text class="v">{{ check.risk.stop_pct }}%</text></view>
+        <view class="sepa-risk-line"><text class="k">Position Amount</text><text class="v">{{ sym }}{{ fmt(check.risk.position_amount) }}（占 {{ check.risk.position_pct }}%）</text></view>
         <view class="sepa-risk-line" :class="{ danger: check.risk.exceeds_risk_limit }">
-          <text class="k">单笔最大亏损</text>
+          <text class="k">Max Loss per Trade</text>
           <text class="v">{{ sym }}{{ fmt(check.risk.max_loss) }}（{{ check.risk.max_loss_pct }}% / 上限 {{ check.risk.risk_limit_pct }}%）</text>
         </view>
         <view class="sepa-risk-line" v-if="check.pivot.distance_pct != null">
-          <text class="k">距枢轴</text>
+          <text class="k">Vs Pivot</text>
           <text class="v" :class="check.pivot.within_5pct ? '' : 'pnl-up'">{{ check.pivot.distance_pct }}%</text>
         </view>
       </view>
 
       <view class="sepa-risk-warn" v-if="check.risk.exceeds_risk_limit">⛔ 单笔亏损超 {{ check.risk.risk_limit_pct }}%，禁止下单（请减少股数或收紧止损）</view>
-      <view class="sepa-risk-warn" v-else-if="!check.gate_open">⛔ 市场闸门关闭，禁止开新仓</view>
-      <view class="sepa-risk-warn" v-else-if="!check.template_pass">⛔ 该标的未通过 8 条趋势模板（或不在股池）</view>
-      <view class="sepa-risk-warn" v-else-if="check.circuit_breaker_hit">⛔ 账户已触及 -15% 熔断线，禁止开新仓</view>
+      <view class="sepa-risk-warn" v-else-if="!check.gate_open">⛔ Market gate closed — new positions blocked</view>
+      <view class="sepa-risk-warn" v-else-if="!check.template_pass">⛔ Failed 8 trend templates (or not in pool)</view>
+      <view class="sepa-risk-warn" v-else-if="check.circuit_breaker_hit">⛔ Account hit -15% circuit breaker — new positions blocked</view>
       <view class="sepa-risk-warn" v-else-if="check.pivot.within_5pct === false" style="background:var(--color-bg-warning-light);color:var(--color-warning-deep)">
         ⚠️ 距枢轴 {{ check.pivot.distance_pct }}% 已追高（&gt;5%），需勾选「强制确认追高」
       </view>
 
       <view class="sepa-check-row" v-if="check.pivot.within_5pct === false">
-        <text class="sepa-check-label">强制确认追高下单（记录为风险操作）</text>
+        <text class="sepa-check-label">Force-confirm chasing entry (logged as a risk event)</text>
         <switch :checked="form.force_risky" color="var(--color-warning)" @change="form.force_risky = $event.detail.value" />
       </view>
 
-      <view class="sepa-mindcard">💡 「我是来执行系统的，不是来证明自己对的。」</view>
+      <view class="sepa-mindcard">💡 "I'm here to execute the system, not to prove myself right."</view>
 
       <view class="sepa-btn sepa-btn-primary" :class="{ disabled: !canSubmit }" style="margin-top:16rpx;" @click="submit">
         {{ canSubmit ? '确认开仓（生成持仓+止损单）' : '检查未通过，无法下单' }}
@@ -86,8 +86,8 @@
     </view>
 
     <view class="sepa-card" v-else>
-      <view class="sepa-btn sepa-btn-brand" @click="runCheck">运行买点检查</view>
-      <view class="sepa-section-sub" style="text-align:center;margin-top:12rpx;">填写买入价/股数/止损跌幅后，先检查再下单</view>
+      <view class="sepa-btn sepa-btn-brand" @click="runCheck">Run Buy Check</view>
+      <view class="sepa-section-sub" style="text-align:center;margin-top:12rpx;">Enter price / shares / stop-loss %, then run the check</view>
     </view>
   </view>
 </template>
@@ -181,10 +181,10 @@ const canSubmit = computed(() => {
 })
 
 const validBasics = () => {
-  if (!form.symbol) { uni.showToast({ title: '请填写代码', icon: 'none' }); return false }
-  if (!form.entry_price || !form.shares) { uni.showToast({ title: '请填买入价与股数', icon: 'none' }); return false }
+  if (!form.symbol) { uni.showToast({ title: 'Please enter a ticker', icon: 'none' }); return false }
+  if (!form.entry_price || !form.shares) { uni.showToast({ title: 'Enter buy price and shares', icon: 'none' }); return false }
   const sp = Number(form.stop_pct)
-  if (!form.stop_pct || isNaN(sp) || sp >= 0) { uni.showToast({ title: '止损跌幅须为负数', icon: 'none' }); return false }
+  if (!form.stop_pct || isNaN(sp) || sp >= 0) { uni.showToast({ title: 'Stop-loss must be negative', icon: 'none' }); return false }
   return true
 }
 
@@ -216,7 +216,7 @@ const submit = async () => {
       vcp_confirmed: form.vcp_confirmed, entry_reason: form.entry_reason || null,
       force_risky: form.force_risky,
     })
-    uni.showToast({ title: '已开仓', icon: 'success' })
+    uni.showToast({ title: 'Position opened', icon: 'success' })
     Object.assign(form, emptyForm())
     check.value = null
     emit('changed')

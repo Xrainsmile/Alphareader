@@ -3,7 +3,7 @@
     <view class="ticker-overlay-card">
       <!-- Loading 状态 -->
       <view v-if="loading" class="ticker-overlay-loading">
-        <text class="ticker-overlay-loading-text">查询中...</text>
+        <text class="ticker-overlay-loading-text">Checking...</text>
       </view>
       <!-- 数据已加载 -->
       <template v-else>
@@ -20,35 +20,35 @@
         <view v-if="data?.in_vcp || data?.in_trend" class="ticker-overlay-strategies">
           <view v-if="data.in_vcp" class="ticker-strategy-row">
             <text class="ticker-strategy-icon">📊</text>
-            <text class="ticker-strategy-label">VCP 策略</text>
-            <text class="ticker-strategy-badge ticker-strategy-in">白名单中 ✅</text>
+            <text class="ticker-strategy-label">VCP Strategy</text>
+            <text class="ticker-strategy-badge ticker-strategy-in">Whitelisted ✅</text>
             <text v-if="data.vcp_score != null" class="ticker-strategy-score">{{ Math.round(data.vcp_score) }}分</text>
           </view>
           <view v-if="data.in_trend" class="ticker-strategy-row">
             <text class="ticker-strategy-icon">📈</text>
-            <text class="ticker-strategy-label">趋势策略</text>
-            <text class="ticker-strategy-badge ticker-strategy-in">白名单中 ✅</text>
+            <text class="ticker-strategy-label">Trend Strategy</text>
+            <text class="ticker-strategy-badge ticker-strategy-in">Whitelisted ✅</text>
             <text v-if="data.trend_score != null" class="ticker-strategy-score">{{ Math.round(data.trend_score) }}分</text>
           </view>
           <view v-if="data.industry" class="ticker-strategy-row">
             <text class="ticker-strategy-icon">🏭</text>
-            <text class="ticker-strategy-label">行业</text>
+            <text class="ticker-strategy-label">Sector</text>
             <text class="ticker-strategy-value">{{ data.industry }}</text>
           </view>
         </view>
 
         <!-- 不在白名单 -->
         <view v-else class="ticker-overlay-empty">
-          <text class="ticker-overlay-empty-text">未在当日策略白名单中</text>
+          <text class="ticker-overlay-empty-text">Not in today's strategy whitelist</text>
         </view>
 
         <!-- 操作按钮 -->
         <view class="ticker-overlay-actions">
           <view v-if="data?.futu_url" class="ticker-action-btn ticker-action-futu" @click="$emit('open-futu')">
-            <text class="ticker-action-text">在富途查看</text>
+            <text class="ticker-action-text">View on Futu</text>
           </view>
           <view class="ticker-action-btn ticker-action-search" @click="$emit('search-news')">
-            <text class="ticker-action-text">搜索相关新闻</text>
+            <text class="ticker-action-text">Search Related News</text>
           </view>
         </view>
       </template>

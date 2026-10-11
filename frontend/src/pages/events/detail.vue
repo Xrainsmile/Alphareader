@@ -1,7 +1,7 @@
 <template>
   <view class="event-detail-page">
-    <view v-if="loading" class="state-box"><text class="state-text">加载中...</text></view>
-    <view v-else-if="!event" class="state-box"><text class="state-text">事件不存在或已删除</text></view>
+    <view v-if="loading" class="state-box"><text class="state-text">Loading...</text></view>
+    <view v-else-if="!event" class="state-box"><text class="state-text">Event not found or deleted</text></view>
 
     <template v-else>
       <!-- 事件概览 -->
@@ -13,20 +13,20 @@
         <text class="title">{{ event.title }}</text>
         <text v-if="event.summary" class="summary">{{ event.summary }}</text>
         <view v-if="event.why_important" class="block important">
-          <text class="block-label">为什么重要</text>
+          <text class="block-label">Why It Matters</text>
           <text class="block-text">{{ event.why_important }}</text>
         </view>
         <view class="meta-grid">
-          <view class="meta-item"><text class="meta-label">独立信源</text><text class="meta-value">{{ event.source_count }}</text></view>
-          <view class="meta-item"><text class="meta-label">报道总数</text><text class="meta-value">{{ event.article_count }}</text></view>
-          <view class="meta-item"><text class="meta-label">首次出现</text><text class="meta-value">{{ formatTime(event.first_seen_at) }}</text></view>
-          <view class="meta-item"><text class="meta-label">最后更新</text><text class="meta-value">{{ formatTime(event.last_updated_at) }}</text></view>
+          <view class="meta-item"><text class="meta-label">Unique Sources</text><text class="meta-value">{{ event.source_count }}</text></view>
+          <view class="meta-item"><text class="meta-label">Total Articles</text><text class="meta-value">{{ event.article_count }}</text></view>
+          <view class="meta-item"><text class="meta-label">First Seen</text><text class="meta-value">{{ formatTime(event.first_seen_at) }}</text></view>
+          <view class="meta-item"><text class="meta-label">Last Updated</text><text class="meta-value">{{ formatTime(event.last_updated_at) }}</text></view>
         </view>
       </view>
 
       <!-- 最新变化 -->
       <view v-if="event.latest_change" class="card">
-        <text class="section-title">最新变化</text>
+        <text class="section-title">Latest Change</text>
         <view class="block change">
           <text class="block-text">{{ event.latest_change }}</text>
         </view>
@@ -34,7 +34,7 @@
 
       <!-- 不确定信息（空时隐藏） -->
       <view v-if="event.uncertainty" class="card">
-        <text class="section-title">不确定信息</text>
+        <text class="section-title">Uncertainty</text>
         <view class="block uncertainty">
           <text class="block-text">{{ event.uncertainty }}</text>
         </view>
@@ -42,24 +42,38 @@
 
       <!-- 后续观察（空时隐藏） -->
       <view v-if="event.watch_next" class="card">
-        <text class="section-title">后续观察</text>
+        <text class="section-title">What to Watch</text>
         <view class="block watch">
           <text class="block-text">{{ event.watch_next }}</text>
         </view>
       </view>
 
-      <!-- 事件演进（版本倒序） -->
+      <!-- 事件演进（版本倒序，时间线形式呈现进展） -->
       <view v-if="event.versions && event.versions.length" class="card">
-        <text class="section-title">事件演进</text>
-        <view v-for="v in event.versions" :key="v.version" class="version-item">
-          <view class="version-head">
-            <text class="version-num">版本 {{ v.version }}</text>
-            <text class="version-time">{{ formatTime(v.created_at) }}</text>
+        <text class="section-title">Event Timeline</text>
+        <view class="tl">
+          <view v-for="(v, vi) in event.versions" :key="v.version" class="tl-item">
+            <view class="tl-rail">
+              <view class="tl-dot" :class="{ 'tl-dot-latest': vi === 0 }"></view>
+              <view v-if="vi < event.versions.length - 1" class="tl-line"></view>
+            </view>
+            <view class="tl-body">
+              <view class="version-head">
+                <text class="version-num">v{{ v.version }}</text>
+                <text v-if="vi === 0" class="tl-latest-tag">Latest</text>
+                <text class="version-time">{{ formatTime(v.created_at) }}</text>
+              </view>
+              <text v-if="v.latest_change" class="version-change">{{ v.latest_change }}</text>
+              <text v-if="v.event_summary" class="version-summary">{{ v.event_summary }}</text>
+              <text class="version-meta">{{ v.source_count || 1 }} sources · {{ v.article_count || 1 }} articles</text>
+            </view>
           </view>
-          <text v-if="v.latest_change" class="version-change">{{ v.latest_change }}</text>
-          <text v-if="v.event_summary" class="version-summary">{{ v.event_summary }}</text>
-          <text class="version-meta">{{ v.source_count || 1 }} 信源 · {{ v.article_count || 1 }} 篇报道</text>
         </view>
+      </view>
+      <!-- 无演进记录时给出说明，避免页面下方直接留白 -->
+      <view v-else class="card">
+        <text class="section-title">Event Timeline</text>
+        <text class="tl-empty">No update recorded yet — this event has a single version.</text>
       </view>
 
       <!-- 关联报道 -->
@@ -238,10 +252,49 @@ function openUrl(url) {
   display: block;
   margin-bottom: 12rpx;
 }
-.version-item {
-  border-left: 4rpx solid var(--color-border-divider);
-  padding: 8rpx 0 8rpx 20rpx;
-  margin-bottom: 16rpx;
+/* ── Event Timeline（版本演进，倒序：最新在上）── */
+.tl { display: block; }
+.tl-item { display: flex; align-items: stretch; }
+.tl-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 28rpx;
+  flex: none;
+  margin-right: 18rpx;
+}
+.tl-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: var(--color-border-strong);
+  flex: none;
+  margin-top: 10rpx;
+}
+.tl-dot-latest {
+  background: var(--color-brand);
+  box-shadow: 0 0 0 6rpx var(--color-bg-brand-light);
+}
+.tl-line {
+  flex: 1;
+  width: 2rpx;
+  background: var(--color-border-divider);
+  margin: 6rpx 0;
+}
+.tl-body { flex: 1; min-width: 0; padding-bottom: 28rpx; }
+.tl-latest-tag {
+  font-size: 18rpx;
+  font-weight: 700;
+  color: var(--color-brand);
+  background: var(--color-bg-brand-light);
+  border-radius: var(--radius-p-sm);
+  padding: 4rpx 10rpx;
+  line-height: 1.2;
+}
+.tl-empty {
+  font-size: 24rpx;
+  color: var(--color-text-placeholder);
+  line-height: 1.6;
 }
 .version-head {
   display: flex;

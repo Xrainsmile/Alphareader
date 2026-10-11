@@ -5,11 +5,11 @@
       <view class="filter-trigger-left">
         <view class="filter-trigger-btn" :class="{ 'filter-trigger-active': hasActiveFilter || filterOpen }" @click="$emit('toggle')">
           <text class="filter-trigger-icon">☰</text>
-          <text class="filter-trigger-text">筛选</text>
+          <text class="filter-trigger-text">Filters</text>
           <text class="filter-arrow" :class="{ 'filter-arrow-up': filterOpen }">›</text>
         </view>
         <view class="highlight-chip" :class="{ 'highlight-chip-active': onlyHighlight }" @click="$emit('toggle-highlight')">
-          <text class="highlight-chip-text" :class="{ 'highlight-chip-text-active': onlyHighlight }">🔥 只看重点</text>
+          <text class="highlight-chip-text" :class="{ 'highlight-chip-text-active': onlyHighlight }">🔥 Highlights Only</text>
         </view>
         <view v-if="filterTags.length" class="filter-tags">
           <view v-for="tag in filterTags" :key="tag" class="filter-tag">
@@ -25,19 +25,19 @@
       <view class="filter-popover-body">
         <!-- 只看重点 -->
         <view class="filter-row">
-          <text class="filter-row-label">重点</text>
+          <text class="filter-row-label">Highlights</text>
           <view class="filter-row-chips">
             <view class="fc" :class="{ 'fc-active': !tmpHighlight }" @click="$emit('update:tmpHighlight', false)">
-              <text class="fc-text" :class="{ 'fc-text-active': !tmpHighlight }">全部</text>
+              <text class="fc-text" :class="{ 'fc-text-active': !tmpHighlight }">All</text>
             </view>
             <view class="fc" :class="{ 'fc-active': tmpHighlight }" @click="$emit('update:tmpHighlight', true)">
-              <text class="fc-text" :class="{ 'fc-text-active': tmpHighlight }">🔥 仅重点</text>
+              <text class="fc-text" :class="{ 'fc-text-active': tmpHighlight }">🔥 Highlights Only</text>
             </view>
           </view>
         </view>
         <!-- 排序 -->
         <view class="filter-row">
-          <text class="filter-row-label">排序</text>
+          <text class="filter-row-label">Sort</text>
           <view class="filter-row-chips">
             <view
               v-for="tab in sortTabs"
@@ -47,13 +47,13 @@
               @click="$emit('update:tmpSort', tab.value)"
             >
               <text class="fc-text" :class="{ 'fc-text-active': tmpSort === tab.value }">{{ tab.label }}</text>
-              <view v-if="tab.value === 'hot'" class="gravity-tooltip">基于 Hacker News 经典重力算法：高评分的新鲜资讯排在前面，随时间自然下沉</view>
+              <view v-if="tab.value === 'hot'" class="gravity-tooltip">Ranked by gravity: high-scoring fresh news rises and decays naturally over time</view>
             </view>
           </view>
         </view>
         <!-- 时效 -->
         <view class="filter-row">
-          <text class="filter-row-label">时效</text>
+          <text class="filter-row-label">Recency</text>
           <view class="filter-row-chips">
             <view
               v-for="opt in ageOptions"
@@ -68,10 +68,10 @@
         </view>
         <!-- 来源 -->
         <view class="filter-row">
-          <text class="filter-row-label">来源</text>
+          <text class="filter-row-label">Source</text>
           <view class="filter-row-chips filter-row-chips-wrap">
             <view class="fc" :class="{ 'fc-active': !tmpSource }" @click="$emit('update:tmpSource', '')">
-              <text class="fc-text" :class="{ 'fc-text-active': !tmpSource }">全部</text>
+              <text class="fc-text" :class="{ 'fc-text-active': !tmpSource }">All</text>
             </view>
             <view
               v-for="src in cnSources"
@@ -106,7 +106,7 @@
         </view>
         <!-- 评分 -->
         <view class="filter-row filter-row-last">
-          <text class="filter-row-label">评分</text>
+          <text class="filter-row-label">Score</text>
           <view class="filter-row-chips">
             <view
               v-for="s in scoreOptions"
@@ -122,10 +122,10 @@
         <!-- 底部操作栏 -->
         <view class="filter-footer">
           <view class="filter-reset-btn" @click="$emit('reset')">
-            <text class="filter-reset-text">重置</text>
+            <text class="filter-reset-text">Reset</text>
           </view>
           <view class="filter-confirm-btn" @click="$emit('confirm')">
-            <text class="filter-confirm-text">确认</text>
+            <text class="filter-confirm-text">Apply</text>
           </view>
         </view>
       </view>

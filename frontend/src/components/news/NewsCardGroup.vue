@@ -20,7 +20,7 @@
           <text class="related-toggle-arrow" :class="{ 'related-toggle-arrow-up': expanded }">›</text>
         </view>
         <view class="event-detail-link" @click.stop="goEventDetail">
-          <text class="event-detail-text">事件详情 ›</text>
+          <text class="event-detail-text">Event Details ›</text>
         </view>
       </view>
 

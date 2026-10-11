@@ -1,8 +1,8 @@
 <template>
   <view>
     <view class="stocks-header">
-      <text class="stocks-title">🔥 催化剂</text>
-      <text class="stocks-subtitle">新闻催化 × 技术面交叉验证 · Catalyst × Technical</text>
+      <text class="stocks-title">🔥 Catalyst</text>
+      <text class="stocks-subtitle">Catalyst × Technical Cross-Validation</text>
     </view>
 
     <view class="info-bar">
@@ -83,11 +83,11 @@
         <!-- 展开行：详情 -->
         <view v-if="expandedIdx === idx" class="catalyst-expand">
           <view class="catalyst-expand-row">
-            <text class="catalyst-expand-label">催化剂摘要</text>
+            <text class="catalyst-expand-label">Catalyst Summary</text>
             <text class="catalyst-expand-val catalyst-summary">{{ item.catalyst_summary || '--' }}</text>
           </view>
           <view v-if="item.news_titles && item.news_titles.length" class="catalyst-expand-row">
-            <text class="catalyst-expand-label">相关新闻</text>
+            <text class="catalyst-expand-label">Related News</text>
             <view class="catalyst-news-list">
               <text
                 v-for="(title, tIdx) in item.news_titles"
@@ -97,11 +97,11 @@
             </view>
           </view>
           <view class="catalyst-expand-row">
-            <text class="catalyst-expand-label">平均评分</text>
+            <text class="catalyst-expand-label">Avg Score</text>
             <text class="catalyst-expand-val">{{ item.avg_score.toFixed(1) }}</text>
           </view>
           <view v-if="item.avg_sentiment != null" class="catalyst-expand-row">
-            <text class="catalyst-expand-label">情绪倾向</text>
+            <text class="catalyst-expand-label">Sentiment</text>
             <text class="catalyst-expand-val" :class="sentimentClass(item.avg_sentiment)">
               {{ sentimentLabel(item.avg_sentiment) }}
             </text>
@@ -124,10 +124,10 @@ const expandedIdx = ref(-1)
 const activeFilter = ref('all')
 
 const filterOptions = [
-  { value: 'all', label: '全部', icon: '📊' },
-  { value: 'double_confirmed', label: '双确认', icon: '🎯' },
-  { value: 'strong_rs', label: '强RS', icon: '💪' },
-  { value: 'catalyst_only', label: '观察池', icon: '👀' },
+  { value: 'all', label: 'All', icon: '📊' },
+  { value: 'double_confirmed', label: 'Dual Confirm', icon: '🎯' },
+  { value: 'strong_rs', label: 'Strong RS', icon: '💪' },
+  { value: 'catalyst_only', label: 'Watchlist', icon: '👀' },
 ]
 
 const filterCounts = computed(() => {
@@ -153,7 +153,7 @@ const loadData = async () => {
     catalystDate.value = data.date || ''
   } catch (e) {
     console.error('加载催化剂标的失败:', e)
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    uni.showToast({ title: 'Failed to load', icon: 'none' })
   } finally {
     loading.value = false
   }

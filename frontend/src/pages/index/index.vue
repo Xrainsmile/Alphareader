@@ -11,34 +11,34 @@
         <text class="logo">AlphaReader</text>
       </view>
       <view class="subtitle-row">
-        <text class="subtitle">高频金融情报 · 信噪比优先</text>
+        <text class="subtitle">High-frequency financial intelligence · signal over noise</text>
         <view class="info-trigger" @click="showScoreInfo = !showScoreInfo">
           <text class="info-trigger-text">?</text>
         </view>
       </view>
       <view v-if="showScoreInfo" class="info-panel" @click="showScoreInfo = false">
-        <view class="info-panel-item"><text class="info-panel-label">10 分制</text><text class="info-panel-desc">AI 综合分（0–10，保留 1 位小数），由影响力、时效性与信源权威度加权</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">7.0–10</text><text class="info-panel-desc">值得关注：≥9 红（重大）、8–9 橙（重要）、7–8 蓝（一般）</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">&lt;7.0</text><text class="info-panel-desc">低优先级：6–7 浅色、&lt;6 灰（噪音），默认可略过</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">▲／▽</text><text class="info-panel-desc">情绪倾向：基于催化类型与预期差判定，非随机数</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">信源</text><text class="info-panel-desc">同一事件被多家媒体报道时显示信源数</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">10-Point Scale</text><text class="info-panel-desc">AI composite score (0–10, 1 decimal): impact, recency and source authority</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">7.0–10</text><text class="info-panel-desc">Worth attention: ≥9 red (major), 8–9 orange (important), 7–8 blue (normal)</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">&lt;7.0</text><text class="info-panel-desc">Low priority: 6–7 muted, &lt;6 grey (noise) — safe to skip</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">▲／▽</text><text class="info-panel-desc">Sentiment: derived from catalyst type and expectation gap, not random</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">Sources</text><text class="info-panel-desc">Source count when multiple outlets report the same event</text></view>
       </view>
     </view>
 
     <!-- 时间筛选 + 密度切换 -->
     <view class="info-bar">
       <view class="time-filters">
-        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 24 }" @click="setTimeFilter(24)">今日</view>
-        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 48 }" @click="setTimeFilter(48)">近两日</view>
-        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 168 }" @click="setTimeFilter(168)">本周</view>
+        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 24 }" @click="setTimeFilter(24)">Today</view>
+        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 48 }" @click="setTimeFilter(48)">Last 2 Days</view>
+        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 168 }" @click="setTimeFilter(168)">This Week</view>
       </view>
       <view class="density-toggle">
-        <view class="density-btn" :class="{ 'density-btn-active': density === 'compact' }" @click="setDensity('compact')">紧凑</view>
-      <view class="density-btn" :class="{ 'density-btn-active': density === 'standard' }" @click="setDensity('standard')">标准</view>
+        <view class="density-btn" :class="{ 'density-btn-active': density === 'compact' }" @click="setDensity('compact')">Compact</view>
+      <view class="density-btn" :class="{ 'density-btn-active': density === 'standard' }" @click="setDensity('standard')">Standard</view>
       </view>
     </view>
 
-    <!-- 分类 Tab：全部 / 财经 / 科技 -->
+    <!-- Category tabs: All / Finance / Tech -->
     <view class="category-tabs">
       <view
         v-for="cat in categoryTabs"
@@ -114,11 +114,11 @@
     <!-- 新闻列表（聚合模式） -->
     <view class="news-list">
       <view v-if="loading && newsList.length === 0" class="loading-container">
-        <text class="loading-text">加载中...</text>
+        <text class="loading-text">Loading...</text>
       </view>
 
       <view v-else-if="groupedNews.length === 0" class="empty-container">
-        <text class="empty-text">暂无符合条件的新闻</text>
+        <text class="empty-text">No news matches your filters</text>
       </view>
 
       <view v-else class="card-wrapper">
@@ -139,8 +139,8 @@
 
       <!-- 加载更多状态 -->
       <view v-if="groupedNews.length > 0" class="load-more">
-        <text v-if="loadingMore" class="load-more-text">正在加载更多... ⏳</text>
-        <text v-else-if="noMore" class="load-more-text">— 没有更多了 —</text>
+        <text v-if="loadingMore" class="load-more-text">Loading more... ⏳</text>
+        <text v-else-if="noMore" class="load-more-text">— End of results —</text>
       </view>
     </view>
 
@@ -163,7 +163,7 @@
     <!-- PC 右侧看板 -->
     <view class="pc-right-panel">
       <view class="right-section">
-        <text class="right-section-title">TOP 5 高分</text>
+        <text class="right-section-title">TOP 5 SCORED</text>
         <view v-for="(item, i) in topNews" :key="item.id" class="right-news-item" @click="onOpenUrl(item.url, item.id)">
           <text class="right-news-rank">{{ i + 1 }}</text>
           <view class="right-news-body">
@@ -171,7 +171,7 @@
             <text class="right-news-meta">{{ item.source }} · {{ item.ai_score }}分</text>
           </view>
         </view>
-        <view v-if="!topNews.length" class="right-empty"><text class="right-empty-text">加载中...</text></view>
+        <view v-if="!topNews.length" class="right-empty"><text class="right-empty-text">Loading...</text></view>
       </view>
     </view>
   </view><!-- /page-layout -->

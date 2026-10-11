@@ -3,14 +3,14 @@
     <!-- 净值概览卡 -->
     <view class="sb-hero-card">
       <view class="sb-hero-top">
-        <text class="sb-hero-since">成立于 2026.02.13</text>
+        <text class="sb-hero-since">Inception 2026.02.13</text>
       </view>
       <view class="sb-hero-body">
         <view class="sb-hero-left">
           <text class="sb-nav-big" :class="sbSummary.total_pnl >= 0 ? '' : 'sb-nav-down'">
             {{ sbSummary.latest_nav?.toFixed(4) || '1.0000' }}
           </text>
-          <text class="sb-nav-sub">当前单位净值</text>
+          <text class="sb-nav-sub">Current NAV</text>
         </view>
       </view>
       <!-- 圆滑净值曲线 SVG -->
@@ -34,25 +34,25 @@
       <!-- 收益率指标行 -->
       <view class="sb-metric-row">
         <view class="sb-metric-item">
-          <text class="sb-metric-label">成立以来</text>
+          <text class="sb-metric-label">Since Inception</text>
           <text class="sb-metric-val" :class="pnlClass(sbSummary.pnl_since_inception)">
             {{ formatPnlVal(sbSummary.pnl_since_inception) }}
           </text>
         </view>
         <view class="sb-metric-item">
-          <text class="sb-metric-label">近一年</text>
+          <text class="sb-metric-label">1Y</text>
           <text class="sb-metric-val" :class="pnlClass(sbSummary.pnl_1y)">
             {{ formatPnlVal(sbSummary.pnl_1y) }}
           </text>
         </view>
         <view class="sb-metric-item">
-          <text class="sb-metric-label">近三月</text>
+          <text class="sb-metric-label">3M</text>
           <text class="sb-metric-val" :class="pnlClass(sbSummary.pnl_3m)">
             {{ formatPnlVal(sbSummary.pnl_3m) }}
           </text>
         </view>
         <view class="sb-metric-item">
-          <text class="sb-metric-label">今年以来</text>
+          <text class="sb-metric-label">YTD</text>
           <text class="sb-metric-val" :class="pnlClass(sbSummary.pnl_ytd)">
             {{ formatPnlVal(sbSummary.pnl_ytd) }}
           </text>
@@ -63,7 +63,7 @@
     <!-- 持仓分布环状图 -->
     <view v-if="holdingsPie.length > 1" class="sb-pie-card">
       <view class="sb-pie-header">
-        <text class="sb-pie-title">持仓分布</text>
+        <text class="sb-pie-title">Allocation</text>
         <text class="sb-pie-sub">仓位 {{ holdingsPositionPct }}%</text>
       </view>
       <view class="sb-pie-body">
@@ -84,7 +84,7 @@
           <text x="100" y="94" text-anchor="middle" font-size="22" font-weight="800" fill="var(--color-text-primary)">
             {{ sbSummary.holding_count || 0 }}
           </text>
-          <text x="100" y="116" text-anchor="middle" font-size="11" fill="var(--color-text-muted)">只持仓</text>
+          <text x="100" y="116" text-anchor="middle" font-size="11" fill="var(--color-text-muted)">holdings</text>
         </svg>
         <!-- #endif -->
         <view class="sb-pie-legend">
@@ -113,7 +113,7 @@
           :class="{ 'sb-tag-active': sbFilter === 'watching' }"
           @click="toggleStatusFilter('watching')"
         >
-          <text class="sb-tag-label">观察中</text>
+          <text class="sb-tag-label">Watching</text>
           <text class="sb-tag-num">{{ sbSummary.watching_count || 0 }}支</text>
         </view>
         <view
@@ -121,7 +121,7 @@
           :class="{ 'sb-tag-active': sbFilter === 'holding' }"
           @click="toggleStatusFilter('holding')"
         >
-          <text class="sb-tag-label">持仓中</text>
+          <text class="sb-tag-label">Holding</text>
           <text class="sb-tag-num">{{ sbSummary.holding_count || 0 }}支</text>
         </view>
       </view>
@@ -133,7 +133,7 @@
           :class="{ 'sb-filter-chip-active': sbHoldingOnly }"
           @click="toggleHoldingOnly"
         >
-          <text class="sb-filter-chip-text">持仓票</text>
+          <text class="sb-filter-chip-text">Holdings</text>
         </view>
         <view class="sb-search-wrap">
           <text class="sb-search-icon">🔍</text>
@@ -165,7 +165,7 @@
       >
         <view v-if="isHoldingRetain(item)" class="sb-highlight-bar">
           <text class="sb-highlight-icon">●</text>
-          <text class="sb-highlight-text">持仓中</text>
+          <text class="sb-highlight-text">Holding</text>
         </view>
 
         <view class="sb-card-top">
@@ -180,7 +180,7 @@
 
         <template v-if="item.latest_analysis">
           <view class="sb-score-row">
-            <text class="sb-score-label">综合评分：</text>
+            <text class="sb-score-label">Composite Score: </text>
             <text class="sb-score-big" :class="scoreClass(item.latest_analysis.score)">{{ item.latest_analysis.score.toFixed(1) }}</text>
             <text class="sb-score-max">/ 5.0</text>
           </view>

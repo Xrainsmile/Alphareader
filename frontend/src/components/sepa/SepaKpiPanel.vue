@@ -2,11 +2,11 @@
   <view>
     <!-- 周期切换 -->
     <view class="sepa-filter-bar">
-      <view class="sepa-filter-chip" :class="{ active: period === 'all' }" @click="setPeriod('all')">全程</view>
-      <view class="sepa-filter-chip" :class="{ active: period === 'week' }" @click="setPeriod('week')">本周</view>
+      <view class="sepa-filter-chip" :class="{ active: period === 'all' }" @click="setPeriod('all')">All Time</view>
+      <view class="sepa-filter-chip" :class="{ active: period === 'week' }" @click="setPeriod('week')">This Week</view>
     </view>
 
-    <view v-if="loading" class="sepa-loading">加载中…</view>
+    <view v-if="loading" class="sepa-loading">Loading...</view>
 
     <template v-else-if="kpi">
       <!-- 纪律达标率（核心 KPI）-->
@@ -28,17 +28,17 @@
         <view class="sepa-kpi-grid">
           <view class="sepa-kpi-cell">
             <view class="num" :class="plrClass">{{ kpi.profit_loss_ratio == null ? '—' : kpi.profit_loss_ratio }}</view>
-            <view class="lbl">盈亏比</view>
+            <view class="lbl">Profit Factor</view>
             <view class="tgt">目标 ≥ {{ kpi.profit_loss_target }}　均盈 {{ kpi.avg_win_pct }}% / 均亏 {{ kpi.avg_loss_pct }}%</view>
           </view>
           <view class="sepa-kpi-cell">
             <view class="num" :class="winClass">{{ kpi.win_rate == null ? '—' : kpi.win_rate + '%' }}</view>
-            <view class="lbl">胜率</view>
+            <view class="lbl">Win Rate</view>
             <view class="tgt">参考 ≥ {{ kpi.win_rate_ref }}%</view>
           </view>
           <view class="sepa-kpi-cell">
             <view class="num" :class="{ ok: kpi.sample_size >= kpi.sample_target }">{{ kpi.sample_size }}</view>
-            <view class="lbl">样本量（已完成）</view>
+            <view class="lbl">Sample Size (Closed)</view>
             <view class="tgt">目标 ≥ {{ kpi.sample_target }}</view>
             <view class="sepa-progress">
               <view class="sepa-progress-fill" :class="{ ok: kpi.sample_size >= kpi.sample_target }"
@@ -47,17 +47,17 @@
           </view>
           <view class="sepa-kpi-cell">
             <view class="num" :class="pnlClass(kpi.total_return)">{{ fmtPct(kpi.total_return) }}</view>
-            <view class="lbl">总收益（参考）</view>
-            <view class="tgt">不设要求</view>
+            <view class="lbl">Total Return (Ref)</view>
+            <view class="tgt">No Requirement</view>
           </view>
         </view>
       </view>
 
       <!-- 实验评估结论 -->
       <view class="sepa-card">
-        <view class="sepa-section-title">实验评估结论</view>
+        <view class="sepa-section-title">Experiment Verdict</view>
         <view class="sepa-verdict" :class="kpi.passed ? 'pass' : 'fail'">{{ kpi.verdict }}</view>
-        <view class="sepa-mindcard">达标条件：纪律 100% + 盈亏比 ≥ 2 + 样本 ≥ 15。核心产出是「纪律达标率」，不是收益率。</view>
+        <view class="sepa-mindcard">Pass criteria: 100% discipline + profit factor ≥ 2 + sample ≥ 15. The key output is discipline rate, not return.</view>
       </view>
     </template>
   </view>
@@ -80,7 +80,7 @@ const load = async () => {
   try {
     kpi.value = await fetchSepaKpi(props.market, period.value)
   } catch (e) {
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    uni.showToast({ title: 'Failed to load', icon: 'none' })
   } finally {
     loading.value = false
   }

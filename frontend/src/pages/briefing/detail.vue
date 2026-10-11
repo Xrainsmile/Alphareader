@@ -3,14 +3,14 @@
     <!-- Article Header -->
     <view class="article-header" v-if="briefing">
       <view class="header-top">
-        <text class="article-title">每日研报</text>
+        <text class="article-title">Daily Research</text>
         <view class="status-badge" :class="'status-' + briefing.status">
           <text class="status-text">{{ statusLabel(briefing.status) }}</text>
         </view>
       </view>
       <view class="article-meta">
         <text class="article-date">{{ formatDate(briefing.briefing_date) }}</text>
-        <text class="article-badge">AI 分析</text>
+        <text class="article-badge">AI Analysis</text>
       </view>
 
       <!-- Market Sentiment -->
@@ -23,19 +23,19 @@
       <view class="meta-stats" v-if="briefing.meta">
         <view class="stat-item tier-s" v-if="briefing.meta.tier_s != null">
           <text class="stat-value">{{ briefing.meta.tier_s }}</text>
-          <text class="stat-label">🎯 重点狙击</text>
+          <text class="stat-label">🎯 Top Picks</text>
         </view>
         <view class="stat-item tier-a" v-if="briefing.meta.tier_a != null">
           <text class="stat-value">{{ briefing.meta.tier_a }}</text>
-          <text class="stat-label">📋 常规盯防</text>
+          <text class="stat-label">📋 Regular Watch</text>
         </view>
         <view class="stat-item tier-x" v-if="briefing.meta.tier_x != null">
           <text class="stat-value">{{ briefing.meta.tier_x }}</text>
-          <text class="stat-label">⚠️ 风险剔除</text>
+          <text class="stat-label">⚠️ Risk Filtered Out</text>
         </view>
         <view class="stat-item" v-if="briefing.meta.pool_count">
           <text class="stat-value">{{ briefing.meta.pool_count }}</text>
-          <text class="stat-label">📊 股票池</text>
+          <text class="stat-label">📊 Watchlist</text>
         </view>
       </view>
     </view>
@@ -51,12 +51,12 @@
     <!-- Failed State -->
     <view class="failed-state" v-if="briefing && briefing.status === 'failed'">
       <text class="failed-icon">⚠️</text>
-      <text class="failed-text">本日研报生成失败，请稍后重试</text>
+      <text class="failed-text">Research report generation failed — please retry later</text>
     </view>
 
     <!-- Loading -->
     <view class="loading-state" v-if="!briefing">
-      <text class="loading-text">加载中...</text>
+      <text class="loading-text">Loading...</text>
     </view>
 
     <!-- Footer -->
@@ -108,7 +108,7 @@ onMounted(async () => {
       uni.setNavigationBarTitle({ title: dateStr })
     } catch (e) {
       console.warn('获取研报详情失败:', e.message)
-      uni.showToast({ title: '加载失败', icon: 'none' })
+      uni.showToast({ title: 'Failed to load', icon: 'none' })
     }
   }
 })

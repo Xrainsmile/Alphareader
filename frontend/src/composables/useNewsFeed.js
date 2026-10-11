@@ -78,7 +78,7 @@ export function useNewsFeed() {
       noMore.value = offset.value >= total.value
     } catch (e) {
       console.error('加载事件失败:', e)
-      uni.showToast({ title: '加载失败', icon: 'none' })
+      uni.showToast({ title: 'Failed to load', icon: 'none' })
     } finally {
       loading.value = false
     }
@@ -101,7 +101,7 @@ export function useNewsFeed() {
       noMore.value = items.length < PAGE_SIZE || offset.value >= total.value
     } catch (e) {
       console.error('加载更多失败:', e)
-      uni.showToast({ title: '加载失败', icon: 'none' })
+      uni.showToast({ title: 'Failed to load', icon: 'none' })
     } finally {
       loadingMore.value = false
     }

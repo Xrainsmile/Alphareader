@@ -5,8 +5,8 @@
       <view class="pwd-card">
         <view class="pwd-header">
           <text class="pwd-icon">🔒</text>
-          <text class="pwd-title">访问验证</text>
-          <text class="pwd-desc">模拟仓为私密内容，请输入访问密码</text>
+          <text class="pwd-title">Access Verification</text>
+          <text class="pwd-desc">Sandbox is private — enter the access password</text>
         </view>
         <view class="pwd-input-wrap" :class="{ 'pwd-input-error': error }">
           <input
@@ -20,13 +20,13 @@
             @confirm="$emit('confirm')"
           />
         </view>
-        <text v-if="error" class="pwd-error-text">密码错误，请重试</text>
+        <text v-if="error" class="pwd-error-text">Incorrect password, please retry</text>
         <view class="pwd-actions">
           <view class="pwd-btn pwd-btn-cancel" @click="$emit('update:visible', false)">
-            <text class="pwd-btn-text cancel-text">取消</text>
+            <text class="pwd-btn-text cancel-text">Cancel</text>
           </view>
           <view class="pwd-btn pwd-btn-confirm" @click="$emit('confirm')">
-            <text class="pwd-btn-text confirm-text">确认</text>
+            <text class="pwd-btn-text confirm-text">Confirm</text>
           </view>
         </view>
       </view>

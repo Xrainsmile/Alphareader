@@ -1,6 +1,6 @@
 <template>
   <view>
-    <view v-if="loading" class="sepa-loading">加载中…</view>
+    <view v-if="loading" class="sepa-loading">Loading...</view>
 
     <template v-else-if="state">
       <!-- 止损触发提醒 -->
@@ -10,8 +10,8 @@
       </view>
 
       <view class="sepa-card">
-        <view class="sepa-section-title">持仓列表 <text class="sepa-section-sub">共 {{ state.holdings.length }} 笔</text></view>
-        <view v-if="!state.holdings.length" class="sepa-empty">当前无持仓</view>
+        <view class="sepa-section-title">Open Positions <text class="sepa-section-sub">共 {{ state.holdings.length }} 笔</text></view>
+        <view v-if="!state.holdings.length" class="sepa-empty">No open positions</view>
 
         <view v-for="h in state.holdings" :key="h.id" class="sepa-holding" :class="{ 'stop-hit': h.stop_triggered }">
           <view class="sepa-holding-head">
@@ -22,18 +22,18 @@
             <text class="sepa-holding-pnl" :class="pnlClass(h.float_pnl_pct)">{{ fmtPct(h.float_pnl_pct) }}</text>
           </view>
           <view class="sepa-holding-meta">
-            <view class="cell"><view class="k">买入价</view><view class="v">{{ sym }}{{ h.entry_price }}</view></view>
-            <view class="cell"><view class="k">现价</view><view class="v">{{ sym }}{{ h.current_price }}</view></view>
-            <view class="cell"><view class="k">止损价</view><view class="v">{{ sym }}{{ h.stop_price }}</view></view>
-            <view class="cell"><view class="k">距止损</view><view class="v" :class="h.dist_to_stop_pct < 3 ? 'pnl-up' : ''">{{ h.dist_to_stop_pct ?? '—' }}%</view></view>
-            <view class="cell"><view class="k">股数</view><view class="v">{{ h.shares }}</view></view>
-            <view class="cell"><view class="k">市值</view><view class="v">{{ sym }}{{ fmt(h.market_value) }}</view></view>
-            <view class="cell"><view class="k">浮动盈亏</view><view class="v" :class="pnlClass(h.float_pnl)">{{ sym }}{{ fmt(h.float_pnl) }}</view></view>
-            <view class="cell"><view class="k">买入日</view><view class="v" style="font-size:22rpx">{{ h.entry_date }}</view></view>
+            <view class="cell"><view class="k">Buy Price</view><view class="v">{{ sym }}{{ h.entry_price }}</view></view>
+            <view class="cell"><view class="k">Last</view><view class="v">{{ sym }}{{ h.current_price }}</view></view>
+            <view class="cell"><view class="k">Stop Price</view><view class="v">{{ sym }}{{ h.stop_price }}</view></view>
+            <view class="cell"><view class="k">To Stop</view><view class="v" :class="h.dist_to_stop_pct < 3 ? 'pnl-up' : ''">{{ h.dist_to_stop_pct ?? '—' }}%</view></view>
+            <view class="cell"><view class="k">Shares</view><view class="v">{{ h.shares }}</view></view>
+            <view class="cell"><view class="k">Market Value</view><view class="v">{{ sym }}{{ fmt(h.market_value) }}</view></view>
+            <view class="cell"><view class="k">Unrealized P&L</view><view class="v" :class="pnlClass(h.float_pnl)">{{ sym }}{{ fmt(h.float_pnl) }}</view></view>
+            <view class="cell"><view class="k">Entry Date</view><view class="v" style="font-size:22rpx">{{ h.entry_date }}</view></view>
           </view>
-          <view class="sepa-stop-alert" v-if="h.stop_triggered">⚠️ 已触及止损价，止损不是失败，是系统正常运转</view>
+          <view class="sepa-stop-alert" v-if="h.stop_triggered">⚠️ Stop hit — a stop is not failure, it's the system working</view>
           <view class="sepa-btn-row">
-            <view class="sepa-btn sepa-btn-danger sepa-btn-sm" style="flex:1" @click="openClose(h)">平仓</view>
+            <view class="sepa-btn sepa-btn-danger sepa-btn-sm" style="flex:1" @click="openClose(h)">Close</view>
           </view>
         </view>
       </view>
@@ -43,26 +43,26 @@
     <view v-if="showClose" class="pwd-overlay" @click.self="showClose = false">
       <view class="sepa-form-modal">
         <view class="sepa-section-title">平仓 — {{ closing?.name || closing?.symbol }}</view>
-        <view class="sepa-field"><text class="sepa-field-label">卖出价 *</text>
+        <view class="sepa-field"><text class="sepa-field-label">Sell Price *</text>
           <input class="sepa-input" type="digit" :value="cf.exit_price" @input="cf.exit_price = $event.detail.value" /></view>
-        <view class="sepa-field"><text class="sepa-field-label">卖出原因 *</text>
+        <view class="sepa-field"><text class="sepa-field-label">Sell Reason *</text>
           <view class="sepa-filter-bar" style="margin-bottom:0;">
             <view v-for="r in reasons" :key="r" class="sepa-filter-chip" :class="{ active: cf.exit_reason === r }" @click="cf.exit_reason = r">{{ r }}</view>
           </view>
         </view>
         <view class="sepa-check-row" style="border:none;">
-          <text class="sepa-check-label" style="font-weight:700">是否按规则止损？（KPI 核心）</text>
+          <text class="sepa-check-label" style="font-weight:700">Stopped out per rules? (Core KPI)</text>
         </view>
         <view class="sepa-btn-row" style="margin-bottom:14rpx;">
-          <view class="sepa-btn sepa-btn-sm" :class="cf.followed_rule === true ? 'sepa-btn-brand' : 'sepa-btn-ghost'" style="flex:1" @click="cf.followed_rule = true">✓ 守纪律</view>
-          <view class="sepa-btn sepa-btn-sm" :class="cf.followed_rule === false ? 'sepa-btn-danger' : 'sepa-btn-ghost'" style="flex:1" @click="cf.followed_rule = false">✗ 违纪</view>
+          <view class="sepa-btn sepa-btn-sm" :class="cf.followed_rule === true ? 'sepa-btn-brand' : 'sepa-btn-ghost'" style="flex:1" @click="cf.followed_rule = true">✓ Disciplined</view>
+          <view class="sepa-btn sepa-btn-sm" :class="cf.followed_rule === false ? 'sepa-btn-danger' : 'sepa-btn-ghost'" style="flex:1" @click="cf.followed_rule = false">✗ Violation</view>
         </view>
-        <view class="sepa-field"><text class="sepa-field-label">复盘备注</text>
+        <view class="sepa-field"><text class="sepa-field-label">Review Notes</text>
           <input class="sepa-input" :value="cf.review_note" placeholder="本笔执行得失" @input="cf.review_note = $event.detail.value" /></view>
-        <view class="sepa-mindcard">未标注「是否守纪律」无法完成平仓 — 复盘时面对真实数据。</view>
+        <view class="sepa-mindcard">Discipline flag is required to close — face the real data at review time.</view>
         <view class="sepa-btn-row">
-          <view class="sepa-btn sepa-btn-ghost" style="flex:1" @click="showClose = false">取消</view>
-          <view class="sepa-btn sepa-btn-primary" style="flex:1" @click="submitClose">确认平仓</view>
+          <view class="sepa-btn sepa-btn-ghost" style="flex:1" @click="showClose = false">Cancel</view>
+          <view class="sepa-btn sepa-btn-primary" style="flex:1" @click="submitClose">Confirm Close</view>
         </view>
       </view>
     </view>
@@ -99,7 +99,7 @@ const load = async () => {
   try {
     state.value = await fetchSepaAccount(props.market)
   } catch (e) {
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    uni.showToast({ title: 'Failed to load', icon: 'none' })
   } finally {
     loading.value = false
   }
@@ -116,9 +116,9 @@ const openClose = (h) => {
 }
 
 const submitClose = async () => {
-  if (!cf.exit_price) { uni.showToast({ title: '请填卖出价', icon: 'none' }); return }
-  if (!cf.exit_reason) { uni.showToast({ title: '请选卖出原因', icon: 'none' }); return }
-  if (cf.followed_rule === null) { uni.showToast({ title: '必须标注是否守纪律', icon: 'none' }); return }
+  if (!cf.exit_price) { uni.showToast({ title: 'Enter sell price', icon: 'none' }); return }
+  if (!cf.exit_reason) { uni.showToast({ title: 'Select a sell reason', icon: 'none' }); return }
+  if (cf.followed_rule === null) { uni.showToast({ title: 'Discipline flag required', icon: 'none' }); return }
   const today = new Date().toISOString().slice(0, 10)
   try {
     await closeSepaTrade(closing.value.id, {
@@ -127,7 +127,7 @@ const submitClose = async () => {
       review_note: cf.review_note || null,
     })
     showClose.value = false
-    uni.showToast({ title: '已平仓', icon: 'success' })
+    uni.showToast({ title: 'Closed', icon: 'success' })
     await load()
     emit('changed')
   } catch (e) {
