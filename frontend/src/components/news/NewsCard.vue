@@ -10,27 +10,29 @@
       <rich-text v-if="highlighted" class="news-title search-highlight" :nodes="item.title_highlighted || item.title"></rich-text>
       <text v-else class="news-title">{{ displayTitle }}</text>
 
+      <!-- 标准模式：默认短摘要（单行截断），搜索高亮模式仍展示完整摘要以便定位关键词 -->
       <rich-text v-if="highlighted && (item.summary_highlighted || item.ai_summary)" class="news-summary search-highlight" :nodes="item.summary_highlighted || item.ai_summary || ''"></rich-text>
-      <text v-else-if="!isCompact && displaySummary" class="news-summary">{{ displaySummary }}</text>
+      <text v-else-if="!isCompact && displaySummary" class="news-summary" :class="{ 'news-summary-clamped': !cardOpen }">{{ displaySummary }}</text>
 
-      <!-- 事件最新变化（事件包字段，有实质更新时展示） -->
-      <view v-if="!isCompact && !highlighted && item.latest_change" class="news-change">
-        <view class="news-change-inner">
-          <text class="news-change-text">🆕 {{ item.latest_change }}</text>
+      <!-- 完整分析（默认折叠）：事件最新变化 / 重要性 / 推荐理由
+           这些是判断价值高的解释性内容，但会显著拉高卡片，故收进展开区 -->
+      <view v-if="!isCompact && hasAnalysis" v-show="cardOpen" class="news-analysis">
+        <view v-if="!highlighted && item.latest_change" class="news-change">
+          <view class="news-change-inner">
+            <text class="news-change-text">🆕 {{ item.latest_change }}</text>
+          </view>
         </view>
-      </view>
 
-      <!-- 事件重要性（事件包字段） -->
-      <view v-if="!isCompact && !highlighted && item.why_important" class="news-important">
-        <view class="news-important-inner">
-          <text class="news-important-text">{{ item.why_important }}</text>
+        <view v-if="!highlighted && item.why_important" class="news-important">
+          <view class="news-important-inner">
+            <text class="news-important-text">{{ item.why_important }}</text>
+          </view>
         </view>
-      </view>
 
-      <!-- 推荐理由（why_it_matters）：一句话告诉用户为什么该关注 -->
-      <view v-if="!isCompact && item.why_it_matters" class="news-why">
-        <view class="why-icon-svg"></view>
-        <text class="why-text">{{ item.why_it_matters }}</text>
+        <view v-if="item.why_it_matters" class="news-why">
+          <view class="why-icon-svg"></view>
+          <text class="why-text">{{ item.why_it_matters }}</text>
+        </view>
       </view>
 
       <!-- Tags -->
@@ -54,7 +56,7 @@
           <text class="meta-dot">·</text>
           <view class="source-count-badge">
             <view class="source-count-icon-svg"></view>
-            <text class="source-count-text">{{ item.event_title ? '事件 · ' : '' }}{{ childrenCount + 1 }} 信源</text>
+            <text class="source-count-text">{{ item.event_title ? 'Event · ' : '' }}{{ childrenCount + 1 }} sources</text>
           </view>
         </template>
         <!-- Hacker Gravity 指标 -->
@@ -82,13 +84,18 @@
             <text class="sentiment-value">{{ item.sentiment_score > 0 ? '+' : '' }}{{ item.sentiment_score }}</text>
           </view>
         </template>
+        <!-- 展开入口：完整分析默认收起，避免标准模式卡片过高 -->
+        <template v-if="!isCompact && hasAnalysis">
+          <text class="meta-dot">·</text>
+          <text class="card-expand" @click.stop="cardOpen = !cardOpen">{{ cardOpen ? 'Collapse' : 'Expand' }}</text>
+        </template>
       </view>
     </view>
   </view>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import {
   scoreClass,
   formatScore,
@@ -148,4 +155,13 @@ const displayTags = computed(() => {
 
 /** 是否为紧凑模式 */
 const isCompact = computed(() => props.density === 'compact')
+
+/** 完整分析展开状态：默认收起，标准模式首屏只给短摘要 */
+const cardOpen = ref(false)
+
+/** 是否存在可展开的分析内容（无内容时不显示 Expand 入口） */
+const hasAnalysis = computed(() => {
+  if (props.highlighted) return false
+  return Boolean(props.item.latest_change || props.item.why_important || props.item.why_it_matters)
+})
 </script>

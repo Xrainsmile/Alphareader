@@ -1395,6 +1395,24 @@ onReachBottom(() => {
   overflow: hidden;
 }
 
+/* 标准模式折叠态：摘要收为一行，显著降低卡片高度 */
+:deep(.news-summary-clamped) {
+  -webkit-line-clamp: 1;
+}
+
+/* 展开入口 */
+:deep(.card-expand) {
+  font-size: 22rpx;
+  color: var(--color-brand);
+  flex: none;
+  cursor: pointer;
+}
+
+/* 展开后的分析区：整体轻微上移，与分析内容形成分组 */
+:deep(.news-analysis) {
+  margin-top: 12rpx;
+}
+
 /* ── Tags ── */
 :deep(.news-tags) {
   display: flex;
@@ -1923,6 +1941,9 @@ onReachBottom(() => {
     line-height: 1.6;
     -webkit-line-clamp: 3;
   }
+  :deep(.news-summary.news-summary-clamped) {
+    -webkit-line-clamp: 1;
+  }
 
   /* ── Tags ── */
   :deep(.news-tags) {
@@ -2040,6 +2061,9 @@ onReachBottom(() => {
   :deep(.news-summary) {
     -webkit-line-clamp: 4;
     line-height: 1.65;
+  }
+  :deep(.news-summary.news-summary-clamped) {
+    -webkit-line-clamp: 1;
   }
 }
 
