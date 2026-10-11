@@ -10,10 +10,10 @@ export default {
 /* ── 全局 CSS 变量（设计 Token） ── */
 :root {
   /* 基础色 */
-  --color-bg: #f0f2f5;
+  --color-bg: #f6f7fb;
   --color-bg-primary: #ffffff;
   --color-bg-card: #ffffff;
-  --color-bg-secondary: #f5f7fa;
+  --color-bg-secondary: #f4f6fa;
   --color-bg-hover: #fafbfc;
   --color-bg-active: #f5f6f8;
   --color-bg-input: #f5f6f8;
@@ -21,20 +21,20 @@ export default {
   --color-bg-code: #f5f5f7;
 
   /* 文字色 */
-  --color-text-primary: #1a1a2e;
-  --color-text-secondary: #3a3a4a;
-  --color-text-tertiary: #5a5a6e;
-  --color-text-body: #4a4a5a;
-  --color-text-muted: #8c8c9a;
-  --color-text-placeholder: #b0b0be;
+  --color-text-primary: #1c263c;
+  --color-text-secondary: #6b7587;
+  --color-text-tertiary: #6b7587;
+  --color-text-body: #4a5568;
+  --color-text-muted: #8590a2;
+  --color-text-placeholder: #9ba8bc;
   --color-text-hint: #6b6b7b;
 
   --color-text-white: #ffffff;
 
   /* 品牌色 */
-  --color-brand: #4285f4;
+  --color-brand: #365fda;
   --color-brand-alt: #1677ff;
-  --color-brand-light: rgba(66, 133, 244, 0.08);
+  --color-brand-light: #edf2ff;
   --color-brand-hover: #3b78e7;
   --color-brand-ios: #007aff;
 
@@ -71,11 +71,11 @@ export default {
   --color-bg-subtle: #f8f8fa;
 
   /* 边框 */
-  --color-border: #e8e8ed;
-  --color-border-light: #f0f0f2;
+  --color-border: #e7ebf2;
+  --color-border-light: #e7ebf2;
   --color-border-hover: #c0c0cc;
-  --color-border-divider: #e0e0e6;
-  --color-border-subtle: #f2f2f5;
+  --color-border-divider: #e7ebf2;
+  --color-border-subtle: #eef1f6;
   --color-border-separator: #d0d0d8;
 
   /* 渐变色 */
@@ -86,16 +86,16 @@ export default {
   /* ── 评分专用色阶（与情绪色解耦，按分数逐级增强视觉权重）──
      设计原则：<7 属低优先级，用中性灰并降低对比；≥7 才逐级加色加重。
      注意：此处的红仅表示「重要/值得关注」，不表示涨跌（涨跌用 --color-up/down）。*/
-  --score-5-bg: #e8e8ee;
-  --score-5-text: #9a9aa8;
-  --score-4-bg: #eceef4;
-  --score-4-text: #8a8a99;
-  --score-3-bg: var(--color-brand-light);
-  --score-3-text: var(--color-brand);
-  --score-2-bg: rgba(255, 149, 0, 0.16);
-  --score-2-text: #e8870e;
-  --score-1-bg: var(--gradient-sentiment-strong-bull);
-  --score-1-text: #ffffff;
+  --score-5-bg: #f0f2f5;
+  --score-5-text: #9aa3b2;
+  --score-4-bg: #f0f2f5;
+  --score-4-text: #8590a2;
+  --score-3-bg: #eef3ff;
+  --score-3-text: #466ed0;
+  --score-2-bg: #fff5e6;
+  --score-2-text: #a7792c;
+  --score-1-bg: #fff0ee;
+  --score-1-text: #c15244;
   --gradient-sentiment-strong-bull: linear-gradient(135deg, #ff3b30, #e02b20);
   --gradient-sentiment-mild-bull: linear-gradient(135deg, #ff9500, #e8870e);
   --gradient-sentiment-caution: linear-gradient(135deg, #f0b429, #d4981e);
