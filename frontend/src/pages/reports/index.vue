@@ -116,25 +116,41 @@
               <text class="dc-stat">{{ (sc(item).must_know || []).length }} must-know</text>
             </view>
 
-            <!-- 时段概览 + 本期变化（阶段简报最有价值信息，优先呈现）-->
-            <view v-if="sc(item).period_summary || sc(item).what_changed" class="dc-section dc-overview">
-              <text v-if="sc(item).period_summary" class="dc-overview-text">{{ sc(item).period_summary }}</text>
-              <view v-if="sc(item).what_changed" class="dc-change">
-                <text class="dc-change-label">What Changed</text>
-                <text class="dc-change-text">{{ sc(item).what_changed }}</text>
-              </view>
-            </view>
-
-            <!-- 核心变化（跨事件共同信号，一眼看本时段最重要变化）-->
+            <!-- 首屏结论：只保留三条变化，长解释折叠
+                 设计原则：period_summary / what_changed 为长句解释，默认收起，
+                 Key Changes 为可扫读要点，常驻首屏。 -->
             <view v-if="sc(item).cross_event_signals && sc(item).cross_event_signals.length" class="dc-section dc-core">
-              <text class="dc-section-title">Key Changes</text>
-              <view v-for="(s, si) in sc(item).cross_event_signals" :key="si" class="dc-core-item">
+              <view
+                class="dc-core-head"
+                @click.stop="toggleBrief(item.id)"
+              >
+                <text class="dc-section-title dc-core-title">Key Changes</text>
+                <text v-if="hasBriefDetail(item)" class="dc-brief-toggle">{{ briefOpen(item.id) ? 'Hide' : 'Why' }}</text>
+              </view>
+              <view v-for="(s, si) in topSignals(item)" :key="si" class="dc-core-item">
                 <text class="dc-core-dot">•</text>
                 <view class="dc-core-body">
                   <text class="dc-core-text">{{ s.title }}</text>
-                  <text v-if="s.summary" class="dc-core-summary">{{ s.summary }}</text>
+                  <text v-if="s.summary && briefOpen(item.id)" class="dc-core-summary">{{ s.summary }}</text>
                 </view>
               </view>
+            </view>
+
+            <!-- 无 Key Changes 时的折叠入口兜底，避免长解释无法展开 -->
+            <view
+              v-else-if="hasBriefDetail(item)"
+              class="dc-brief-fallback"
+              @click.stop="toggleBrief(item.id)"
+            >
+              <text class="dc-brief-toggle">{{ briefOpen(item.id) ? 'Hide Brief' : 'Read Brief' }}</text>
+            </view>
+
+            <!-- 详细解释（默认折叠）-->
+            <view v-if="hasBriefDetail(item)" v-show="briefOpen(item.id)" class="dc-section dc-overview dc-overview-fold">
+              <text v-if="sc(item).what_changed" class="dc-change dc-change-standalone">
+                <text class="dc-change-inline-label">What Changed · </text>{{ sc(item).what_changed }}
+              </text>
+              <text v-if="sc(item).period_summary" class="dc-overview-text dc-overview-detail">{{ sc(item).period_summary }}</text>
             </view>
 
             <!-- 必须知道（编号体现优先级，次级信息收进事件详情页）-->
@@ -337,6 +353,24 @@ function renderMd(md) {
 // 安全读取结构化简报（避免 structured_content 为空时报错）
 function sc(item) {
   return item && item.structured_content ? item.structured_content : {}
+}
+
+/** 简报详情（长解释）展开状态：默认收起，首屏只留 Key Changes 三条变化 */
+const briefOpenIds = reactive(new Set())
+function briefOpen(id) {
+  return briefOpenIds.has(id)
+}
+function toggleBrief(id) {
+  briefOpenIds.has(id) ? briefOpenIds.delete(id) : briefOpenIds.add(id)
+}
+/** 首屏最多三条变化，其余收进折叠区 */
+function topSignals(item) {
+  return (sc(item).cross_event_signals || []).slice(0, 3)
+}
+/** 是否存在可折叠的长解释（无内容时不显示 Why 按钮） */
+function hasBriefDetail(item) {
+  const s = sc(item)
+  return Boolean(s.period_summary || s.what_changed)
 }
 // 确定性标签：high/medium/low → 中文短标签（must_know 卡片展示）
 function confLabel(c) {
@@ -904,6 +938,27 @@ onMounted(() => {
   font-weight: 600;
 }
 
+/* 首屏要点：可点击标题行 + Why 折叠入口 */
+.dc-core-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+.dc-core-title {
+  margin-bottom: 0;
+}
+.dc-brief-toggle {
+  flex: none;
+  font-size: 21rpx;
+  font-weight: 600;
+  color: var(--color-brand);
+  background: var(--color-brand-light);
+  border-radius: var(--radius-r-md);
+  padding: 6rpx 16rpx;
+  line-height: 1.5;
+}
+
 /* 核心变化：唯一强调色，浅底突出 */
 .dc-core {
   background: var(--color-bg-brand-light, var(--color-bg-brand-softer));
@@ -931,6 +986,37 @@ onMounted(() => {
   line-height: 1.55;
   margin-top: 4rpx;
   display: block;
+}
+
+.dc-brief-fallback {
+  margin-top: 16rpx;
+  display: flex;
+}
+.dc-overview-fold {
+  margin-top: 16rpx;
+  padding: 16rpx 20rpx;
+  border-left: 3rpx solid var(--color-border-light, #e2e8f0);
+  background: var(--color-bg-softer, #fafbfc);
+}
+.dc-change-standalone {
+  display: block;
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  font-size: 25rpx;
+  line-height: 1.65;
+}
+.dc-change-inline-label {
+  color: var(--color-brand);
+  font-weight: 700;
+}
+.dc-overview-detail {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.7;
 }
 
 /* 必须知道：编号体现优先级 */
