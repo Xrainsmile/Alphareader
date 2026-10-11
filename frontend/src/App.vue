@@ -105,6 +105,26 @@ export default {
   --color-bg-warning-light: #fff3e0;
   --color-warning-deep: #e65100;
 
+  /* 语义色补充（全量令牌化新增，对应原散落硬编码） */
+  --color-danger: #eb4b4b;
+  --color-success: #30b86e;
+  --color-success-hover: #43a047;
+  --color-info-active: #1e88e5;
+  --color-info-deep: #1565c0;
+  --color-brand-deep: #3b78dc;
+  --color-warning-soft: #f5a623;
+
+  /* 状态背景补充 */
+  --color-bg-brand-softer: #eef4ff;
+  --color-bg-info-softer: #e3f2fd;
+  --color-bg-subtle-alt: #f2f2f7;
+  --color-bg-neutral-tint: #e5eaf1;
+
+  /* 边框与文字补充 */
+  --color-border-strong: #c0c4cc;
+  --color-text-dim: #555555;
+  --color-black: #000000;
+
   /* 字体 */
   --font-sans: 'PingFang SC', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   --font-display: 'SF Pro Display', 'PingFang SC', -apple-system, sans-serif;
