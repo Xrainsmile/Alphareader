@@ -64,12 +64,14 @@ function navTo(url, isTab) {
   display: none;
 }
 
-/* ── ≥768px：显示左侧导航 ── */
+/* ── ≥768px：显示左侧导航（固定宽度，保证各页一致）── */
 @media screen and (min-width: 768px) {
   .pc-sidebar {
     position: sticky;
     top: 0;
-    width: 130px;
+    width: 168px;
+    min-width: 168px;
+    max-width: 168px;
     height: 100vh;
     flex-shrink: 0;
     padding: 24px 16px;
@@ -106,18 +108,35 @@ function navTo(url, isTab) {
     cursor: pointer;
     transition: background-color 0.15s;
   }
-  .pc-nav-item:hover { background: var(--color-bg-hover); }
+  /* 在桌面侧栏中：横向排列，图标 + 文字说明 */
+  :deep(.gate-wrap) {
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: var(--radius-p-lg);
+    cursor: pointer;
+  }
+  :deep(.gate-wrap:hover) { background: var(--color-bg-hover); }
+  :deep(.gate-btn) {
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    flex-shrink: 0;
+  }
+  :deep(.gate-mark) { font-size: 15px; }
+  :deep(.gate-label) { display: block; }
   .pc-nav-active { background: var(--color-bg-brand-light); }
   .pc-nav-text { font-size: 14px; color: var(--color-text-secondary); font-weight: 500; }
   .pc-nav-active .pc-nav-text { color: var(--color-brand); font-weight: 700; }
 }
 
-/* ── ≥1200px：三列比例中左导航占 2（左导航:中间:右侧 = 2:14:4）── */
+/* ── ≥1200px：侧栏加宽到 200px，正文由 .container 的 max-width 控制阅读宽度 ── */
 @media screen and (min-width: 1200px) {
   .pc-sidebar {
-    width: auto;
-    flex: 2 1 0;
-    min-width: 0;
+    width: 200px;
+    min-width: 200px;
+    max-width: 200px;
   }
 }
 </style>

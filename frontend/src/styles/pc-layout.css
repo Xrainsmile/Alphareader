@@ -25,7 +25,8 @@
   }
   .container {
     flex: 1;
-    max-width: 700px;
+    /* 阅读舒适区：中文正文 640–720px 为佳，超过则视线扫读成本上升 */
+    max-width: 680px;
     margin: 0;
     padding: 0 24px;
   }

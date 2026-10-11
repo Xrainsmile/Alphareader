@@ -17,8 +17,10 @@
         </view>
       </view>
       <view v-if="showScoreInfo" class="info-panel" @click="showScoreInfo = false">
-        <view class="info-panel-item"><text class="info-panel-label">★★★</text><text class="info-panel-desc">综合 AI 评分、时效性与信源权威度排序，三星为高影响力</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">▲/▽</text><text class="info-panel-desc">情绪倾向：基于催化类型与预期差判定，非随机数</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">10 分制</text><text class="info-panel-desc">AI 综合分（0–10，保留 1 位小数），由影响力、时效性与信源权威度加权</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">7.0–10</text><text class="info-panel-desc">值得关注：≥9 红（重大）、8–9 橙（重要）、7–8 蓝（一般）</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">&lt;7.0</text><text class="info-panel-desc">低优先级：6–7 浅色、&lt;6 灰（噪音），默认可略过</text></view>
+        <view class="info-panel-item"><text class="info-panel-label">▲／▽</text><text class="info-panel-desc">情绪倾向：基于催化类型与预期差判定，非随机数</text></view>
         <view class="info-panel-item"><text class="info-panel-label">信源</text><text class="info-panel-desc">同一事件被多家媒体报道时显示信源数</text></view>
       </view>
     </view>
@@ -188,6 +190,7 @@ import NewsCardGroup from '@/components/news/NewsCardGroup.vue'
 import TickerOverlay from '@/components/news/TickerOverlay.vue'
 import { useNewsFeed } from '@/composables/useNewsFeed.js'
 import { useNewsSearch } from '@/composables/useNewsSearch.js'
+import { usePcNavFrame } from '@/utils/usePcNav.js'
 import { useNewsFilter } from '@/composables/useNewsFilter.js'
 
 // ── Composables ──
@@ -462,6 +465,9 @@ onMounted(() => {
     // #endif
   })
 })
+
+// 导航框架：桌面端隐藏原生 tabBar（已有 PcSidebar），避免重复导航
+usePcNavFrame()
 
 onShow(() => {
   // 首次会话由 onMounted 负责；这里只处理「离开过再返回」

@@ -7,7 +7,8 @@
       hover-class="gate-hover"
       @click="onGateClick"
     >
-      <text class="gate-mark">!</text>
+    <text class="gate-mark">!</text>
+    <text class="gate-label">更多功能</text>
     </view>
 
     <!-- 复用模拟仓密码弹窗（密码即 Stocks 自身密码）-->
@@ -122,6 +123,14 @@ async function onConfirm() {
 .gate-btn:hover .gate-mark,
 .gate-hover .gate-mark {
   color: var(--color-brand, var(--color-brand));
+}
+/* 「!」的文字说明：桌面侧栏内可见，移动端圆形按钮内隐藏 */
+.gate-label {
+  display: none;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-left: 2px;
+  white-space: nowrap;
 }
 
 /* 点击：俏皮的左右摇摆（重启式动画）*/

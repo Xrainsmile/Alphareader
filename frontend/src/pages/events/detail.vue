@@ -130,9 +130,17 @@ function openUrl(url) {
 <style scoped>
 .event-detail-page {
   min-height: 100vh;
-  background: #f0f2f5;
+  background: var(--color-bg);
   padding: 24rpx;
   box-sizing: border-box;
+}
+/* 桌面端：限制阅读宽度并居中，避免正文横向跨度过大、下方留大片空白 */
+@media screen and (min-width: 768px) {
+  .event-detail-page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
 }
 .state-box {
   padding: 120rpx 0;
@@ -169,15 +177,17 @@ function openUrl(url) {
   color: var(--color-text-muted);
 }
 .title {
+  display: block;
   font-size: 36rpx;
   font-weight: 700;
   color: var(--color-text-primary);
-  line-height: 1.4;
+  line-height: 1.45;
 }
 .summary {
+  display: block;
   font-size: 28rpx;
   color: var(--color-text-tertiary);
-  line-height: 1.65;
+  line-height: 1.7;
   margin-top: 16rpx;
 }
 .block {

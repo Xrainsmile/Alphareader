@@ -219,6 +219,10 @@ import IconSvg from '@/components/common/IconSvg.vue'
 import { useGate } from '@/utils/useGate'
 import { listTagStyle, listTagStyleMobile } from '@/utils/formatters'
 import { exportDigestImage, canExportImage } from '@/utils/digestExport'
+import { usePcNavFrame } from '@/utils/usePcNav.js'
+
+// 导航框架：桌面端隐藏原生 tabBar（已有 PcSidebar），避免重复导航
+usePcNavFrame()
 
 // ── 侧门（gate）：Stocks / SEPA 对外隐藏，解锁后显现 ──
 const { isOpen } = useGate()
@@ -343,17 +347,45 @@ function ongoingList(item) {
   const s = sc(item)
   return [...(s.ongoing_updates || []), ...(s.quiet_topics || [])]
 }
-// 时段范围：08-11 18:30—08:30
+// 时段范围：优先用后端已算好的 period_range_label（跨日已处理）；
+// 无则本地兜底生成「MM-DD HH:mm—MM-DD HH:mm（时区）」，跨日必写完整，
+// 避免「10-10 17:30—03:30」这类让人误以为时间倒流的表达。
 function formatPeriodRange(item) {
-  const fmtTime = (iso) => {
+  // 后端已提供中文区间标签（含跨日），直接采用
+  if (item.period_range_label) return item.period_range_label
+
+  const fmt = (iso, withDate) => {
     const d = new Date(iso)
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    const md = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    return withDate ? `${md} ${hm}` : hm
   }
-  const fmtDate = (iso) => {
-    const d = new Date(iso)
-    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  }
-  return `${fmtDate(item.period_start)} ${fmtTime(item.period_start)}—${fmtTime(item.period_end)}`
+  if (!item.period_start || !item.period_end) return ''
+
+  const s = new Date(item.period_start)
+  const e = new Date(item.period_end)
+  // 跨日判定：起止不在同一天 → 两端都带日期
+  const crossDay = s.toDateString() !== e.toDateString()
+
+  const range = crossDay
+    ? `${fmt(item.period_start, true)}—${fmt(item.period_end, true)}`
+    : `${fmt(item.period_start, true)}—${fmt(item.period_end, false)}`
+
+  return `${range} ${tzLabel()}`
+}
+
+// 时区标签：明确告知用户时间基准，避免跨时区误读
+function tzLabel() {
+  // #ifdef H5
+  const off = -new Date().getTimezoneOffset() / 60
+  const sign = off >= 0 ? '+' : '-'
+  const abs = Math.abs(off)
+  const hh = Number.isInteger(abs) ? String(abs) : abs.toFixed(1)
+  return `(UTC${sign}${hh})`
+  // #endif
+  // #ifndef H5
+  return ''
+  // #endif
 }
 
 // 深链：从企微推送 ?id=<digest_id> 进入时，确保该简报在列表内、已展开，并滚动定位
@@ -825,24 +857,25 @@ onMounted(() => {
   margin-top: 24rpx;
 }
 .dc-section-title {
-  font-size: 24rpx;
-  font-weight: 700;
-  color: var(--color-text-hint);
-  letter-spacing: 1rpx;
-  margin-bottom: 10rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  color: var(--color-text-placeholder);
+  letter-spacing: 2rpx;
+  margin-bottom: 12rpx;
   display: block;
 }
 
-/* 时段概览 + 本期变化：阶段简报最有价值信息，置于卡片顶部 */
+/* 时段概览 + 本期变化
+   层级原则：最强强调只给「本期变化」（左侧色条 + 品牌色标签），
+   概览正文回归普通正文样式，不再用大块浅蓝底与多个小标题争夺注意力。 */
 .dc-overview {
-  background: var(--color-bg-brand-light, var(--color-bg-brand-softer));
-  border-radius: var(--radius-r-md);
-  padding: 16rpx 20rpx;
+  background: transparent;
+  padding: 0;
 }
 .dc-overview-text {
-  font-size: 26rpx;
-  color: var(--color-text-primary);
-  line-height: 1.6;
+  font-size: 27rpx;
+  color: var(--color-text-body);
+  line-height: 1.75;
   display: block;
 }
 .dc-change {
@@ -1022,8 +1055,8 @@ onMounted(() => {
   .dc-title { font-size: 22px; }
   .dc-range { font-size: 14px; }
   .dc-stats { font-size: 13px; }
-  .dc-section-title { font-size: 15px; }
-  .dc-core-text { font-size: 15px; line-height: 1.7; }
+  .dc-section-title { font-size: 13px; font-weight: 600; color: var(--color-text-placeholder); }
+  .dc-core-text { font-size: 15px; line-height: 1.75; }
   .dc-core-summary { font-size: 13px; }
   .dc-overview-text { font-size: 15px; }
   .dc-change-label { font-size: 12px; padding: 2px 8px; }
@@ -1163,10 +1196,10 @@ onMounted(() => {
   .dc-title { font-size: 22px; }
   .dc-range { font-size: 14px; }
   .dc-stats { font-size: 13px; }
-  .dc-section-title { font-size: 15px; }
-  .dc-core-text { font-size: 15px; line-height: 1.7; }
+  .dc-section-title { font-size: 13px; font-weight: 600; color: var(--color-text-placeholder); }
+  .dc-core-text { font-size: 15px; line-height: 1.75; }
   .dc-core-summary { font-size: 13px; }
-  .dc-overview-text { font-size: 15px; line-height: 1.7; }
+  .dc-overview-text { font-size: 15px; line-height: 1.75; }
   .dc-change-label { font-size: 12px; }
   .dc-change-text { font-size: 15px; line-height: 1.7; }
   .dc-mk-rank { font-size: 15px; min-width: 22px; }
