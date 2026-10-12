@@ -7,8 +7,16 @@
 
     <view class="news-body">
       <!-- 搜索模式下使用 rich-text 高亮 -->
-      <rich-text v-if="highlighted" class="news-title search-highlight" :nodes="item.title_highlighted || item.title"></rich-text>
-      <text v-else class="news-title">{{ displayTitle }}</text>
+      <view class="news-title-row">
+        <rich-text v-if="highlighted" class="news-title search-highlight" :nodes="item.title_highlighted || item.title"></rich-text>
+        <text v-else class="news-title">{{ displayTitle }}</text>
+        <!-- 收藏：跟随事件，三处入口共用同一份状态 -->
+        <text
+          class="bookmark"
+          :class="{ 'bookmark-saved': saved }"
+          @click.stop="onToggleBookmark"
+        >{{ saved ? '★' : '☆' }}</text>
+      </view>
 
       <!-- 标准模式：默认短摘要（单行截断），搜索高亮模式仍展示完整摘要以便定位关键词 -->
       <rich-text v-if="highlighted && (item.summary_highlighted || item.ai_summary)" class="news-summary search-highlight" :nodes="item.summary_highlighted || item.ai_summary || ''"></rich-text>
@@ -96,6 +104,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useBookmarks } from '../../utils/useBookmarks.js'
 import {
   scoreClass,
   formatScore,
@@ -155,6 +164,14 @@ const displayTags = computed(() => {
 
 /** 是否为紧凑模式 */
 const isCompact = computed(() => props.density === 'compact')
+
+// ── 收藏 ──
+const { isBookmarked, toggleBookmark } = useBookmarks()
+const saved = computed(() => isBookmarked(props.item))
+
+function onToggleBookmark() {
+  toggleBookmark(props.item)
+}
 
 /** 完整分析展开状态：默认收起，标准模式首屏只给短摘要 */
 const cardOpen = ref(false)

@@ -1,7 +1,7 @@
 <template>
   <view class="page-layout">
     <!-- PC 侧边栏导航（使用共享组件，统一顺序 Reports/News/Stocks/SEPA） -->
-    <PcSidebar active="news" />
+    <PcSidebar active="news" @open-settings="showSettings = true" @open-score="showScore = true" />
 
     <!-- 主内容区 -->
     <view class="container">
@@ -11,31 +11,23 @@
         <text class="logo">AlphaReader</text>
       </view>
       <view class="subtitle-row">
-        <text class="subtitle">High-frequency financial intelligence · signal over noise</text>
-        <view class="info-trigger" @click="showScoreInfo = !showScoreInfo">
-          <text class="info-trigger-text">?</text>
+        <text class="subtitle">高频金融情报 · 信号优于噪音</text>
+        <view class="info-trigger" @click="showScore = true">
+          <text class="info-trigger-text">评分说明</text>
         </view>
-      </view>
-      <view v-if="showScoreInfo" class="info-panel" @click="showScoreInfo = false">
-        <view class="info-panel-item"><text class="info-panel-label">10-Point Scale</text><text class="info-panel-desc">AI composite score (0–10, 1 decimal): impact, recency and source authority</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">7.0–10</text><text class="info-panel-desc">Worth attention — ≥9 red solid (major), 8–9 orange tint (important), 7–8 blue tint (normal)</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">&lt;7.0</text><text class="info-panel-desc">Low priority — 6–7 light grey (de-emphasized), &lt;6 pale grey (noise). Safe to skip</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">Color Note</text><text class="info-panel-desc">Score colors show importance only, not price direction — red means high attention</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">▲／▽</text><text class="info-panel-desc">Sentiment: derived from catalyst type and expectation gap, not random</text></view>
-        <view class="info-panel-item"><text class="info-panel-label">Sources</text><text class="info-panel-desc">Source count when multiple outlets report the same event</text></view>
       </view>
     </view>
 
     <!-- 时间筛选 + 密度切换 -->
     <view class="info-bar">
       <view class="time-filters">
-        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 24 }" @click="setTimeFilter(24)">Today</view>
-        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 48 }" @click="setTimeFilter(48)">Last 2 Days</view>
-        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 168 }" @click="setTimeFilter(168)">This Week</view>
+        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 24 }" @click="setTimeFilter(24)">今日</view>
+        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 48 }" @click="setTimeFilter(48)">近两天</view>
+        <view class="time-filter" :class="{ 'time-filter-active': maxAgeHours === 168 }" @click="setTimeFilter(168)">本周</view>
       </view>
       <view class="density-toggle">
-        <view class="density-btn" :class="{ 'density-btn-active': density === 'compact' }" @click="setDensity('compact')">Compact</view>
-      <view class="density-btn" :class="{ 'density-btn-active': density === 'standard' }" @click="setDensity('standard')">Standard</view>
+        <view class="density-btn" :class="{ 'density-btn-active': density === 'compact' }" @click="setDensity('compact')">紧凑</view>
+      <view class="density-btn" :class="{ 'density-btn-active': density === 'standard' }" @click="setDensity('standard')">舒适</view>
       </view>
     </view>
 
@@ -115,11 +107,11 @@
     <!-- 新闻列表（聚合模式） -->
     <view class="news-list">
       <view v-if="loading && newsList.length === 0" class="loading-container">
-        <text class="loading-text">Loading...</text>
+        <text class="loading-text">加载中…</text>
       </view>
 
       <view v-else-if="groupedNews.length === 0" class="empty-container">
-        <text class="empty-text">No news matches your filters</text>
+        <text class="empty-text">没有符合筛选条件的资讯</text>
       </view>
 
       <view v-else class="card-wrapper">
@@ -164,7 +156,7 @@
     <!-- PC 右侧看板 -->
     <view class="pc-right-panel">
       <view class="right-section">
-        <text class="right-section-title">TOP 5 SCORED</text>
+        <text class="right-section-title">今日重点</text>
         <view v-for="(item, i) in topNews" :key="item.id" class="right-news-item" @click="onOpenUrl(item.url, item.id)">
           <text class="right-news-rank">{{ i + 1 }}</text>
           <view class="right-news-body">
@@ -172,9 +164,17 @@
             <text class="right-news-meta">{{ item.source }} · {{ item.ai_score }}分</text>
           </view>
         </view>
-        <view v-if="!topNews.length" class="right-empty"><text class="right-empty-text">Loading...</text></view>
+        <view v-if="!topNews.length" class="right-empty"><text class="right-empty-text">加载中…</text></view>
+      </view>
+
+      <!-- 阅读方式说明：与「今日重点」形成主次，解释紧凑/舒适差异 -->
+      <view class="right-section">
+        <text class="right-section-title">先扫读，再展开</text>
+        <text class="right-note-text">紧凑模式保留标题与短摘要，完整分析和事件时间线可在详情中查看。</text>
       </view>
     </view>
+    <SettingsDialog :visible="showSettings" @close="showSettings = false" />
+    <ScoreInfoDialog :visible="showScore" @close="showScore = false" />
   </view><!-- /page-layout -->
 </template>
 
@@ -185,6 +185,8 @@ import { initTracker, trackImpression, trackClick, destroyTracker } from '../../
 import { tickerLookup, fetchNews } from '../../utils/api.js'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import PcSidebar from '@/components/common/PcSidebar.vue'
+import SettingsDialog from '@/components/common/SettingsDialog.vue'
+import ScoreInfoDialog from '@/components/common/ScoreInfoDialog.vue'
 import NewsSearchBar from '@/components/news/NewsSearchBar.vue'
 import NewsFilterPopover from '@/components/news/NewsFilterPopover.vue'
 import NewsCardGroup from '@/components/news/NewsCardGroup.vue'
@@ -264,6 +266,8 @@ const {
 
 // ── 评分说明面板 ──
 const showScoreInfo = ref(false)
+const showSettings = ref(false)
+const showScore = ref(false)
 
 // ── 曝光追踪 ──
 let _impressionObserver = null
@@ -1400,6 +1404,28 @@ onReachBottom(() => {
   -webkit-line-clamp: 1;
 }
 
+/* 标题行：标题 + 收藏按钮 */
+:deep(.news-title-row) {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+}
+:deep(.news-title-row) :deep(.news-title),
+:deep(.news-title-row) .news-title {
+  flex: 1;
+  min-width: 0;
+}
+:deep(.bookmark) {
+  flex: none;
+  font-size: 30rpx;
+  line-height: 1.3;
+  color: #b6bfd0;
+  padding: 0 4rpx;
+  cursor: pointer;
+  user-select: none;
+}
+:deep(.bookmark-saved) { color: #e0a33a; }
+
 /* 展开入口 */
 :deep(.card-expand) {
   font-size: 22rpx;
@@ -2043,6 +2069,7 @@ onReachBottom(() => {
   }
   .right-section { margin-bottom: 20px; }
   .right-section-title { font-size: 14px; font-weight: 700; color: var(--color-text-primary); margin-bottom: 12px; }
+  .right-note-text { font-size: 12px; color: var(--color-text-muted); line-height: 1.75; }
   .right-news-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--color-border-light); cursor: pointer; }
   .right-news-item:hover { background: var(--color-bg-hover); }
   .right-news-rank { font-size: 16px; font-weight: 800; color: var(--color-brand); flex-shrink: 0; }
