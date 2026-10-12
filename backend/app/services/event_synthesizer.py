@@ -33,6 +33,7 @@ from app.services import entity_writer
 from app.services import event_memory
 from app.services.notifier import send_report
 from app.services.prefilter import is_official_source, DEFAULT_OFFICIAL_NAMES
+from app.services import thread_router
 from app.utils.event_signals import compute_event_signals
 from app.utils.llm_usage import log_llm_usage
 from app.utils.mechanism_vocab import normalize_assets, normalize_mechanisms
@@ -924,9 +925,28 @@ async def synthesize_events() -> dict:
 
     embedded = await _refresh_event_embeddings(clusters, results)
 
+    # 世界线 P1-c：归线打分。
+    # 挂在这里而非合成循环内，因为归线依赖「实体已落库 + event 行已写入」，
+    # 放在 _refresh_event_embeddings 之后可保证两个前置条件都满足。
+    # 影子模式下只写 thread_route_scores，不写 thread_events，
+    # 因此归线失败绝不能阻断合成主流程（合成是生产路径，归线只是观测）。
+    routed = 0
+    if settings.THREAD_ROUTING_ENABLED:
+        for out in results:
+            eid = out.get("event_id")
+            if not eid:
+                continue
+            try:
+                await thread_router.route_event(eid)
+                routed += 1
+            except Exception as exc:  # noqa: BLE001 — 观测功能绝不阻断生产
+                logger.warning(
+                    "Thread routing failed (event=%s): %s", eid, exc, exc_info=False
+                )
+
     logger.info(
-        "Event synthesis done: %d/%d clusters synthesized (memory recalled %d, embedded %d)",
-        synthesized, len(clusters), recalled, embedded,
+        "Event synthesis done: %d/%d clusters synthesized (memory recalled %d, embedded %d, routed %d)",
+        synthesized, len(clusters), recalled, embedded, routed,
     )
     return {
         "enabled": True,

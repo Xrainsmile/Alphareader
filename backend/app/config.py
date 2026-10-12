@@ -217,6 +217,28 @@ class Settings(BaseSettings):
     # 单条事件最多保留的实体数（解析器硬截断，防 LLM 返回超长数组）
     ENTITY_EXTRACTION_MAX_ITEMS: int = 5
 
+    # ── 世界线 P1-c：归线打分（S = 0.55E + 0.30M + 0.15R）──
+    # 总开关：关闭后不做任何归线计算，事件正常合成但不挂线。
+    THREAD_ROUTING_ENABLED: bool = True
+    # 影子模式（影线期必须开）：只计算 S 并写入 thread_operations 留痕，
+    # 不写 thread_events、不改 threads。7 天影子期内严禁关闭。
+    THREAD_ROUTING_SHADOW: bool = True
+    # S 公式权重，三者应和为 1.0
+    THREAD_SCORE_W_ENTITY: float = 0.55
+    THREAD_SCORE_W_MECHANISM: float = 0.30
+    THREAD_SCORE_W_RECENCY: float = 0.15
+    # 归线阈值，S >= 该值才判定「属于这条线」
+    THREAD_T_JOIN: float = 0.45
+    # 核心实体（event_entities.weight >= 该值）在 Jaccard 中的加权倍率
+    THREAD_CORE_ENTITY_WEIGHT: int = 3
+    # 活跃度奖励 R 的半衰期（小时）：线最近一次更新距今越近，R 越大。
+    # R = 0.5 ** (hours_since / HALF_LIFE)，天然落在 (0,1]，无需再设 CAP。
+    THREAD_RECENCY_HALF_LIFE_HOURS: float = 72.0
+    # 单条事件最多写入的线数（防止一个事件挂满所有线）
+    THREAD_MAX_LINES_PER_EVENT: int = 3
+    # 候选线扫描上限（性能保护，按 last_event_at 倒序取最近 N 条 active 线）
+    THREAD_CANDIDATE_LIMIT: int = 200
+
     # ── 事件级排序信号（纯规则，无需额外模型调用）──
     # 合成时算出 impact/novelty/urgency/confidence/relevance 五个 0-10 信号，
     # 派生 0-3 加分并入「重要」排序的 HN 重力公式，使 Reports 标为"必须知道"的

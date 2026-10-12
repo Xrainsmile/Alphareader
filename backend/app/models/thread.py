@@ -84,6 +84,63 @@ class ThreadOperation(Base):
     )
 
 
+class ThreadRouteScore(Base):
+    """归线影子表 —— 每对 (event, thread) 一条打分留痕。
+
+    ★ 为什么不复用 thread_operations：
+    二者性质完全不同，混在一张表会毁掉治理审计的价值。
+      - thread_operations：人工治理事件，稀疏、权威、需长期追溯，/history 端点直接读它
+      - thread_route_scores：算法观测数据，每事件×每线一条，量级是治理表的百倍以上
+
+    若把 route 写进 thread_operations，人工治理历史会被噪声淹没，
+    且 operation 的 CHECK 约束只有 7 个治理动作，route 不在治理语义内。
+
+    影子期（7 天）结束后，本表用于分布分析：调权重、校准 T_JOIN。
+    分析完成可归档清空，不影响任何生产逻辑。
+
+    可清理性：本表无外键，删除不影响其他表；FK 用 ON DELETE CASCADE 仅作兜底。
+    """
+
+    __tablename__ = "thread_route_scores"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    thread_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("threads.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    # ★ 总分与分项：缺了分项就无法调参——
+    #   7 天后只能看到「误判」，却判断不出是 E 偏高还是 M 偏低
+    score: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    score_entity: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    score_mechanism: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    score_recency: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    # 是否达到 T_JOIN（冗余存储：影子期阈值可能调整，必须记录当时的判定结果）
+    joined: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    threshold: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    # 是否处于影子模式（非影子时也会留痕，用于对比影子期与生产期的分布漂移）
+    shadow: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    __table_args__ = (
+        # 按事件查所有候选线打分（影子期主查询）
+        Index("ix_route_scores_event", "event_id", score.desc()),
+        # 按线查历史事件打分（分析某条线的归线质量）
+        Index("ix_route_scores_thread", "thread_id", "created_at"),
+        # created_at 的索引由 index=True 自动生成（ix_thread_route_scores_created_at），
+        # 不额外声明同名不同义的索引，避免重复。
+    )
+
+
 class Thread(Base):
     """世界线主卡。"""
 
