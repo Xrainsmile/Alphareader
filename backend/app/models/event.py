@@ -84,6 +84,18 @@ class Event(Base):
     # 重大事件即时提醒去重：已为哪个 version 推送过提醒
     last_alerted_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # ── 世界线 P1-b：机制识别 ──
+    # 作用机制：归一到受控枚举（见 app/utils/mechanism_vocab.py），最多 4 个。
+    # 空数组/None 的语义是「未识别到机制 → 对所有线机制兼容」，
+    # 不等于某种默认机制，也不等于 unknown 状态——这是归线门控的刻意设计。
+    mechanism_hints: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String(32)), nullable=True
+    )
+    # 争夺标的：自由文本（曼德海峡通行权 / 红海航线 / 先进制程份额），不做枚举约束
+    contested_assets: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String(64)), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

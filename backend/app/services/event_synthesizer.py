@@ -35,6 +35,7 @@ from app.services.notifier import send_report
 from app.services.prefilter import is_official_source, DEFAULT_OFFICIAL_NAMES
 from app.utils.event_signals import compute_event_signals
 from app.utils.llm_usage import log_llm_usage
+from app.utils.mechanism_vocab import normalize_assets, normalize_mechanisms
 
 logger = logging.getLogger("alphareader.event_synth")
 
@@ -74,6 +75,33 @@ SYSTEM_PROMPT = """你是一位资深金融主编。多家媒体报道了同一�
     confirmed（如期落地/确认）/ reversed（被证伪或结论反转）/ delayed（延期）/ cancelled（取消或搁置）/ unknown（无法判定）。
 11. watch_result：仅当 status="resolved" 时填写（20~60 字），说明此前 watch_next 列出的
     观察点最终是否兑现；非 resolved 时空字符串。
+12. mechanism_hints：本事件的【作用机制】数组，只能从下方词表中挑选，最多 4 个；
+    识别不出就返回空数组 []。严禁自造词表中没有的词。
+13. contested_assets：本事件中各方争夺的【具体标的】数组，最多 4 个，每项不超过 20 字；
+    没有争夺标的就返回空数组 []。
+
+# mechanism_hints 词表（只能从中挑选，必须使用英文键名）
+军事地缘：military_conflict 军事冲突 / military_control 军事控制占领 /
+territorial_dispute 领土争端 / sanction 制裁出口管制 / blockade 封锁禁运
+航运供应链：shipping_disruption 航运中断 / supply_chain 供应链扰动 / logistics_delay 物流延误
+价格成本传导：cost_passthrough 成本传导 / price_shock 价格冲击 /
+risk_premium 风险溢价 / insurance_cost 保险费率成本
+货币金融：monetary_policy 货币政策 / fiscal_policy 财政政策 / liquidity 流动性 /
+credit_risk 信用风险 / capital_flow 资本流动
+产业公司：capacity 产能 / merger_acquisition 并购重组 / regulation 监管政策 /
+tech_disruption 技术变革 / labor_action 劳工行动
+能源商品：energy_supply 能源供给 / commodity_supply 商品供给
+政治外交：election 选举政权更替 / diplomacy 外交谈判
+
+# mechanism_hints / contested_assets 的填写纪律
+- 它们描述的是【机制与标的】，不是【事件本身】。例：胡塞袭击商船 →
+  mechanism_hints=["military_conflict","shipping_disruption","risk_premium"]，
+  contested_assets=["曼德海峡通行权","红海航线"]。
+- 不确定时返回空数组，**不要猜测**。空数组表示"未识别到机制"，系统会让该事件
+  对所有世界线保持兼容；错误地填一个机制，反而会把事件错误地排除在线外。
+- 只写本次报道直接支撑的机制。不要写"可能引发""长期来看"这类推断性机制。
+- contested_assets 写具体标的（海峡、航线、制程、席位、市场份额），
+  不要写"利益""影响力""局势"这类抽象词。
 
 # 历史同类事件的使用规则
 若输入包含【历史同类事件】，那是数据库中过去发生过的相似事件，其中可能带有「结局」信息
@@ -92,7 +120,8 @@ SYSTEM_PROMPT = """你是一位资深金融主编。多家媒体报道了同一�
 只输出原始 JSON，不要任何额外文字：
 {"event_title": "...", "event_summary": "...", "latest_change": "...", "why_important": "...",
  "uncertainty": "...", "watch_next": "...", "status": "new", "has_material_update": true,
- "final_outcome": "", "outcome_type": "", "watch_result": ""}"""
+ "final_outcome": "", "outcome_type": "", "watch_result": "",
+ "mechanism_hints": [], "contested_assets": []}"""
 
 
 def _ts_key(a: dict) -> str:
@@ -226,6 +255,10 @@ def _parse_llm_response(raw: str) -> dict | None:
         "final_outcome": str(data.get("final_outcome") or "").strip(),
         "outcome_type": outcome_type,
         "watch_result": str(data.get("watch_result") or "").strip(),
+        # P1-b 机制识别：归一到受控枚举 + 争夺标的清洗。
+        # 空列表是合法值（未识别到机制 → 对所有线兼容），绝不可当错误处理。
+        "mechanism_hints": normalize_mechanisms(data.get("mechanism_hints")),
+        "contested_assets": normalize_assets(data.get("contested_assets")),
     }
 
 
@@ -437,6 +470,10 @@ def _build_update_params(cluster: dict, parsed: dict) -> dict:
             "watch_next": parsed["watch_next"],
             "status": status,
             "version": new_version,
+            # 机制识别（P1-b）。空列表也照常写入：它表达「本轮未识别到机制」，
+            # 与「该字段从未被抽取过」（NULL）语义不同，P1-c 门控需区分二者。
+            "mechanism_hints": parsed.get("mechanism_hints") or None,
+            "contested_assets": parsed.get("contested_assets") or None,
         })
         if is_first:
             first_seen = cluster.get("published_at") or cluster.get("created_at")
@@ -520,13 +557,15 @@ _UPSERT_EVENT_SQL = text("""
         why_important, uncertainty, watch_next, status, version,
         first_seen_at, outcome_type, final_outcome, watch_result,
         resolved_at, duration_hours,
-        impact, novelty, urgency, confidence, relevance, last_updated_at
+        impact, novelty, urgency, confidence, relevance, last_updated_at,
+        mechanism_hints, contested_assets
     ) VALUES (
         :id, :article_count, :source_count, :title, :summary, :latest_change,
         :why_important, :uncertainty, :watch_next, :status, :version,
         :first_seen_at, :outcome_type, :final_outcome, :watch_result,
         :resolved_at, :duration_hours,
-        :impact, :novelty, :urgency, :confidence, :relevance, :now
+        :impact, :novelty, :urgency, :confidence, :relevance, :now,
+        :mechanism_hints, :contested_assets
     )
     ON CONFLICT (id) DO UPDATE SET
         article_count = EXCLUDED.article_count,
@@ -550,7 +589,12 @@ _UPSERT_EVENT_SQL = text("""
         urgency = COALESCE(EXCLUDED.urgency, events.urgency),
         confidence = COALESCE(EXCLUDED.confidence, events.confidence),
         relevance = COALESCE(EXCLUDED.relevance, events.relevance),
-        last_updated_at = CASE WHEN :material THEN :now ELSE events.last_updated_at END
+        last_updated_at = CASE WHEN :material THEN :now ELSE events.last_updated_at END,
+        -- 机制字段用 COALESCE 覆盖：机制会随事件演进变化（军事冲突 → 制裁 → 航运中断），
+        -- 保留旧机制会让门控用过时机制筛选，把新演进排除在线外。
+        -- 传入非 NULL（哪怕是空数组）即更新；传 NULL 表示本轮未抽取，保留旧值。
+        mechanism_hints = COALESCE(EXCLUDED.mechanism_hints, events.mechanism_hints),
+        contested_assets = COALESCE(EXCLUDED.contested_assets, events.contested_assets)
 """)
 
 _INSERT_VERSION_SQL = text("""
@@ -698,6 +742,10 @@ async def _synthesize_one(
         "relevance": params.get("event_relevance"),
         "material": params["material"],
         "now": params["now"],
+        # 机制识别（P1-b）：仅在有实质更新的分支写入 params，此处统一 .get() 置 None。
+        # None 表示该轮未抽取，COALESCE 会保留旧值；空数组表示「本轮判定无机制」。
+        "mechanism_hints": params.get("mechanism_hints"),
+        "contested_assets": params.get("contested_assets"),
     }
     async with async_session() as session:
         # 先 UPSERT events（保证 event_versions 的 FK 指向 events.id 成立），再写 news 镜像
