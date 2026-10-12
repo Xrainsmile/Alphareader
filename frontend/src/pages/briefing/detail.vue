@@ -56,7 +56,7 @@
 
     <!-- Loading -->
     <view class="loading-state" v-if="!briefing">
-      <text class="loading-text">Loading...</text>
+      <text class="loading-text">加载中…</text>
     </view>
 
     <!-- Footer -->

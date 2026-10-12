@@ -82,7 +82,7 @@
             <view class="tl-date-bar"></view>
             <text class="tl-date-main">{{ g.dateMain }}</text>
             <text class="tl-date-week">{{ g.weekday }}</text>
-            <text class="tl-date-count">{{ g.items.length }} briefings</text>
+            <text class="tl-date-count">{{ g.items.length }} 份简报</text>
           </view>
 
           <view
@@ -109,11 +109,11 @@
               </text>
             </view>
             <view class="dc-stats">
-              <text class="dc-stat">{{ item.event_count || 0 }} events</text>
+              <text class="dc-stat">{{ item.event_count || 0 }} 个事件</text>
               <text class="dc-sep">·</text>
-              <text class="dc-stat">{{ item.material_update_count || 0 }} updates</text>
+              <text class="dc-stat">{{ item.material_update_count || 0 }} 条更新</text>
               <text class="dc-sep">·</text>
-              <text class="dc-stat">{{ (sc(item).must_know || []).length }} must-know</text>
+              <text class="dc-stat">{{ (sc(item).must_know || []).length }} 条必知</text>
             </view>
 
             <!-- 首屏结论：只保留三条变化，长解释折叠
@@ -172,7 +172,7 @@
                   <text v-if="e.watch_next" class="dc-mk-watch">Watch: {{ e.watch_next }}</text>
                   <text v-if="e.sources && e.sources.length" class="dc-mk-src">Sources: {{ e.sources.join(' / ') }}</text>
                   <view class="dc-mk-foot" @click.stop="goEventDetail(e.event_id)">
-                    <text class="dc-mk-detail">Details →</text>
+                    <text class="dc-mk-detail">详情 →</text>
                   </view>
                 </view>
               </view>
@@ -298,26 +298,26 @@ const pickerValue = computed(() => filterDate.value || todayStr)
 // Calendar button label: 'Pick Date' when unfiltered; matched quick date; else 2026.10.10
 const isQuickDate = computed(() => dateOptions.value.some((d) => d.value === filterDate.value))
 const calLabel = computed(() => {
-  if (!filterDate.value) return 'Pick Date'
+  if (!filterDate.value) return '选择日期'
   if (isQuickDate.value) return filterDate.value.split('-').slice(1).join('.')
   const [y, m, dd] = filterDate.value.split('-')
   return `${y}.${m}.${dd}`
 })
 
-// Quick dates: Today / Yesterday
+// 快捷日期：今日 / 昨日
 const dateOptions = computed(() => {
   const out = []
   for (let i = 0; i < 2; i++) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    out.push({ value: toDateStr(d), label: i === 0 ? 'Today' : 'Yesterday' })
+    out.push({ value: toDateStr(d), label: i === 0 ? '今日' : '昨日' })
   }
   return out
 })
 
-// 按日期分组：26.10.10 Sat · N briefings（日期过滤走后端 date 参数）
+// 按日期分组：26.10.10 周六 · N 份简报（日期过滤走后端 date 参数）
 const groupedDigests = computed(() => {
-  const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   const groups = []
   const map = new Map()
   for (const item of digestList.value) {
@@ -423,7 +423,7 @@ function hasBriefDetail(item) {
 }
 // 确定性标签：high/medium/low → 中文短标签（must_know 卡片展示）
 function confLabel(c) {
-  return { high: 'High Confidence', medium: 'Medium Confidence', low: 'Low Confidence' }[c] || ''
+  return { high: '依据充分', medium: '部分确认', low: '有待确认' }[c] || ''
 }
 // 持续关注 = 持续事件(ongoing_updates) + 此前关注暂无进展(quiet_topics)
 function ongoingList(item) {

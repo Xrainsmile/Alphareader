@@ -2,7 +2,7 @@
   <view class="detail-container">
     <!-- Loading -->
     <view v-if="loading" class="loading-state">
-      <text class="loading-text">Loading...</text>
+      <text class="loading-text">加载中…</text>
     </view>
 
     <template v-else-if="stock">

@@ -1,7 +1,7 @@
 <template>
   <view class="event-detail-page">
-    <view v-if="loading" class="state-box"><text class="state-text">Loading...</text></view>
-    <view v-else-if="!event" class="state-box"><text class="state-text">Event not found or deleted</text></view>
+    <view v-if="loading" class="state-box"><text class="state-text">加载中…</text></view>
+    <view v-else-if="!event" class="state-box"><text class="state-text">事件不存在或已删除</text></view>
 
     <template v-else>
       <!-- 事件概览 -->
@@ -10,7 +10,15 @@
           <text v-if="event.status" class="status-badge" :class="'status-' + event.status">{{ statusLabel }}</text>
           <text v-if="event.version" class="version-text">v{{ event.version }}</text>
         </view>
-        <text class="title">{{ event.title }}</text>
+        <view class="title-row">
+          <text class="title">{{ event.title }}</text>
+          <!-- 收藏：详情页与资讯列表、简报共用同一份状态 -->
+          <text
+            class="bm-btn"
+            :class="{ 'bm-btn-saved': saved }"
+            @click="onToggleBookmark"
+          >{{ saved ? '★ 已收藏' : '☆ 收藏' }}</text>
+        </view>
         <text v-if="event.summary" class="summary">{{ event.summary }}</text>
         <view v-if="event.why_important" class="block important">
           <text class="block-label">Why It Matters</text>
@@ -101,6 +109,7 @@
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { fetchEventDetail } from '../../utils/api.js'
+import { useBookmarks } from '../../utils/useBookmarks.js'
 import { formatTime } from '../../utils/formatters.js'
 
 const event = ref(null)
@@ -112,6 +121,14 @@ const STATUS_LABELS = {
   stable: '稳定',
   resolved: '已结束',
 }
+const { isBookmarked, toggleBookmark } = useBookmarks()
+const saved = computed(() => (event.value ? isBookmarked(event.value) : false))
+
+function onToggleBookmark() {
+  if (!event.value) return
+  toggleBookmark(event.value)
+}
+
 const statusLabel = computed(() => STATUS_LABELS[event.value?.status] || event.value?.status || '')
 
 onLoad(async (options) => {
@@ -210,6 +227,18 @@ function openUrl(url) {
   margin-top: 16rpx;
 }
 .block.important { background: var(--color-bg-info-softer); border-left: 6rpx solid var(--color-info-active); }
+.title-row { display: flex; align-items: flex-start; gap: 16rpx; }
+.title-row .title { flex: 1; min-width: 0; }
+.bm-btn {
+  flex: none;
+  font-size: 24rpx;
+  color: #8a94a6;
+  padding: 8rpx 16rpx;
+  border: 1px solid var(--color-border);
+  border-radius: 999rpx;
+  background: var(--color-bg-card);
+}
+.bm-btn-saved { color: #e0a33a; border-color: #f0d9a8; background: #fffaf0; }
 .block.change { background: var(--color-bg-success-soft); border-left: 6rpx solid var(--color-success-hover); }
 .block.uncertainty { background: #fff8e1; border-left: 6rpx solid #f9a825; }
 .block.watch { background: var(--color-bg-time-evening); border-left: 6rpx solid #8e24aa; }

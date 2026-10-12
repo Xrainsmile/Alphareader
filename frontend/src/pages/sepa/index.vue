@@ -60,7 +60,7 @@
           <view class="right-account-row"><text class="k">Positions Value</text><text class="v">{{ sym }}{{ fmt(account.market_value) }}</text></view>
           <view class="right-account-row"><text class="k">Cash</text><text class="v">{{ sym }}{{ fmt(account.cash) }}</text></view>
         </view>
-        <view v-else class="right-empty"><text class="right-empty-text">Loading...</text></view>
+        <view v-else class="right-empty"><text class="right-empty-text">加载中…</text></view>
       </view>
     </view>
   </view><!-- /page-layout -->
