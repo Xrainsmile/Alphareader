@@ -1,22 +1,22 @@
 <template>
   <view class="page-layout">
-    <PcSidebar active="reports" />
+    <PcSidebar active="reports" @open-settings="showSettings = true" @open-score="showScore = true" />
     <view class="container">
     <!-- Header -->
     <view class="reports-header">
       <view class="reports-head-info">
         <view class="reports-title-row">
-          <text class="reports-title">Reports</text>
+          <text class="reports-title">每日简报</text>
           <!-- 移动端：侧门「!」入口（桌面端由左侧导航承载，此处隐藏）-->
           <GateButton class="gate-mobile-only" />
         </view>
-        <text class="reports-subtitle">Periodic Briefings · Event Tracking</text>
+        <text class="reports-subtitle">读懂发生了什么，也看清下一步关注什么。</text>
       </view>
 
       <!-- 时间筛选：分段控件（快捷日期）+ 日历按钮，桌面端居 header 右侧 -->
       <view class="rpt-filter">
         <view class="rf-reset" :class="{ 'rf-reset-on': !!filterDate }" @click="filterDate && resetFilter()">
-          <text class="rf-reset-text">Clear</text>
+          <text class="rf-reset-text">清除</text>
         </view>
 
         <view class="rf-seg">
@@ -25,7 +25,7 @@
             :class="{ 'rf-seg-on': filterDate === '' }"
             @click="pickDate('')"
           >
-            <text class="rf-seg-text">All</text>
+            <text class="rf-seg-text">全部</text>
           </view>
           <view
             v-for="d in dateOptions"
@@ -119,13 +119,13 @@
             <!-- 首屏结论：只保留三条变化，长解释折叠
                  设计原则：period_summary / what_changed 为长句解释，默认收起，
                  Key Changes 为可扫读要点，常驻首屏。 -->
-            <view v-if="sc(item).cross_event_signals && sc(item).cross_event_signals.length" class="dc-section dc-core">
+            <view v-if="sc(item).cross_event_signals && sc(item).cross_event_signals.length" id="sec-changes" class="dc-section dc-core">
               <view
                 class="dc-core-head"
                 @click.stop="toggleBrief(item.id)"
               >
-                <text class="dc-section-title dc-core-title">Key Changes</text>
-                <text v-if="hasBriefDetail(item)" class="dc-brief-toggle">{{ briefOpen(item.id) ? 'Hide' : 'Why' }}</text>
+                <text class="dc-section-title dc-core-title">本期核心变化</text>
+                <text v-if="hasBriefDetail(item)" class="dc-brief-toggle">{{ briefOpen(item.id) ? '收起' : '为什么' }}</text>
               </view>
               <view v-for="(s, si) in topSignals(item)" :key="si" class="dc-core-item">
                 <text class="dc-core-dot">•</text>
@@ -148,14 +148,14 @@
             <!-- 详细解释（默认折叠）-->
             <view v-if="hasBriefDetail(item)" v-show="briefOpen(item.id)" class="dc-section dc-overview dc-overview-fold">
               <text v-if="sc(item).what_changed" class="dc-change dc-change-standalone">
-                <text class="dc-change-inline-label">What Changed · </text>{{ sc(item).what_changed }}
+                <text class="dc-change-inline-label">本期变化 · </text>{{ sc(item).what_changed }}
               </text>
               <text v-if="sc(item).period_summary" class="dc-overview-text dc-overview-detail">{{ sc(item).period_summary }}</text>
             </view>
 
             <!-- 必须知道（编号体现优先级，次级信息收进事件详情页）-->
-            <view v-if="sc(item).must_know && sc(item).must_know.length" class="dc-section">
-              <text class="dc-section-title">Must Know</text>
+            <view id="sec-mustknow" v-if="sc(item).must_know && sc(item).must_know.length" class="dc-section">
+              <text class="dc-section-title">必须知道</text>
               <view
                 v-for="(e, ei) in sc(item).must_know"
                 :key="e.event_id"
@@ -180,7 +180,7 @@
 
             <!-- 值得留意（紧凑列表）-->
             <view v-if="sc(item).worth_watching && sc(item).worth_watching.length" class="dc-section">
-              <text class="dc-section-title">Worth Watching</text>
+              <text class="dc-section-title">持续关注</text>
               <view v-for="e in sc(item).worth_watching" :key="e.event_id" class="dc-watch">
                 <text class="dc-watch-bullet">—</text>
                 <text class="dc-watch-text">{{ e.title }}<text v-if="e.sources && e.sources.length" class="dc-watch-src"> · {{ e.sources.join(' / ') }}</text></text>
@@ -189,7 +189,7 @@
 
             <!-- 持续关注（持续事件 + 此前关注暂无进展）-->
             <view v-if="ongoingList(item).length" class="dc-section">
-              <text class="dc-section-title">Ongoing</text>
+              <text class="dc-section-title">进行中</text>
               <view v-for="e in ongoingList(item)" :key="e.event_id" class="dc-watch">
                 <text class="dc-watch-bullet">—</text>
                 <text class="dc-watch-text">{{ e.title }}<text v-if="e.sources && e.sources.length" class="dc-watch-src"> · {{ e.sources.join(' / ') }}</text><text v-if="e.note" class="dc-watch-note"> · {{ e.note }}</text></text>
@@ -197,8 +197,8 @@
             </view>
 
             <!-- 接下来关注 -->
-            <view v-if="sc(item).upcoming && sc(item).upcoming.length" class="dc-section">
-              <text class="dc-section-title">What's Next</text>
+            <view id="sec-next" v-if="sc(item).upcoming && sc(item).upcoming.length" class="dc-section">
+              <text class="dc-section-title">接下来关注</text>
               <view v-for="(u, ui) in sc(item).upcoming" :key="ui" class="dc-upcoming">
                 <text v-if="u.time" class="dc-upcoming-time">{{ u.time }}</text>
                 <text class="dc-upcoming-text">{{ u.item }}</text>
@@ -212,13 +212,39 @@
         </view><!-- /tl-group -->
       </view><!-- /timeline -->
       <view v-if="!digestLoading && digestList.length > 0 && digestDays < 30 && !filterDate" class="load-more" @click="loadMoreDigests">
-        <text class="load-more-text">Load More</text>
+        <text class="load-more-text">加载更多</text>
       </view>
     </view>
 
     <!-- Footer -->
     <SiteFooter />
     </view><!-- /container -->
+
+    <!-- 右侧栏：简报阅读导航（章节跳转 + 说明），仅 PC 显示 -->
+    <view class="pc-rail">
+      <view class="rail-block">
+        <text class="rail-title">本期阅读导航</text>
+        <view
+          v-for="sec in railSections"
+          :key="sec.id"
+          class="toc-item"
+          @click="scrollToSection(sec.id)"
+        >
+          <text class="toc-num">{{ sec.num }}</text>
+          <text class="toc-label">{{ sec.label }}</text>
+        </view>
+        <text class="rail-dim">约 3 分钟读完重点</text>
+      </view>
+
+      <view class="rail-block">
+        <text class="rail-title">事实与判断，分别呈现</text>
+        <text class="rail-note">评分表示阅读优先级；确定性表示事实依据的充分程度。</text>
+        <text class="rail-link" @click="showScore = true">了解评分与信源</text>
+      </view>
+    </view>
+
+    <SettingsDialog :visible="showSettings" @close="showSettings = false" />
+    <ScoreInfoDialog :visible="showScore" @close="showScore = false" />
   </view><!-- /page-layout -->
 </template>
 
@@ -230,6 +256,8 @@ import { renderMarkdown } from '@/utils/markdown'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PcSidebar from '@/components/common/PcSidebar.vue'
+import SettingsDialog from '@/components/common/SettingsDialog.vue'
+import ScoreInfoDialog from '@/components/common/ScoreInfoDialog.vue'
 import GateButton from '@/components/common/GateButton.vue'
 import IconSvg from '@/components/common/IconSvg.vue'
 import { useGate } from '@/utils/useGate'
@@ -353,6 +381,27 @@ function renderMd(md) {
 // 安全读取结构化简报（避免 structured_content 为空时报错）
 function sc(item) {
   return item && item.structured_content ? item.structured_content : {}
+}
+
+const showSettings = ref(false)
+const showScore = ref(false)
+
+/** 右栏阅读导航：与正文三个章节一一对应 */
+const railSections = [
+  { id: 'sec-changes', num: '01', label: '本期核心变化' },
+  { id: 'sec-mustknow', num: '02', label: '必须知道' },
+  { id: 'sec-next', num: '03', label: '接下来关注' },
+]
+
+function scrollToSection(id) {
+  // 用 scrollIntoView 语义：uni 下退化为按当前滚动偏移叠加元素位置
+  uni.createSelectorQuery()
+    .select('#' + id)
+    .boundingClientRect((rect) => {
+      if (!rect) return
+      uni.pageScrollTo({ scrollTop: rect.top, duration: 260 })
+    })
+    .exec()
 }
 
 /** 简报详情（长解释）展开状态：默认收起，首屏只留 Key Changes 三条变化 */
@@ -1326,5 +1375,76 @@ onMounted(() => {
 .sb-changed-text,
 .sb-event-change,
 .sb-event-watch { display: inline-flex; align-items: center; }
+
+
+/* ── 右栏（简报阅读导航）：仅 PC 显示 ── */
+.pc-rail { display: none; }
+@media screen and (min-width: 768px) {
+  .pc-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 200px;
+    min-width: 200px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    max-height: 100vh;
+    overflow-y: auto;
+    padding: 28px 22px 40px 0;
+  }
+  .rail-block {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 15px 16px;
+  }
+  .rail-title {
+    display: block;
+    font-size: 11px;
+    color: var(--color-text-muted);
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+  .toc-item {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 7px 0;
+    cursor: pointer;
+  }
+  .toc-num {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+    flex: none;
+    min-width: 20px;
+  }
+  .toc-label { font-size: 13px; color: var(--color-text-secondary); }
+  .toc-item:hover .toc-label { color: var(--color-brand); }
+  .rail-dim {
+    display: block;
+    font-size: 11px;
+    color: var(--color-text-muted);
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--color-border);
+  }
+  .rail-note {
+    display: block;
+    font-size: 11px;
+    color: var(--color-text-muted);
+    line-height: 1.75;
+  }
+  .rail-link {
+    display: block;
+    font-size: 12px;
+    color: var(--color-brand);
+    font-weight: 600;
+    margin-top: 10px;
+    cursor: pointer;
+  }
+}
 
 </style>
