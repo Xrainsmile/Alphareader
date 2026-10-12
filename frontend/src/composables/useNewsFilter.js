@@ -8,16 +8,16 @@ export function useNewsFilter() {
   // ── 常量配置 ──
   const scoreOptions = [5, 6, 7, 8, 9]
   const categoryTabs = [
-    { value: '', label: 'All' },
-    { value: '财经', label: 'Finance' },
-    { value: '科技', label: 'Tech' },
+    { value: '', label: '全部' },
+    { value: '财经', label: '财经' },
+    { value: '科技', label: '科技' },
   ]
   const cnSources = ['富途新闻', '英为财情']
   const enSources = ['MarketWatch', 'Seeking Alpha', 'Finnhub']
   const techSources = ['TechCrunch', 'Hacker News', 'OpenAI Blog', 'Google AI Blog', 'Anthropic', 'Hugging Face', 'MIT Tech Review']
   // 事件排序（对应 /api/v1/events 的 sort 参数，PRD 8.4）
   const sortTabs = [
-    { value: 'important', label: 'Important' },
+    { value: 'important', label: '重要' },
     { value: 'latest_update', label: 'Latest Update' },
     { value: 'first_seen', label: 'First Seen' },
   ]
@@ -68,7 +68,7 @@ export function useNewsFilter() {
     if (onlyHighlight.value) tags.push('🔥 重点')
     const tab = sortTabs.find(t => t.value === currentSort.value)
     if (tab && currentSort.value !== 'important') tags.push(tab.label)
-    if (currentSort.value === 'important') tags.push('Important')
+    if (currentSort.value === 'important') tags.push('重要')
     const age = ageOptions.find(a => a.value === maxAgeHours.value)
     if (age && maxAgeHours.value !== 24) tags.push(age.label)
     if (currentSource.value) tags.push(currentSource.value)

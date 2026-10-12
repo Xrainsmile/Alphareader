@@ -5,11 +5,11 @@
       <view class="filter-trigger-left">
         <view class="filter-trigger-btn" :class="{ 'filter-trigger-active': hasActiveFilter || filterOpen }" @click="$emit('toggle')">
           <text class="filter-trigger-icon">☰</text>
-          <text class="filter-trigger-text">Filters</text>
+          <text class="filter-trigger-text">筛选</text>
           <text class="filter-arrow" :class="{ 'filter-arrow-up': filterOpen }">›</text>
         </view>
         <view class="highlight-chip" :class="{ 'highlight-chip-active': onlyHighlight }" @click="$emit('toggle-highlight')">
-          <text class="highlight-chip-text" :class="{ 'highlight-chip-text-active': onlyHighlight }">🔥 Highlights Only</text>
+          <text class="highlight-chip-text" :class="{ 'highlight-chip-text-active': onlyHighlight }">🔥 只看重点</text>
         </view>
         <view v-if="filterTags.length" class="filter-tags">
           <view v-for="tag in filterTags" :key="tag" class="filter-tag">
@@ -17,7 +17,7 @@
           </view>
         </view>
       </view>
-      <text class="stats-text-inline">{{ total }} items</text>
+      <text class="stats-text-inline">{{ total }} 条资讯</text>
     </view>
 
     <!-- 筛选浮窗 -->
@@ -31,7 +31,7 @@
               <text class="fc-text" :class="{ 'fc-text-active': !tmpHighlight }">All</text>
             </view>
             <view class="fc" :class="{ 'fc-active': tmpHighlight }" @click="$emit('update:tmpHighlight', true)">
-              <text class="fc-text" :class="{ 'fc-text-active': tmpHighlight }">🔥 Highlights Only</text>
+              <text class="fc-text" :class="{ 'fc-text-active': tmpHighlight }">🔥 只看重点</text>
             </view>
           </view>
         </view>

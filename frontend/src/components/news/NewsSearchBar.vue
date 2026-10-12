@@ -6,7 +6,7 @@
       <input
         class="search-input"
         type="text"
-        placeholder="Search financial news..."
+        placeholder="搜索金融资讯…"
         :value="searchQuery"
         @input="$emit('input', $event)"
         @focus="$emit('focus')"
