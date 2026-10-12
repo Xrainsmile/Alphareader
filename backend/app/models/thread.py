@@ -1,13 +1,16 @@
 """World Thread ORM models — 世界线（World Thread）P1-a 存储层。
 
-四张表，按依赖顺序：
-- thread_operations   治理审计表（最前建，eligible() 的排除检查依赖它）
+四张表（P1-a），按依赖顺序：
+- thread_operations   治理审计表（最前建，eligible() 依赖它）
 - threads             世界线主卡
 - thread_events       事件-线关联（章节三字段分离）
 - thread_transmissions 传导链（因果边，evidence_status 三态）
 
+P1-e 补建第五张：
+- thread_watchpoints  线级观察点（前瞻，可证伪断言）
+
 设计要点：
-1. threads 是主卡，其余三张全部外键引用它，必须先建。
+1. threads 是主卡，其余全部外键引用它，必须先建。
 2. thread_events 的章节三字段分离：chapter_id 永久稳定承担所有外部引用，
    chapter_no 可重排用于展示，chapter_seq 仅追加用于审计。
    事件版本（纵轴）与世界线章节（横轴）正交，故必须分离。
@@ -15,8 +18,13 @@
    contradicted 一旦落定禁止自动回退，必须人工仲裁。
 4. thread_operations 是纯审计表，只 INSERT 不 UPDATE 不 DELETE，
    eligible() 通过查询它判断某事件是否被人工排除。
+5. thread_watchpoints 与传导链是两种视角：传导链回看（已发生的 A→B），
+   观察点前瞻（下一步看什么）。两者的状态字段语义独立，不可混用——
+   观察点被命中不等于它验证的传导边被证实。
 
-建表顺序（FK 依赖）：thread_operations → threads → thread_events → thread_transmissions
+建表顺序（FK 依赖）：
+  thread_operations → threads → thread_events → thread_transmissions
+  → thread_watchpoints
 """
 
 import uuid
@@ -334,4 +342,81 @@ class ThreadTransmission(Base):
         Index("ix_transmissions_thread", "thread_id", "evidence_status"),
         Index("ix_transmissions_from", "from_chapter_id"),
         Index("ix_transmissions_to", "to_chapter_id"),
+    )
+
+
+class ThreadWatchpoint(Base):
+    """线级观察点：挂在世界线上的「下一个待验证信号」。
+
+    与传导链的职责分工：
+    - 传导链  记录「已经发生的 A → B」，回看视角，evidence_status 三态
+    - 观察点  声明「接下来看到什么就说明线在推进」，前瞻视角，可证伪
+
+    ★ 观察点必须是可证伪的自然语言断言，不是模糊的「持续关注」。
+      「油价突破 100 美元」可证伪；「局势持续紧张」不可证伪，
+      后者无论发生什么都能自圆其说，对决策毫无价值。
+
+    ★ status 与传导链的 evidence_status 是两套独立语义，不可混用：
+      观察点被「命中」不等于它验证的传导边被「证实」。
+      命中只说明预期信号出现了，传导关系仍需独立证据支撑。
+    """
+
+    __tablename__ = "thread_watchpoints"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    thread_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("threads.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # ★ 可证伪的断言文本，必填且不可为空串——不可证伪的观察点没有存在意义
+    assertion: Mapped[str] = mapped_column(Text, nullable=False)
+    # 观察点类别，用于分组展示与差异化阈值
+    kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="trigger", server_default="trigger"
+    )
+    # 命中判定的量化口径（可选），JSONB 便于按 kind 扩展不同结构
+    criteria: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # ★ 状态机：open → hit / missed / expired
+    #   hit/missed 是终态但允许人工 reopen（观察点可能误判或需重新观察）
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="open", server_default="open"
+    )
+    # ★ 到期时间：观察点必须有期限。无期限的观察点等于永远不验证，
+    #   会无限堆积成噪音，最终让整张表失去意义
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # 命中/判负时回填的佐证事件
+    resolved_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open','hit','missed','expired')",
+            name="ck_watchpoint_status",
+        ),
+        CheckConstraint(
+            "kind IN ('trigger','signal','guard','invalidation')",
+            name="ck_watchpoint_kind",
+        ),
+        # ★ 空断言禁止入库：不可证伪的观察点是噪音源，在数据库层挡住
+        CheckConstraint(
+            "length(btrim(assertion)) > 0", name="ck_watchpoint_assertion_not_blank"
+        ),
+        Index("ix_watchpoints_thread", "thread_id", "status"),
+        Index("ix_watchpoints_expires", "expires_at"),
     )
