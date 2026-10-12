@@ -91,5 +91,7 @@ class EventEntity(Base):
 
     __table_args__ = (
         UniqueConstraint("event_id", "entity_id", name="uq_event_entity"),
+        # 按事件查实体是高频路径（事件合成后批量读取），缺索引会全表扫描
+        Index("ix_event_entities_event", "event_id"),
         Index("ix_event_entities_entity", "entity_id"),
     )
