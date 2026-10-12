@@ -123,6 +123,12 @@ class Settings(BaseSettings):
     EVENT_SYNTH_FAST_AI_THRESHOLD: int = 8
     # 每日维护：developing 且无实质更新超过该小时数 → 自动转 stable（resolved 不依赖时间自动判定）
     EVENT_STABLE_AFTER_HOURS: int = 48
+    # 事件合成单次调用的 max_tokens。
+    # 原为硬编码 768；P1 需在输出 JSON 增加 mechanism_hints / contested_assets 两个数组字段，
+    # 并在输入侧增加「所在世界线」谱系区块，768 会导致输出被截断 → JSON 不完整 → 触发重试 →
+    # 该簇本轮不合成（静默降级，难排查）。提到 1024 留出余量。
+    # 后续若继续加字段，优先调这里而不是改代码。
+    EVENT_SYNTH_MAX_TOKENS: int = 1024
 
     # ── 事件记忆（方案B：跨周期相似事件召回）──
     # 合成事件包时，用向量召回「历史上的同类事件」注入 prompt，让 LLM 能判断
@@ -138,7 +144,10 @@ class Settings(BaseSettings):
     EVENT_MEMORY_MIN_SIM: float = 0.50
     EVENT_MEMORY_MAX_SIM: float = 0.67
     EVENT_MEMORY_MAX_CANDIDATES: int = 5000    # 单次加载候选向量上限（内存保护）
-    EVENT_MEMORY_SUMMARY_CHARS: int = 60       # 注入的历史事件摘要截断长度
+    # P1 需在同一份 prompt 内再塞入「所在世界线」谱系区块（当前章节 + rollup 摘要），
+    # 历史同类事件的摘要从 60 降到 50，给谱系区块腾出输入余量。实测该长度对
+    # 「判断这类事件通常如何演进」的归纳无实质损失。
+    EVENT_MEMORY_SUMMARY_CHARS: int = 50       # 注入的历史事件摘要截断长度
 
     # ── 新闻清理（每日 03:30）──
     # 普通报道保留窗口：原始 news 记录的硬删除上限（7~14 天，取 14 留余量）。
@@ -196,6 +205,17 @@ class Settings(BaseSettings):
     # 写"通常/往往"类规律结论前，要求至少 N 个方向一致（同 outcome_type）的历史事件；
     # 不足时 LLM 只能逐条引用、不得归纳"通常"。杜绝单样本臆断。
     EVENT_MEMORY_MIN_PATTERN_COUNT: int = 2
+
+    # ── 世界线 P0：实体抽取（kill switch）──
+    # 实体抽取搭评分调用的便车，在同一份 JSON 输出里多要一个 entities 字段。
+    # 总开关：关闭后评分 prompt 不再要求 entities，解析器也不再读取，
+    # 立即回到 P0 之前的纯评分行为。出现评分质量回退时先关这个，再排查。
+    ENTITY_EXTRACTION_ENABLED: bool = True
+    # 仅对 score >= 该档位的条目要求输出 entities。
+    # 依据 LLM_SCORE_THRESHOLD：低于阈值的条目根本不入库，给它们抽实体纯属浪费。
+    ENTITY_EXTRACTION_MIN_SCORE: int = 5
+    # 单条事件最多保留的实体数（解析器硬截断，防 LLM 返回超长数组）
+    ENTITY_EXTRACTION_MAX_ITEMS: int = 5
 
     # ── 事件级排序信号（纯规则，无需额外模型调用）──
     # 合成时算出 impact/novelty/urgency/confidence/relevance 五个 0-10 信号，

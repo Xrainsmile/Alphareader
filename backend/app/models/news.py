@@ -45,6 +45,10 @@ class News(Base):
     catalyst_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     sentiment_entity: Mapped[str | None] = mapped_column(String(128), nullable=True)
     sentiment_reasoning: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # 世界线 P0：LLM 抽取的原始实体名列表（未规范化），事件合成时落 event_entities。
+    # 与 sentiment_entity 并存不替换：后者是单值主体（服务 A 股标的提取），
+    # 前者是多值可关联（服务世界线聚类）。受 config.ENTITY_EXTRACTION_ENABLED 控制。
+    entities: Mapped[list[str] | None] = mapped_column(ARRAY(String(128)), nullable=True)
     # 方案A 事件中心化：LLM 将「根+关联报道」合成为一张事件卡片（仅写在聚合根上）
     # event_article_count 记录上次合成时的报道总数，新子报道到达后计数变大则触发重新合成
     event_title: Mapped[str | None] = mapped_column(String(512), nullable=True)

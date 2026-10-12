@@ -29,6 +29,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import async_session
+from app.services import entity_writer
 from app.services import event_memory
 from app.services.notifier import send_report
 from app.services.prefilter import is_official_source, DEFAULT_OFFICIAL_NAMES
@@ -361,6 +362,54 @@ async def _find_candidate_clusters(
         return [dict(r) for r in result.mappings().all()]
 
 
+async def _collect_cluster_entities(cluster_id: str) -> list[str]:
+    """收集事件簇的实体名（根报道 + 全部子报道的 news.entities 并集）。
+
+    世界线 P0：实体已在评分阶段抽取并落到 news.entities，此处只做聚合，
+    **零 LLM 调用**。聚合的是「整簇」而非单条，因为子报道常携带根没有的
+    实体（如根讲袭击、子报道补充承运商与保险公司）。
+
+    受 ENTITY_EXTRACTION_ENABLED 控制；关闭或查询失败时返回空列表，
+    绝不阻断事件合成。
+
+    Args:
+        cluster_id: 聚合根的 news.id（与 events.id 同值）
+
+    Returns:
+        去重后的实体名列表（未规范化，规范化交给 entity_writer）
+    """
+    if not entity_writer.enabled():
+        return []
+
+    try:
+        sql = text("""
+            SELECT entities
+            FROM news
+            WHERE (id = :cid OR related_to_id = :cid)
+              AND entities IS NOT NULL
+              AND array_length(entities, 1) > 0
+        """)
+        async with async_session() as session:
+            result = await session.execute(sql, {"cid": cluster_id})
+            rows = result.scalars().all()
+    except Exception as exc:  # noqa: BLE001 — 实体是增强功能，绝不阻断主流程
+        logger.warning(
+            "_collect_cluster_entities failed (cluster=%s): %s", cluster_id, exc,
+            exc_info=False,
+        )
+        return []
+
+    # 并集去重，保持首次出现顺序（顺序影响 P1 聚类时的权重判定）
+    seen: set[str] = set()
+    names: list[str] = []
+    for row in rows:
+        for name in row or []:
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+    return names
+
+
 def _build_update_params(cluster: dict, parsed: dict) -> dict:
     """根据解析结果与版本机制计算要回写字段（纯函数，便于测试）。"""
     total_articles = int(cluster["child_cnt"]) + 1
@@ -549,7 +598,7 @@ async def _synthesize_one(
         ],
         "thinking": {"type": "disabled"},
         "temperature": 0.2,
-        "max_tokens": 768,
+        "max_tokens": settings.EVENT_SYNTH_MAX_TOKENS,
     }
     headers = {
         "Authorization": f"Bearer {settings.LLM_API_KEY}",
@@ -657,6 +706,30 @@ async def _synthesize_one(
         if params["material"]:
             await session.execute(_INSERT_VERSION_SQL, row)
         await session.commit()
+
+    # 世界线 P0：事件实体关联。放在主事务 commit 之后、用独立 async_session：
+    # entity_writer 内部吞异常后 session 会进入 aborted 状态，若共用主事务，
+    # 后续 commit() 会抛 PendingRollbackError 并搞挂整个事件合成。
+    # 独立事务把实体层故障隔离在主链路之外——符合「增强功能绝不阻断主流程」。
+    if entity_writer.enabled():
+        try:
+            entity_names = await _collect_cluster_entities(params["id"])
+            if entity_names:
+                async with async_session() as ent_session:
+                    linked = await entity_writer.link_event_entities(
+                        ent_session, params["id"], entity_names
+                    )
+                    await ent_session.commit()
+                if linked:
+                    logger.debug(
+                        "Event entities linked: event=%s names=%d linked=%d",
+                        params["id"], len(entity_names), linked,
+                    )
+        except Exception as exc:  # noqa: BLE001 — 兜底，实体失败不影响事件合成
+            logger.warning(
+                "Event entity linking failed (event=%s): %s",
+                params["id"], exc, exc_info=False,
+            )
 
     logger.info(
         "Event synthesized: [v%s %s %d信源/%d篇] %s → %s%s",

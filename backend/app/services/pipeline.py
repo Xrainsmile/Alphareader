@@ -285,6 +285,12 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                         values["catalyst_type"] = item.catalyst_type
                         values["sentiment_entity"] = item.sentiment_entity
                         values["sentiment_reasoning"] = item.sentiment_reasoning
+                    # 世界线 P0：LLM 抽取的实体名列表（未规范化），落库供实体层消费。
+                    # 独立于 sentiment 分支——即使未开启情绪分析也要落实体。
+                    # 受 ENTITY_EXTRACTION_ENABLED 控制；关闭时 item.entities 本就为空。
+                    item_entities = getattr(item, "entities", None) or []
+                    if item_entities:
+                        values["entities"] = list(item_entities)[:5]
 
                     stmt = (
                         pg_insert(News)

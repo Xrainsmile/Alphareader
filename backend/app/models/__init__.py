@@ -2,6 +2,8 @@ from app.models.analytics import AnalyticsDaily, PipelineRun
 from app.models.catalyst import NewsCatalystStock
 from app.models.daily_briefing import DailyBriefing
 from app.models.digest_event_link import DigestEventLink
+from app.models.entity import Entity, EventEntity
+from app.models.event import Event
 from app.models.event_version import EventVersion
 from app.models.news import News
 from app.models.news_digest import NewsDigest
@@ -17,6 +19,7 @@ __all__ = [
     "NewsCatalystStock",
     "DailyBriefing",
     "DigestEventLink",
+    "Entity", "EventEntity",
     "EventVersion",
     "Event",
     "News", "NewsDigest", "Report",
