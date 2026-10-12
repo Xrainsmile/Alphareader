@@ -3,22 +3,22 @@
     {
       "path": "pages/reports/index",
       "style": {
-        "navigationBarTitleText": "Reports",
+        "navigationBarTitleText": "每日简报",
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
         "enablePullDownRefresh": true,
-        "backgroundColor": "#f0f2f5"
+        "backgroundColor": "#f6f7fb"
       }
     },
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "News",
+        "navigationBarTitleText": "精选资讯",
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
         "enablePullDownRefresh": true,
         "backgroundTextStyle": "dark",
-        "backgroundColor": "#f0f2f5",
+        "backgroundColor": "#f6f7fb",
         "onReachBottomDistance": 100
       }
     },
@@ -28,7 +28,7 @@
         "navigationBarTitleText": "Event Details",
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
-        "backgroundColor": "#f0f2f5"
+        "backgroundColor": "#f6f7fb"
       }
     },
     {
@@ -38,7 +38,7 @@
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
         "enablePullDownRefresh": true,
-        "backgroundColor": "#f0f2f5"
+        "backgroundColor": "#f6f7fb"
       }
     },
     {
@@ -47,7 +47,7 @@
         "navigationBarTitleText": "",
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
-        "backgroundColor": "#f0f2f5"
+        "backgroundColor": "#f6f7fb"
       }
     },
     {
@@ -56,7 +56,7 @@
         "navigationBarTitleText": "",
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
-        "backgroundColor": "#f0f2f5"
+        "backgroundColor": "#f6f7fb"
       }
     },
     {
@@ -66,25 +66,34 @@
         "navigationBarBackgroundColor": "#ffffff",
         "navigationBarTextStyle": "black",
         "enablePullDownRefresh": true,
-        "backgroundColor": "#f0f2f5"
+        "backgroundColor": "#f6f7fb"
+      }
+    },
+    {
+      "path": "pages/bookmarks/index",
+      "style": {
+        "navigationBarTitleText": "我的收藏",
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationBarTextStyle": "black",
+        "backgroundColor": "#f6f7fb"
       }
     }
   ],
   "tabBar": {
-    "color": "#8c8c9a",
-    "selectedColor": "#4285f4",
+    "color": "#8590a2",
+    "selectedColor": "#365fda",
     "backgroundColor": "#ffffff",
     "borderStyle": "black",
     "list": [
       {
         "pagePath": "pages/reports/index",
-        "text": "Reports",
+        "text": "简报",
         "iconPath": "static/tabbar/reports.svg",
         "selectedIconPath": "static/tabbar/reports-active.svg"
       },
       {
         "pagePath": "pages/index/index",
-        "text": "News",
+        "text": "资讯",
         "iconPath": "static/tabbar/news.svg",
         "selectedIconPath": "static/tabbar/news-active.svg"
       }

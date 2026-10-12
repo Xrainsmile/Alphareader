@@ -1,7 +1,10 @@
 <script>
+import { initBookmarks } from './utils/useBookmarks.js'
+
 export default {
   onLaunch() {
-    // AlphaReader launched
+    // 恢复收藏与阅读设置（三处入口共用同一份状态）
+    initBookmarks()
   },
 }
 </script>
