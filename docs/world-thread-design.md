@@ -157,6 +157,70 @@ T-02 后续可独立追加承运商绕行、战争险费率、运价指数、通
 2. **章节计数按线独立**：`thread.chapter_count` 只统计本线 `role` 属于 `core/trigger/reaction/signal` 的条目。同一事件可同时是 T-01 第 14 章与 T-02 第 11 章。
 3. **rollup 生成按线取材**：生成 T-02 摘要时只看 T-02 的章节，`trigger` 类压缩为「因 XX 袭击」一句引用，**不展开军事细节**。这是「机制分离」能否真正落地的关键 —— 否则两条线的 rollup 会趋同，分离就白做了。
 
+### 4.2 `thread_events` 表结构（P1-a 建表）
+
+完整 ORM / DDL 见 [p0-entity-layer-spec.md §2.4](/Users/rick/AlphaReader/docs/p0-entity-layer-spec.md)。这里只记**三个关键设计判断**。
+
+**① 章节三字段分离：`chapter_id` / `chapter_no` / `chapter_seq`**
+
+| 字段 | 语义 | 稳定性 | 用途 |
+|---|---|---|---|
+| `chapter_id` | 章节**身份** | **永久不变** | 传导链 / 观察点 / 人工操作引用 |
+| `chapter_no` | 展示**序号** | 可变（重排） | 前端展示、章节跳转 |
+| `chapter_seq` | **写入**顺序 | 仅追加 | 回放、审计、`COUNT` 计数 |
+
+**为什么必须分离**：同一个 Event 更新到 v3，通常**仍然是原来那一章**。
+事件版本是纵轴（同一事的时间演化），世界线章节是横轴（不同事的机制推进），两者正交。
+
+若只有单一序号，回填历史事件时要么撞号、要么重排导致所有外部引用失效。
+现在 `chapter_id` 承担引用、`chapter_seq` 只做审计，彻底解耦。
+
+**② 并发安全**：章节号分配用 PG advisory lock（事务级，提交自动释放），
+不用 `max+1`。`uq_thread_chapter_seq` 是最后防线——即使锁失效也宁可报错，不静默错号。
+
+**③ 快照必须存**：`events` 会被 90 天清理，线卡永久。
+`snapshot_title` / `snapshot_summary` 是必需字段，不是冗余。
+
+### 4.3 `thread_transmissions` 表结构（P1-e 建表）
+
+> 传导链：世界线内部「A → B」的因果传导边，对应线卡 `verified_chains` 段落（§7.1）。
+> **这是整套设计里最需要保守的一张表 —— 它存的是推断，不是事实。**
+
+完整 ORM / DDL 见 [p0-entity-layer-spec.md §2.5](/Users/rick/AlphaReader/docs/p0-entity-layer-spec.md)。
+
+#### `evidence_status` 三态：不能复用 `events.outcome_type`
+
+| 字段 | 层级 | 语义 | 现状 |
+|---|---|---|---|
+| `events.outcome_type` | 事件级 | 这个**事件自身**最后怎么收场 | 已实现 |
+| `events.watch_result` | 事件级 | 此前观察点是否兑现 | 已实现 |
+| **`evidence_status`** | **传导边级** | A→B 这条**因果推断**的证据强度 | 本次新增 |
+
+**关键区别**：油价事件本身可以 `confirmed`（确实涨了），
+但「袭击 → 油价涨」这条边仍然只能是 `hypothesis`。**两件事，必须独立字段。**
+
+#### 状态流转（硬约束）
+
+```
+hypothesis   → supported     ✅ 可升级（新证据出现）
+supported    → contradicted  ✅ 可降级（反向证据出现）
+hypothesis   → contradicted  ✅ 可降级
+contradicted → supported     ❌ 禁止自动回退，必须人工仲裁
+```
+
+`contradicted` 意味着我们**曾经推错过**。若允许自动回退，系统会在证据波动时
+反复横跳，形成「虚假因果确信」的动态版本。人工仲裁才能重新确立信任，并写入
+`arbitrated_by` 留痕。
+
+这与 §5.2「Embedding 0.90 不自动合并实体」是同一条保守原则：
+**实体和因果边同属「错了代价极高」的东西，都该走保守策略。**
+
+#### 引用 `chapter_id` 而非 `event_id`
+
+传导链是长期结构，`events` 会被清理、事件会更新版本。
+引用 `chapter_id` 保证章节迁移（Split/Move）与版本演进都不让传导链断头——
+这是 §4.2 三字段分离设计的直接收益。
+
 ---
 
 ## 5. 自动聚类算法
@@ -463,11 +527,14 @@ T-02 的第 12、13 章由绕行/费率/运价等**独立事件**推进，与 T-
 
 | 文件 | 作用 |
 |---|---|
-| [event_memory.py](/Users/rick/AlphaReader/backend/app/services/event_memory.py) | 现有类比召回，谱系通道需与之并行 |
+| [event_memory.py](/Users/rick/AlphaReader/backend/app/services/event_memory.py) | 现有类比通道，谱系通道需与之并行 |
 | [event.py](/Users/rick/AlphaReader/backend/app/models/event.py) | 事件聚合根模型，实体/线表参照此风格 |
 | [event_synthesizer.py](/Users/rick/AlphaReader/backend/app/services/event_synthesizer.py) | 合成入口，`_recall_memory` 为注入点 |
-| [llm_news_filter.py](/Users/rick/AlphaReader/backend/app/services/llm_news_filter.py) | P0 实体抽取的挂载点（扩 `sentiment_entity` 为数组） |
-| [config.py](/Users/rick/AlphaReader/backend/app/config.py) | `EVENT_MEMORY_*` 与 `LLM_*` 配置 |
+| [llm_news_filter.py](/Users/rick/AlphaReader/backend/app/services/llm_news_filter.py) | P0 实体抽取的挂载点（搭评分调用便车） |
+| [config.py](/Users/rick/AlphaReader/backend/app/config.py) | `EVENT_MEMORY_*` / `ENTITY_EXTRACTION_*` / `EVENT_SYNTH_MAX_TOKENS` |
+| [p0-entity-layer-spec.md](/Users/rick/AlphaReader/docs/p0-entity-layer-spec.md) | **P0 实施规格**：§2.4 `thread_events` / §2.5 `thread_transmissions` 完整 ORM + DDL |
+| [world-thread-routing-assessment.md](/Users/rick/AlphaReader/docs/world-thread-routing-assessment.md) | 归线算法评估：字段命名隔离、Jaccard 分母、`is_generic` 排除 |
+| [world-thread-governance-assessment.md](/Users/rick/AlphaReader/docs/world-thread-governance-assessment.md) | 人工治理评估：排除持久化（命门）、三套认证选型、restore 补强 |
 
 ## 附：信源
 
