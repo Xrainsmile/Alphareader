@@ -47,9 +47,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("backfill_threads")
 
-# 并发上限。归线是 DB 密集操作（每个事件要加载全部候选线算分），
-# 并发过高会打满连接池。取 8 保守起步。
-MAX_CONCURRENCY = 8
+# 并发上限。冷启动必须串行（=1），原因见下。
+#
+# 并发 > 1 时的竞争条件：N 个事件同时加载候选线列表 → 都发现没有匹配 →
+# 各自独立建线。结果是同一个主题裂成 N 条单章孤岛线，线永远长不大。
+# 串行按事件时间升序，才能让早期事件建的线被后续事件看见并命中。
+# 增量场景（一次一个事件）不存在此问题，可安全调高。
+MAX_CONCURRENCY = 1
 
 
 async def get_pending_event_ids(order: str) -> list[uuid.UUID]:

@@ -260,6 +260,23 @@ async def route_event(
             ev_ents, th_ents, ev_mechs, t.get("mechanism_key"),
             t.get("last_event_at"), now,
         )
+
+        # ② 硬筛选第二关：没有共同核心实体时禁止归线。
+        #    缺失机制时 mechanism_score 返回 1.0（语义是"不参与门控"），
+        #    新线 last_event_at 为空时 recency_bonus 也返回 1.0，
+        #    两者叠加让 S = 0.30*1.0 + 0.15*1.0 = 0.45 直接过阈值——
+        #    实体完全不重合的无关事件反而会被合并进同一条线。
+        #    归线的立身之本是实体重合，E=0 必须一票否决。
+        if e <= 0:
+            scored.append({
+                "thread_id": tid,
+                "title": t.get("title"),
+                "S": round(s, 4), "E": 0.0,
+                "M": round(m, 4), "R": round(r, 4),
+                "join": False,
+            })
+            continue
+
         scored.append({
             "thread_id": tid,
             "title": t.get("title"),
@@ -321,6 +338,52 @@ async def _record_shadow(event_id: uuid.UUID, scored: list[dict]) -> None:
         await session.commit()
 
 
+async def _attach_event(
+    thread_id: uuid.UUID,
+    event_id: uuid.UUID,
+    score: float,
+    session=None,
+) -> bool:
+    """把事件挂到线上（挂线的唯一入口）。
+
+    为什么必须统一：建线与命中两条路径都要写 thread_events，
+    分两处写就会再次出现「建线不挂线」这类只改一边的回归。
+
+    列名用 role 而非 membership_role——ORM 模型把属性名改成了
+    membership_role 并映射到列 role，但裸 SQL 必须用真实列名。
+    此前写错列名导致 UndefinedColumnError，归线从未成功写入过。
+
+    Args:
+        session: 传入则复用外部事务（建线+挂载必须同一事务）。
+
+    Returns:
+        是否真的插入（False 表示已存在，幂等跳过）。
+    """
+    sql = text("""
+        INSERT INTO thread_events
+            (thread_id, event_id, role, chapter_id,
+             assigned_by, match_score, snapshot_title)
+        SELECT :tid, :eid, 'core', gen_random_uuid(), 'auto', :score, e.title
+        FROM events e
+        WHERE e.id = :eid
+        ON CONFLICT (thread_id, event_id) DO NOTHING
+        RETURNING id
+    """)
+    owns_session = session is None
+    if owns_session:
+        async with async_session() as session:
+            rid = (await session.execute(
+                sql, {"tid": thread_id, "eid": event_id, "score": score}
+            )).scalar()
+            await session.commit()
+    else:
+        rid = (await session.execute(
+            sql, {"tid": thread_id, "eid": event_id, "score": score}
+        )).scalar()
+        # 不 commit：由调用方统一提交，保证建线与挂载原子性
+    return rid is not None
+
+
 async def _apply_routes(event_id: uuid.UUID, hits: list[dict]) -> None:
     """非影子模式：把命中的线写入 thread_events（幂等）。
 
@@ -330,23 +393,11 @@ async def _apply_routes(event_id: uuid.UUID, hits: list[dict]) -> None:
     """
     if not hits:
         return
-    # 列名必须对齐 thread_events 实际 schema：是 role 不是 membership_role。
-    # 此前写错列名导致 UndefinedColumnError——归线从未成功写入过，
-    # 这才是 thread_events 长期为 0 的真正根因（影子模式只是叠加因素）。
-    sql = text("""
-        INSERT INTO thread_events
-            (thread_id, event_id, role, chapter_id,
-             assigned_by, match_score, snapshot_title)
-        SELECT :tid, :eid, 'core', gen_random_uuid(), 'auto', :score, e.title
-        FROM events e
-        WHERE e.id = :eid
-        ON CONFLICT (thread_id, event_id) DO NOTHING
-    """)
     async with async_session() as session:
         for h in hits:
-            await session.execute(sql, {
-                "tid": h["thread_id"], "eid": event_id, "score": h["S"],
-            })
+            await _attach_event(
+                h["thread_id"], event_id, h["S"], session=session
+            )
         await session.commit()
     logger.info("routed event %s -> %d threads", event_id, len(hits))
 
@@ -386,9 +437,9 @@ async def maybe_create_thread(event_id: uuid.UUID) -> uuid.UUID | None:
     无命中又不建线 → 冷启动死锁，thread_route_scores 永远空。
     这是影子期跑不出来的根因。
 
-    影子模式同样建线——因为影子期要看的是「建了几条、合不合理」，
-    不建线就没有任何观测对象。但建线本身不写 thread_events（仍由
-    _apply_routes 在非影子模式下负责），保持影子语义一致。
+    建线后必须立即把当前事件挂进去作为第 1 章，且与建线在同一事务提交。
+    否则新线 chapter_count=0 是空壳，批量回填时后续事件看不到线内容，
+    最终得到大量只有一章甚至零章的孤岛线。
 
     Returns:
         新建线的 id；未达建线门槛时返回 None。
@@ -422,6 +473,14 @@ async def maybe_create_thread(event_id: uuid.UUID) -> uuid.UUID | None:
         tid = (await session.execute(sql, {
             "eid": event_id, "mech": mechanism, "core": json.dumps(core),
         })).scalar()
+        if tid:
+            # 建线与挂载同一事务：要么新线带着第 1 章一起出现，要么都不出现。
+            # 分两次提交会在中途崩溃时留下零章空线。
+            await _attach_event(tid, event_id, 1.0, session=session)
+            await session.execute(
+                text("UPDATE threads SET chapter_count = 1 WHERE id = :tid"),
+                {"tid": tid},
+            )
         await session.commit()
 
     if tid:
