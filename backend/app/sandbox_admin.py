@@ -99,7 +99,8 @@ tr:hover td{background:#f8f8fc}
 
 <div class="header">
   <div><h1>模拟仓管理</h1></div>
-  <a href="/dashboard" style="color:var(--blue);font-size:14px;text-decoration:none">← 返回 Dashboard</a>
+  <a href="/worldline-admin" style="color:#8b5cf6;font-size:14px;text-decoration:none">世界线管理台 →</a>
+  <a href="/dashboard" style="color:var(--blue);font-size:14px;text-decoration:none">返回 Dashboard</a>
 </div>
 
 <div class="tabs">

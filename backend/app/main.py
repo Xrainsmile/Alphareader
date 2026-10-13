@@ -80,6 +80,10 @@ app.include_router(dashboard_router)
 from app.sandbox_admin import router as sandbox_admin_router
 app.include_router(sandbox_admin_router)
 
+# ── 世界线管理台（复用 Dashboard 认证）──
+from app.worldline_admin import router as worldline_admin_router
+app.include_router(worldline_admin_router)
+
 # ── API 文档页面 ──
 from app.api_docs import router as api_docs_router
 app.include_router(api_docs_router)
