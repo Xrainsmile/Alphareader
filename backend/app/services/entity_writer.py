@@ -156,6 +156,15 @@ ALIAS_MAP: dict[str, str] = {
     "wti": "WTI原油",
 }
 
+# 挂载离线实体种子别名表（清洗后 806 条）。
+# 必须在 ALIAS_MAP 定义之后，种子别名以线上已有规范名为准，避免老实体被架空。
+try:
+    from app.services.entity_aliases_seed import SEED_ALIAS_MAP
+
+    ALIAS_MAP.update(SEED_ALIAS_MAP)
+except Exception as _seed_exc:  # noqa: BLE001
+    logger.warning("SEED_ALIAS_MAP not loaded: %s", _seed_exc)
+
 
 def _normalize(name: str) -> str:
     """规则归一化：去空白、去公司后缀、去尾部括号与标点。
@@ -206,12 +215,16 @@ def canonicalize(name: str) -> tuple[str, bool]:
             return norm, True
 
     # 别名表：大小写不敏感
+    # 命中别名后仍需判定 is_generic——种子里"美国/中国/欧洲/日本/全球/市场"
+    # 是刻意保留的泛化实体，必须标 generic 才能被归线排除。
     key = norm.lower()
     if key in ALIAS_MAP:
-        return ALIAS_MAP[key], False
+        canonical = ALIAS_MAP[key]
+        return canonical, canonical in GENERIC_ENTITIES
 
     if raw.lower() in ALIAS_MAP:
-        return ALIAS_MAP[raw.lower()], False
+        canonical = ALIAS_MAP[raw.lower()]
+        return canonical, canonical in GENERIC_ENTITIES
 
     return norm, False
 
