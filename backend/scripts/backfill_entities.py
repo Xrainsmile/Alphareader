@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import sys
+import argparse
 
 # 将后端根目录加入路径（兼容容器内 /app 与本地 backend/ 两种布局）
 _BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,7 +30,9 @@ logger = logging.getLogger(__name__)
 
 # ── 可调参数 ──
 BATCH_SIZE = 20          # 日志分批粒度
-MIN_SCORE = 6            # 仅回填 ai_score >= 6（5 分新闻在增量链路本就不抽实体）
+# 与线上增量链路保持一致：ENTITY_EXTRACTION_MIN_SCORE 默认 5。
+# 早期硬编码 6 会把 5 分新闻全滤掉，而增量链路 5 分是抽实体的，导致存量永远补不上。
+MIN_SCORE = 5            # 实际取值由 settings.ENTITY_EXTRACTION_MIN_SCORE 覆盖
 MAX_CONCURRENCY = 5      # LLM 并发上限
 MAX_ITEMS = 5            # 每条新闻最多实体数（与 ENTITY_EXTRACTION_MAX_ITEMS 一致）
 
@@ -92,7 +95,7 @@ async def _extract_entities(client, settings, row):
     return names, types
 
 
-async def backfill() -> None:
+async def backfill(args=None) -> None:
     from app.database import async_session
     from app.config import settings
     import httpx
@@ -101,21 +104,56 @@ async def backfill() -> None:
         logger.error("LLM_API_KEY 未配置，无法回填")
         return
 
+    # 与增量链路对齐：以配置里的 ENTITY_EXTRACTION_MIN_SCORE 为准
+    min_score = int(getattr(settings, "ENTITY_EXTRACTION_MIN_SCORE", MIN_SCORE))
+
     # 1) 取出待回填行
-    async with async_session() as session:
-        result = await session.execute(text("""
+    #    --event-scope：只回填「已有事件但事件层无实体关联」的新闻，避免全库重跑
+    #    --limit N / --dry-run：小批量验证与成本估算
+    event_scope = bool(getattr(args, 'event_scope', False))
+    limit = getattr(args, 'limit', None)
+    dry_run = bool(getattr(args, 'dry_run', False))
+
+    if event_scope:
+        sql = text("""
+            SELECT n.id, n.title, n.ai_summary, n.tags
+            FROM news n
+            JOIN events e ON e.id = n.id
+            WHERE (n.entities IS NULL OR array_length(n.entities, 1) IS NULL)
+              AND n.ai_score >= :min_score
+              AND n.title IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM event_entities ee WHERE ee.event_id = e.id
+              )
+            ORDER BY n.created_at DESC
+        """)
+    else:
+        sql = text("""
             SELECT id, title, ai_summary, tags
             FROM news
             WHERE (entities IS NULL OR array_length(entities, 1) IS NULL)
               AND ai_score >= :min_score
               AND title IS NOT NULL
             ORDER BY created_at DESC
-        """), {"min_score": MIN_SCORE})
+        """)
+
+    async with async_session() as session:
+        result = await session.execute(sql, {"min_score": min_score})
         rows = [dict(r._mapping) for r in result.fetchall()]
 
-    logger.info("待回填新闻数：%d（ai_score>=%d）", len(rows), MIN_SCORE)
+    logger.info("待回填新闻数：%d（ai_score>=%d，event_scope=%s）",
+                len(rows), min_score, event_scope)
     if not rows:
         logger.info("无需回填，结束。")
+        return
+
+    if limit:
+        rows = rows[: int(limit)]
+
+    if dry_run:
+        logger.info("DRY RUN：将调用 LLM %d 次，不写入。前 5 条：", len(rows))
+        for r in rows[:5]:
+            logger.info("  - [%s] %s", r["id"], (r["title"] or "")[:60])
         return
 
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
@@ -156,4 +194,10 @@ async def backfill() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(backfill())
+    _ap = argparse.ArgumentParser(description="回填 news.entities（LLM 抽取）")
+    _ap.add_argument("--event-scope", action="store_true",
+                     help="只回填有事件但无实体关联的新闻")
+    _ap.add_argument("--limit", type=int, default=None, help="只处理前 N 条")
+    _ap.add_argument("--dry-run", action="store_true", help="只估算不调用 LLM")
+
+    asyncio.run(backfill(_ap.parse_args()))

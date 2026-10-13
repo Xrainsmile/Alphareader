@@ -19,6 +19,7 @@ import asyncio
 import logging
 import os
 import sys
+import argparse
 
 _BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _BACKEND_ROOT not in sys.path:
@@ -31,10 +32,10 @@ logger = logging.getLogger(__name__)
 
 # ── 可调参数 ──
 BATCH_LOG = 50          # 每处理 N 个事件打印一次进度
-MAX_CONCURRENCY = 3      # 数据库并发上限（并发过高会在 entities 唯一键上死锁）
+MAX_CONCURRENCY = 1      # 串行：并发会在 entities 唯一键上冲突，且可能建出重复线
 
 
-async def main() -> None:
+async def main(args=None) -> None:
     from app.database import async_session
     from app.services import entity_writer
     from app.services.event_synthesizer import _collect_cluster_entities
@@ -43,10 +44,27 @@ async def main() -> None:
         logger.error("实体抽取总开关未启用（ENTITY_EXTRACTION_ENABLED=False），结束。")
         return
 
-    # 1) 取全部事件 id
+    # 1) 取待处理事件 id
+    #    --only-missing：只处理 event_entities 中没有任何关联的事件（默认全量，幂等）
+    #    --limit N：只处理前 N 个，便于小批量验证
+    only_missing = getattr(args, 'only_missing', False)
+    limit = getattr(args, 'limit', None)
+
+    if only_missing:
+        sql = text(
+            """SELECT e.id FROM events e
+               WHERE NOT EXISTS (SELECT 1 FROM event_entities ee WHERE ee.event_id = e.id)
+               ORDER BY e.created_at DESC"""
+        )
+    else:
+        sql = text("SELECT id FROM events ORDER BY created_at DESC")
+
     async with async_session() as session:
-        result = await session.execute(text("SELECT id FROM events ORDER BY created_at DESC"))
+        result = await session.execute(sql)
         event_ids = [str(r[0]) for r in result.fetchall()]
+
+    if limit:
+        event_ids = event_ids[: int(limit)]
 
     logger.info("待处理事件数：%d", len(event_ids))
     if not event_ids:
@@ -86,7 +104,8 @@ async def main() -> None:
                 if done % BATCH_LOG == 0:
                     logger.info("进度：%d / %d", done, len(event_ids))
 
-    await asyncio.gather(*[_worker(e) for e in event_ids])
+    for _e in event_ids:
+        await _worker(_e)
 
     logger.info(
         "搬运完成：关联事件 %d 个、关联记录 %d 条；无实体事件 %d 个；失败 %d 个；总计 %d",
@@ -95,4 +114,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    _ap = argparse.ArgumentParser(description="补齐事件实体关联")
+    _ap.add_argument("--only-missing", action="store_true", help="只处理尚无实体关联的事件")
+    _ap.add_argument("--limit", type=int, default=None, help="只处理前 N 个事件")
+    asyncio.run(main(_ap.parse_args()))

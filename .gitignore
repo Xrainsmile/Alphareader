@@ -60,3 +60,9 @@ data/ema_snapshots/*.csv
 data/ema_snapshots/*.log
 data/ema_snapshots/.progress_api.json
 data/watchlists/
+
+# Local agent logs
+logs/
+
+# Offline entity seed source data (keep; small & referenceable)
+# data/entities_old/  intentionally NOT ignored
