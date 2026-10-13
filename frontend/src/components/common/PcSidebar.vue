@@ -30,6 +30,14 @@
       </view>
 
       <view
+        class="pc-nav-item"
+        :class="{ 'pc-nav-active': active === 'worldline' }"
+        @click="navTo('/pages/worldline/index', false)"
+      >
+        <text class="pc-nav-text">世界线工作台</text>
+      </view>
+
+      <view
         class="pc-nav-item pc-nav-item-count"
         :class="{ 'pc-nav-active': active === 'bookmarks' }"
         @click="navTo('/pages/bookmarks/index', false)"

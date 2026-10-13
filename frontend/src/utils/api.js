@@ -576,3 +576,57 @@ export function closeSepaTrade(id, data) {
 export function deleteSepaTrade(id) {
   return request(`/api/v1/sepa/admin/trades/${id}`, { method: 'DELETE', headers: _sepaAuthHeader() })
 }
+
+// ── 世界线工作台 API（Worldline Workbench）──
+//
+// 与 threads 治理 API 的区别：本组全部只读，供工作台消费。
+// 后端见 backend/app/api/v1/workbench.py。
+
+/** 工作台元信息：枚举文案 + 数据健康度（传导链/观察点是否已启用） */
+export function fetchWorkbenchMeta() {
+  return request('/api/v1/workbench/meta')
+}
+
+/**
+ * 世界线列表（连续追踪）
+ * @param {Object} params - {status, q, min_chapters, sort, limit, offset}
+ */
+export function fetchWorkbenchThreads(params = {}) {
+  return request(`/api/v1/workbench/threads${_qs(params)}`)
+}
+
+/** 世界线详情：章节时间轴 + 传导链 + 关联实体 + 历史简报 */
+export function fetchWorkbenchThread(id) {
+  return request(`/api/v1/workbench/threads/${id}`)
+}
+
+/**
+ * 异动雷达
+ * @param {Object} params - {window_days: 7|30|90, min_chapters, limit}
+ */
+export function fetchWorkbenchRadar(params = {}) {
+  return request(`/api/v1/workbench/radar${_qs(params)}`)
+}
+
+/**
+ * 关键实体列表
+ * @param {Object} params - {q, entity_type, min_mentions, limit, offset}
+ */
+export function fetchWorkbenchEntities(params = {}) {
+  return request(`/api/v1/workbench/entities${_qs(params)}`)
+}
+
+/** 实体监控详情：角色分布 + 提及趋势 + 关联世界线 */
+export function fetchWorkbenchEntity(id) {
+  return request(`/api/v1/workbench/entities/${id}`)
+}
+
+/** 简报 → 世界线：该简报各条目所属世界线（按 event_id 分组） */
+export function fetchDigestThreadLinks(digestId) {
+  return request(`/api/v1/workbench/digests/${digestId}/thread-links`)
+}
+
+/** 世界线 → 简报：收录过本线章节的历史简报 */
+export function fetchThreadDigests(threadId, limit = 20) {
+  return request(`/api/v1/workbench/threads/${threadId}/digests${_qs({ limit })}`)
+}

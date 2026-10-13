@@ -70,6 +70,33 @@
       }
     },
     {
+      "path": "pages/worldline/index",
+      "style": {
+        "navigationBarTitleText": "世界线工作台",
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationBarTextStyle": "black",
+        "backgroundColor": "#f6f7fb"
+      }
+    },
+    {
+      "path": "pages/worldline/detail",
+      "style": {
+        "navigationBarTitleText": "世界线详情",
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationBarTextStyle": "black",
+        "backgroundColor": "#f6f7fb"
+      }
+    },
+    {
+      "path": "pages/worldline/entity",
+      "style": {
+        "navigationBarTitleText": "实体监控",
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationBarTextStyle": "black",
+        "backgroundColor": "#f6f7fb"
+      }
+    },
+    {
       "path": "pages/bookmarks/index",
       "style": {
         "navigationBarTitleText": "我的收藏",

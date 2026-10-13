@@ -1,5 +1,8 @@
 # AlphaReader 架构与上下文索引 (AI 专用)
 
+> **前端 UI 改动前必读**：[前端设计规范](./docs/frontend-design-spec.md)（唯一权威）与 [AGENTS.md](./AGENTS.md)（硬性约束摘要）。
+> 涉及色彩、圆角、间距、字号、层级、响应式、组件复用时，以设计规范为准，不得凭惯例发挥。
+
 ## 1. 项目定位与技术栈
 * **定位**：面向专业投资人的自动化金融情报系统，核心突出“高频”与“信噪比优先”。
 * **后端**：Python FastAPI (纯异步架构) + PostgreSQL 16 (asyncpg 驱动) + Redis 7。
@@ -47,3 +50,5 @@
 * **Sandbox Admin 页面**：`backend/app/sandbox_admin.py` (单文件内嵌 HTML/CSS/JS，后端渲染)。
 * **前端页面**：`frontend/src/pages/` (包含 index, reports, stocks 下的 .vue 文件)。
 * **前端组件**：`frontend/src/components/` (stocks/StocksTabBar, stocks/SandboxPasswordModal, common/EmptyState, common/SiteFooter)。
+* **设计令牌定义（唯一）**：`frontend/src/App.vue` 的 `:root` 块。
+* **设计规范文档**：`docs/frontend-design-spec.md`（P0 权威）、`docs/design-token-map.md`（替换对照）、`front.md`（`.vcp-*` 搜索栏体系）。

@@ -171,6 +171,19 @@
                   <text v-if="e.why_important" class="dc-mk-impact">Impact: {{ e.why_important }}</text>
                   <text v-if="e.watch_next" class="dc-mk-watch">Watch: {{ e.watch_next }}</text>
                   <text v-if="e.sources && e.sources.length" class="dc-mk-src">Sources: {{ e.sources.join(' / ') }}</text>
+                  <!-- 所属世界线入口：无归属时不渲染，保证"无世界线事件正常展示" -->
+                  <view v-if="threadLinksOf(e.event_id).length" class="dc-tl">
+                    <text class="dc-tl-label">世界线</text>
+                    <view
+                      v-for="tl in threadLinksOf(e.event_id)"
+                      :key="tl.thread_id"
+                      class="dc-tl-chip"
+                      @click.stop="goThread(tl)"
+                    >
+                      <text class="dc-tl-chip-text">{{ tl.thread_title }}</text>
+                      <text class="dc-tl-arrow">→</text>
+                    </view>
+                  </view>
                   <view class="dc-mk-foot" @click.stop="goEventDetail(e.event_id)">
                     <text class="dc-mk-detail">详情 →</text>
                   </view>
@@ -184,6 +197,17 @@
               <view v-for="e in sc(item).worth_watching" :key="e.event_id" class="dc-watch">
                 <text class="dc-watch-bullet">—</text>
                 <text class="dc-watch-text">{{ e.title }}<text v-if="e.sources && e.sources.length" class="dc-watch-src"> · {{ e.sources.join(' / ') }}</text></text>
+                <view v-if="threadLinksOf(e.event_id).length" class="dc-tl dc-tl-inline">
+                  <view
+                    v-for="tl in threadLinksOf(e.event_id)"
+                    :key="tl.thread_id"
+                    class="dc-tl-chip"
+                    @click.stop="goThread(tl)"
+                  >
+                    <text class="dc-tl-chip-text">{{ tl.thread_title }}</text>
+                    <text class="dc-tl-arrow">→</text>
+                  </view>
+                </view>
               </view>
             </view>
 
@@ -193,6 +217,17 @@
               <view v-for="e in ongoingList(item)" :key="e.event_id" class="dc-watch">
                 <text class="dc-watch-bullet">—</text>
                 <text class="dc-watch-text">{{ e.title }}<text v-if="e.sources && e.sources.length" class="dc-watch-src"> · {{ e.sources.join(' / ') }}</text><text v-if="e.note" class="dc-watch-note"> · {{ e.note }}</text></text>
+                <view v-if="threadLinksOf(e.event_id).length" class="dc-tl">
+                  <view
+                    v-for="tl in threadLinksOf(e.event_id)"
+                    :key="tl.thread_id"
+                    class="dc-tl-chip"
+                    @click.stop="goThread(tl)"
+                  >
+                    <text class="dc-tl-chip-text">{{ tl.thread_title }}</text>
+                    <text class="dc-tl-arrow">→</text>
+                  </view>
+                </view>
               </view>
             </view>
 
@@ -251,7 +286,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
-import { fetchDigests } from '@/utils/api'
+import { fetchDigests, fetchDigestThreadLinks } from '@/utils/api'
 import { renderMarkdown } from '@/utils/markdown'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -493,6 +528,43 @@ function goEventDetail(eventId) {
   uni.navigateTo({ url: `/pages/events/detail?id=${eventId}` })
 }
 
+// ── 简报 → 世界线入口 ──
+//
+// ★ 运行时关联而非随简报存储：历史简报必须保留生成时的事实与判断快照，
+//   但「这条事件属于哪条世界线」是活数据——归线会被人工修正（移线/拆线），
+//   若把归属写死进简报快照，修正后历史简报会指向错误的线。
+//   故每次渲染时按 event_id 实时关联，缺失即视为无归属，正常展示不加入口。
+const threadLinkMap = reactive({})   // { [digestId]: { [eventId]: link[] } }
+
+function threadLinksOf(eventId) {
+  if (!eventId) return []
+  for (const d of digestList.value) {
+    const m = threadLinkMap[d.id]
+    if (m && m[eventId]) return m[eventId]
+  }
+  return []
+}
+
+async function loadThreadLinks(digestId) {
+  if (!digestId || threadLinkMap[digestId]) return
+  try {
+    const res = await fetchDigestThreadLinks(digestId)
+    threadLinkMap[digestId] = (res && res.links) || {}
+  } catch (e) {
+    // 关联失败不阻断简报阅读：世界线入口是增强，不是简报本体
+    console.warn('[reports] 世界线关联加载失败:', e)
+    threadLinkMap[digestId] = {}
+  }
+}
+
+/** 点击世界线入口 → 进入世界线并定位到关联章节 */
+function goThread(tl) {
+  if (!tl || !tl.thread_id) return
+  const url = `/pages/worldline/detail?id=${tl.thread_id}` +
+    (tl.chapter_id ? `&chapter=${tl.chapter_id}` : '')
+  uni.navigateTo({ url })
+}
+
 // ── 导出简报为图片（样式与网页一致 + 扫码回看二维码，仅 H5）──
 const exportingId = ref(null)
 async function exportDigest(item) {
@@ -525,6 +597,8 @@ async function loadDigests() {
     if (digestList.value.length > 0 && expandedIds.size === 0) {
       expandedIds.add(digestList.value[0].id)
     }
+    // 世界线归属：异步补拉，失败也不影响简报本体阅读
+    digestList.value.forEach((d) => loadThreadLinks(d.id))
     // 深链定位：自动展开并滚动到对应简报
     await applyDigestDeepLink()
   } catch (e) {
@@ -1142,6 +1216,47 @@ onMounted(() => {
   display: block;
 }
 .dc-watch-src { color: var(--color-text-hint); font-size: 22rpx; }
+
+/* ── 世界线入口：简报条目 → 世界线 ──
+   无归属事件的条目不渲染本块，与"无世界线事件正常展示"一致 */
+.dc-tl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 8rpx;
+}
+.dc-tl-label {
+  font-size: 20rpx;
+  color: var(--color-text-hint);
+  letter-spacing: 0.5rpx;
+}
+.dc-tl-chip {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6rpx;
+  max-width: 460rpx;
+  padding: 4rpx 14rpx;
+  border-radius: var(--radius-r-pill, 999rpx);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+}
+.dc-tl-chip:active { background: var(--color-bg-hover); }
+.dc-tl-chip-text {
+  font-size: 21rpx;
+  color: var(--color-brand);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dc-tl-arrow {
+  font-size: 19rpx;
+  color: var(--color-brand);
+  flex-shrink: 0;
+}
+
 .dc-mk-foot { margin-top: 8rpx; }
 .dc-mk-detail {
   font-size: 22rpx;
@@ -1203,6 +1318,11 @@ onMounted(() => {
   .dc-mk-watch { font-size: 13px; }
   .dc-mk-src { font-size: 12px; }
   .dc-watch-src { font-size: 13px; }
+  .dc-tl { gap: 6px; margin-top: 6px; }
+  .dc-tl-label { font-size: 11px; }
+  .dc-tl-chip { padding: 2px 10px; max-width: 320px; }
+  .dc-tl-chip-text { font-size: 12px; }
+  .dc-tl-arrow { font-size: 11px; }
   .dc-conf { font-size: 11px; }
   .dc-mk-detail { font-size: 13px; }
   .dc-watch-text { font-size: 14px; }
@@ -1344,6 +1464,11 @@ onMounted(() => {
   .dc-mk-watch { font-size: 13px; }
   .dc-mk-src { font-size: 12px; }
   .dc-watch-src { font-size: 13px; }
+  .dc-tl { gap: 6px; margin-top: 6px; }
+  .dc-tl-label { font-size: 11px; }
+  .dc-tl-chip { padding: 2px 10px; max-width: 320px; }
+  .dc-tl-chip-text { font-size: 12px; }
+  .dc-tl-arrow { font-size: 11px; }
   .dc-conf { font-size: 11px; }
   .dc-mk-detail { font-size: 13px; }
   .dc-watch-text { font-size: 14px; }

@@ -3,6 +3,8 @@
 .env.production
 .env.bak.*
 .env.local
+# 前端本地 dev 环境变量（含 VITE_API_KEY，仅本机用；生产由 Nginx 注入）
+frontend/.env.development
 
 # Python
 __pycache__/
