@@ -206,6 +206,14 @@ def canonicalize(name: str) -> tuple[str, bool]:
     if norm in GENERIC_ENTITIES:
         return norm, True
 
+    # 噪声拦截：纯数字/数字主导的短串不是实体。
+    # 典型场景：车型代号（8295、8397）、股票序号（02423）、表单编号。
+    # 真实体名几乎不可能全部由数字构成，故直接判 generic 丢弃。
+    # 保留含字母的合法编号（MP3、3M、S-1、5G）不被误杀。
+    if norm.isdigit():
+        logger.debug("entity dropped as pure numeric: %r", raw)
+        return norm, True
+
     # 信源名过滤：发文媒体不构成事件主体，标记为 generic 以排除出归线 Jaccard。
     # 注意 allowlist 优先——OpenAI/Anthropic 这类既是信源又是真实主体的机构要保留。
     # 黑名单未加载时（_SOURCE_BLOCKLIST 空）跳过，避免误杀全部实体。
