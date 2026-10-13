@@ -59,12 +59,19 @@ async def get_pending_event_ids(order: str) -> list[uuid.UUID]:
     S 分必为 0，归线无意义，空跑纯属浪费。
 
     为什么要「未挂线」：保证幂等，重复执行不会重复写入。
+
+    ⚠️ 排序必须用事件时间（e.first_seen_at）而非 event_id：
+    归线的本质是「后来的事件找回先前的线」。若按 event_id（随机 UUID）
+    排序，每条事件都是"第一批出现"，候选线池始终为空 → 全部新建线，
+    跑完得到 N 条孤岛而不是世界线。按时间升序才能让早期事件先建线、
+    后续事件有机会命中已有线。
     """
     direction = "DESC" if order == "desc" else "ASC"
     sql = text(f"""
         SELECT DISTINCT ee.event_id
         FROM event_entities ee
         JOIN entities e ON e.id = ee.entity_id
+        JOIN events ev ON ev.id = ee.event_id
         WHERE COALESCE(e.is_generic, false) = false
           AND NOT EXISTS (
               SELECT 1 FROM thread_events te WHERE te.event_id = ee.event_id
@@ -73,7 +80,25 @@ async def get_pending_event_ids(order: str) -> list[uuid.UUID]:
     """)
     async with async_session() as session:
         rows = (await session.execute(sql)).all()
-    return [r[0] for r in rows]
+
+    # 在 Python 侧按事件时间重排：SQL 里 ORDER BY 与 DISTINCT 混用受
+    # 约束限制，且首轮本就需要在时间序上让线先"长出来"。
+    ids = [r[0] for r in rows]
+    if not ids:
+        return []
+
+    sql_ts = text("""
+        SELECT id, COALESCE(first_seen_at, created_at)
+        FROM events WHERE id = ANY(:ids)
+    """)
+    async with async_session() as session:
+        ts_rows = (await session.execute(sql_ts, {"ids": ids})).all()
+    ts_map = {r[0]: r[1] for r in ts_rows}
+
+    ids.sort(key=lambda x: (ts_map.get(x) is None, ts_map.get(x)))
+    if order == "desc":
+        ids.reverse()
+    return ids
 
 
 async def process_one(sem: asyncio.Semaphore, event_id: uuid.UUID) -> tuple[bool, str]:
