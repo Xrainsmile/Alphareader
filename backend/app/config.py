@@ -284,6 +284,13 @@ class Settings(BaseSettings):
     THREAD_MIN_CORE_ENTITIES: int = 2        # 开线所需最少非泛化实体数
     THREAD_MIN_MENTION_COUNT: int = 1        # 实体 mention_count 达标线（1=不额外限制）
 
+    # 自动建线时写入 core_entities 的实体数上限。
+    # 原硬编码 5，导致线的实体画像过窄：加权 Jaccard (Σmin/Σmax) 在
+    # 线侧实体少时会因 union 偏小而放大分母，实测 E 最高仅 0.25、
+    # 66.7% 候选配对 E=0，S 卡在 0.4375 过不了 T_JOIN=0.45。
+    # 放宽到 10 让线的实体画像更完整，提升真实同主题命中的重叠度。
+    THREAD_MAX_CORE_ENTITIES: int = 10
+
     # ── 事件级排序信号（纯规则，无需额外模型调用）──
     # 合成时算出 impact/novelty/urgency/confidence/relevance 五个 0-10 信号，
     # 派生 0-3 加分并入「重要」排序的 HN 重力公式，使 Reports 标为"必须知道"的

@@ -216,8 +216,18 @@ def _thread_entity_weights(core_entities: object) -> dict[str, int]:
     return {}
 
 
-async def route_event(event_id: uuid.UUID) -> list[dict]:
+async def route_event(
+    event_id: uuid.UUID, reference_at: datetime | None = None
+) -> list[dict]:
     """给单个事件归线。返回按 S 倒序的候选列表（含分项，供影子期调参）。
+
+    Args:
+        event_id: 待归线事件。
+        reference_at: 计算 R（时效性）时的「当前时刻」。
+            None（默认）＝实时场景，用 datetime.now()。
+            批量回填必须传入事件自身时间——否则历史事件（8~10 月）拿
+            now 比会指数衰减到 R≈0，0.15 权重的分项系统性归零，
+            实测 S 上限被压到 0.4375，永远跨不过 T_JOIN=0.45。
 
     影子模式（THREAD_ROUTING_SHADOW=True）：
       - 只算分 + 写 thread_operations 留痕（operation='route'，operator='auto'）
@@ -235,7 +245,9 @@ async def route_event(event_id: uuid.UUID) -> list[dict]:
     excluded = await _load_manual_exclusions(event_id)
     threads = await _load_candidate_threads()
 
-    now = datetime.now(timezone.utc)
+    now = reference_at or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     scored: list[dict] = []
     for t in threads:
         tid = t["id"]
@@ -391,7 +403,7 @@ async def maybe_create_thread(event_id: uuid.UUID) -> uuid.UUID | None:
     if len(qualified) < settings.THREAD_MIN_CORE_ENTITIES:
         return None
 
-    core = {name: weight for name, weight, _ in qualified[:5]}
+    core = {name: weight for name, weight, _ in qualified[: settings.THREAD_MAX_CORE_ENTITIES]}
     mechs = await _load_event_mechanisms(event_id)
     mechanism = mechs[0] if mechs else None
 

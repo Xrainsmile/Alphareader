@@ -98,13 +98,21 @@ async def get_pending_event_ids(order: str) -> list[uuid.UUID]:
     ids.sort(key=lambda x: (ts_map.get(x) is None, ts_map.get(x)))
     if order == "desc":
         ids.reverse()
-    return ids
+    return [(i, ts_map.get(i)) for i in ids]
 
 
-async def process_one(sem: asyncio.Semaphore, event_id: uuid.UUID) -> tuple[bool, str]:
+async def process_one(
+    sem: asyncio.Semaphore, event_id: uuid.UUID, reference_at
+) -> tuple[bool, str]:
+    """单事件归线。
+
+    reference_at 传事件自身时间：让 R 按「事件发生时线有多新」计算，
+    而不是「距今线有多新」。批量回填的历史事件若按 now 算 R 会全部
+    衰减到 0，0.15 权重系统性归零。
+    """
     async with sem:
         try:
-            await thread_router.route_event(event_id)
+            await thread_router.route_event(event_id, reference_at=reference_at)
             return True, ""
         except Exception as exc:  # noqa: BLE001
             return False, f"{type(exc).__name__}: {exc}"
@@ -153,10 +161,11 @@ async def main() -> int:
     for i in range(0, total, MAX_CONCURRENCY):
         batch = ids[i : i + MAX_CONCURRENCY]
         results = await asyncio.gather(
-            *(process_one(sem, eid) for eid in batch),
+            *(process_one(sem, eid, ts) for eid, ts in batch),
             return_exceptions=True,
         )
-        for eid, res in zip(batch, results):
+        for item, res in zip(batch, results):
+            eid = item[0]
             if isinstance(res, Exception):
                 fail += 1
                 errors.append(f"{eid}: {res}")
