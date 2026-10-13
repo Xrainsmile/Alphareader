@@ -269,8 +269,11 @@ class Settings(BaseSettings):
     THREAD_SCORE_W_ENTITY: float = 0.55
     THREAD_SCORE_W_MECHANISM: float = 0.30
     THREAD_SCORE_W_RECENCY: float = 0.15
-    # 归线阈值，S >= 该值才判定「属于这条线」
-    THREAD_T_JOIN: float = 0.45
+    # 归线阈值，S >= 该值才判定「属于这条线」。
+    # 0.45 -> 0.40：批量回填实测 S 上限 0.4375（E=0.25*0.55 + M=1*0.30 + R=0），
+    # 恒定跨不过 0.45，一条都无法归线。阈值源自影子期标定，但影子期实际
+    # 只跑了 1 小时（留痕 3 条）未达设计要求的 7~14 天，缺乏观测支撑。
+    THREAD_T_JOIN: float = 0.40
     # 核心实体（event_entities.weight >= 该值）在 Jaccard 中的加权倍率
     THREAD_CORE_ENTITY_WEIGHT: int = 3
     # 活跃度奖励 R 的半衰期（小时）：线最近一次更新距今越近，R 越大。
