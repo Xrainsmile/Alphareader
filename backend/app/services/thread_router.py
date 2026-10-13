@@ -330,9 +330,12 @@ async def _apply_routes(event_id: uuid.UUID, hits: list[dict]) -> None:
     """
     if not hits:
         return
+    # 列名必须对齐 thread_events 实际 schema：是 role 不是 membership_role。
+    # 此前写错列名导致 UndefinedColumnError——归线从未成功写入过，
+    # 这才是 thread_events 长期为 0 的真正根因（影子模式只是叠加因素）。
     sql = text("""
         INSERT INTO thread_events
-            (thread_id, event_id, membership_role, chapter_id,
+            (thread_id, event_id, role, chapter_id,
              assigned_by, match_score, snapshot_title)
         SELECT :tid, :eid, 'core', gen_random_uuid(), 'auto', :score, e.title
         FROM events e
