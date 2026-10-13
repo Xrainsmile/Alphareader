@@ -49,6 +49,10 @@ class News(Base):
     # 与 sentiment_entity 并存不替换：后者是单值主体（服务 A 股标的提取），
     # 前者是多值可关联（服务世界线聚类）。受 config.ENTITY_EXTRACTION_ENABLED 控制。
     entities: Mapped[list[str] | None] = mapped_column(ARRAY(String(128)), nullable=True)
+    # 与 entities 逐位对齐的实体类型：org/person/place/asset/commodity/concept。
+    # 无法判定的位置为 NULL（规格 3.2：未知就是 None，不强行填）。
+    # 旧数据无此列时全为 NULL，不影响 entities 的既有消费。
+    entity_types: Mapped[list[str] | None] = mapped_column(ARRAY(String(24)), nullable=True)
     # 方案A 事件中心化：LLM 将「根+关联报道」合成为一张事件卡片（仅写在聚合根上）
     # event_article_count 记录上次合成时的报道总数，新子报道到达后计数变大则触发重新合成
     event_title: Mapped[str | None] = mapped_column(String(512), nullable=True)

@@ -138,7 +138,9 @@ SYSTEM_PROMPT_CN = """你是财经新闻分析师。按下列标准评估每条�
 
 score 为0—10整数；summary ≤80字，概括主体、事件与关键数据；why_it_matters ≤40字，点明对盈利、估值、供需、政策或市场预期的具体影响，有量化对比或预期差时优先写入；tags 为3—5个字符串（板块、公司、事件定性），可为空数组；is_highlight 仅当 score>=8 且强催化已发生或正式确认、原文含量化依据、核心进展在7天内、来源可靠非未确认传闻时为 true。
 
-entities 为3—5个实体名（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；禁止泛称（市场、行业、全球、整体）、禁止推断或补充原文未出现的实体、禁止输出股票代码。按与该事件的相关度降序。可为空数组。
+entities 为3—5个对象数组，每个对象含 name 与 type 两个字段：name 为实体常用名（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；type 为该实体类型，取值仅限 org（机构/公司）、person（人物）、place（地点）、asset（资产）、commodity（商品）、concept（概念）六者之一，无法判定时填 null。禁止泛称（市场、行业、全球、整体）、禁止推断或补充原文未出现的实体、禁止输出股票代码。按与该事件的相关度降序。可为空数组。
+
+示例：entities: [{"name":"英伟达","type":"org"},{"name":"黄仁勋","type":"person"},{"name":"台积电","type":"org"}]
 
 实体用于长期事件串联，宁缺毋滥：拿不准就少写，绝不编造。
 
@@ -198,7 +200,7 @@ chinese_title ≤30字，chinese_summary ≤80字，以简体中文为主体；�
 
 score 为0—10整数；why_it_matters ≤40字，说明对盈利、估值、供需、政策或市场预期的具体影响；tags 为3—5个中文标签，可为空数组；is_highlight 仅当 score>=8 且催化已确认、含量化依据、进展在7天内、来源可靠时为 true。
 
-entities 为 3—5 个实体名（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；禁止泛称（市场、行业、全球、整体）、禁止推断或补充原文未出现的实体、禁止输出股票代码。按与该事件的相关度降序。可为空数组。
+entities 为 3—5 个对象数组，每个对象含 name 与 type 两个字段：name 为实体常用名（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；type 取值仅限 org（机构/公司）、person（人物）、place（地点）、asset（商品）、commodity（大宗商品）、concept（概念）六者之一，无法判定时填 null。禁止泛称（市场、行业、全球、整体）、禁止推断或补充原文未出现的实体、禁止输出股票代码。按与该事件的相关度降序。可为空数组。
 
 实体用于长期事件串联，宁缺毋滥：拿不准就少写，绝不编造。
 
@@ -253,7 +255,9 @@ SYSTEM_PROMPT_EN_SCORE = """你是财经新闻分析师。仅评估每条英文�
 
 score 为0—10整数；tags 为3—5个中文标签，可为空数组；is_highlight 仅当 score>=8 且催化已确认、含量化依据、进展在7天内、来源可靠时为 true，否则 false。
 
-entities: 3-5 concrete entity names (companies, institutions, persons, places, commodities, assets) explicitly mentioned in the text. No generic terms (market, industry, global), no inference beyond the text, no ticker symbols. Order by relevance, descending. May be [].
+entities: 3-5 objects, each with "name" and "type". "name" is a concrete entity explicitly mentioned in the text (companies, institutions, persons, places, commodities, assets). "type" must be one of: org, person, place, asset, commodity, concept; use null when uncertain. No generic terms (market, industry, global), no inference beyond the text, no ticker symbols. Order by relevance, descending. May be [].
+
+Example: "entities": [{"name":"NVIDIA","type":"org"},{"name":"Jensen Huang","type":"person"}]
 
 Entities are used to link events over long periods. Prefer fewer over incorrect: when uncertain, write less. Never fabricate."""
 
@@ -348,7 +352,9 @@ SYSTEM_PROMPT_EN_SINGLE = (
     "- chinese_summary：score>=6 时≤80字；score<6 时 \"\"\n"
     "- why_it_matters：score>=6 时≤40字，说明对盈利、估值、供需、政策或市场预期的具体影响；score<6 时 \"\"\n"
     "- tags：3—5个中文标签；score<6 时可为空数组 []\n"
-    "- entities：3—5个实体名（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；"
+    "- entities：3—5个对象数组，每个对象含 name 与 type 两个字段；name 为实体常用名"
+    "（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；"
+    "type 取值仅限 org、person、place、asset、commodity、concept 六者之一，无法判定时填 null；"
     "禁止泛称（市场、行业、全球、整体）、禁止推断或补充原文未出现的实体、禁止输出股票代码；"
     "按与该事件的相关度降序；score<6 时可为空数组 []。实体用于长期事件串联，宁缺毋滥，绝不编造\n"
     "- is_highlight：仅当 score>=8 且催化已确认、含量化依据、进展在7天内、来源可靠时为 true，否则 false\n\n"
@@ -403,6 +409,77 @@ def _detect_is_english(text: str) -> bool:
         return detect(text) == "en"
     except LangDetectException:
         return False
+
+
+def _ensure_entity_pairs(value, max_items: int = 5) -> tuple[list[str], list[str | None]]:
+    """解析 LLM 返回的 entities，兼容两种格式，返回 (names, types) 逐位对齐。
+
+    新格式（首选）：[{"name": "英伟达", "type": "org"}, ...]
+    旧格式（兼容）：["英伟达", "台积电", ...]  → types 全为 None
+
+    严格校验：非法项直接跳过而非抛错，保证评分结果不被实体解析失败拖累。
+    名称重复只保留首次出现（与 _ensure_string_list 行为一致）。
+    """
+    names: list[str] = []
+    types: list[str | None] = []
+    if not isinstance(value, list):
+        return [], []
+
+    seen: set[str] = set()
+    for item in value:
+        if isinstance(item, str):
+            name, etype = item.strip(), None
+        elif isinstance(item, dict):
+            raw_name = item.get("name")
+            if not isinstance(raw_name, str):
+                continue
+            name = raw_name.strip()
+            etype = _normalize_entity_type(item.get("type"))
+        else:
+            continue
+
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+        types.append(etype)
+        if len(names) >= max_items:
+            break
+
+    return names, types
+
+
+# entity_type 合法取值（与 p0-entity-layer-spec.md 一致，VARCHAR(24)）
+# org 机构 / person 人物 / place 地点 / asset 资产 / commodity 商品 / concept 概念
+VALID_ENTITY_TYPES: frozenset[str] = frozenset({
+    "org", "person", "place", "asset", "commodity", "concept",
+})
+
+
+def _normalize_entity_type(value) -> str | None:
+    """类型归一：大小写/中英文/常见别名 → 标准枚举；无法识别返回 None。
+
+    未知即 None（规格 3.2 节），绝不猜测填充。
+    """
+    if not isinstance(value, str):
+        return None
+    s = value.strip().lower()
+    if not s:
+        return None
+    if s in VALID_ENTITY_TYPES:
+        return s
+    # 中文与常见别名映射
+    alias = {
+        "机构": "org", "公司": "org", "企业": "org", "组织": "org",
+        "organization": "org", "company": "org", "institution": "org",
+        "人物": "person", "人": "person", "个人": "person",
+        "地点": "place", "地区": "place", "国家": "place", "城市": "place",
+        "location": "place", "region": "place", "country": "place",
+        "资产": "asset", "标的": "asset", "金融产品": "asset",
+        "商品": "commodity", "大宗商品": "commodity",
+        "概念": "concept", "主题": "concept", "题材": "concept",
+    }
+    return alias.get(s)
 
 
 def _ensure_string_list(value, max_items: int = 5) -> list[str]:
@@ -557,6 +634,10 @@ class ScoredNewsItem:
     # 供 EntityNormalizer 归一后写入 event_entities。与 sentiment_entity（单值主体，
     # 服务 A 股标的提取）语义不同，并存不替换。
     entities: list[str] = field(default_factory=list)
+    # 实体类型，与 entities 逐位对齐：org/person/place/asset/commodity/concept。
+    # 无法判定的位置留 None（规格要求"未知就是 None，不强行填"）。
+    # 独立于 entities 存在，避免改动下游 4 个消费点（均为 list[str]）。
+    entity_types: list[str | None] = field(default_factory=list)
     # 预筛决策原因（若启用预筛）：记录通过/继承/被拦截原因，落库供审计
     prefilter_reason: str | None = None
 
@@ -822,9 +903,11 @@ def _parse_response_detailed(
         # 三重闸门：总开关 → 分数档位 → 条数上限；任何异常一律空列表，
         # 绝不因此丢弃整条评分结果（宽容降级）。
         if entity_enabled and score >= entity_min_score:
-            entities = _ensure_string_list(item.get("entities"), max_items=entity_max_items)
+            entities, entity_types = _ensure_entity_pairs(
+                item.get("entities"), max_items=entity_max_items
+            )
         else:
-            entities = []
+            entities, entity_types = [], []
         # P0：relevant_tickers 不再由 LLM 返回，改为从原始标题+正文程序化提取
         tickers = extract_tickers_from_text(raw_item.title, raw_item.content)
 
@@ -894,6 +977,7 @@ def _parse_response_detailed(
                 why_it_matters=why_it_matters,
                 is_highlight=is_highlight,
                 entities=entities,
+                entity_types=entity_types,
             ))
         else:
             # DEPRECATED：Prompt 已不再要求 reason，此处仅容忍旧格式，缺失时自然为 ""
@@ -916,6 +1000,7 @@ def _parse_response_detailed(
                 why_it_matters=why_it_matters,
                 is_highlight=is_highlight,
                 entities=entities,
+                entity_types=entity_types,
             ))
 
     processed_ids = set(processed)

@@ -396,8 +396,8 @@ async def _find_candidate_clusters(
         return [dict(r) for r in result.mappings().all()]
 
 
-async def _collect_cluster_entities(cluster_id: str) -> list[str]:
-    """收集事件簇的实体名（根报道 + 全部子报道的 news.entities 并集）。
+async def _collect_cluster_entities(cluster_id: str) -> tuple[list[str], dict[str, str]]:
+    """收集事件簇的实体名与类型（根报道 + 全部子报道的 news.entities 并集）。
 
     世界线 P0：实体已在评分阶段抽取并落到 news.entities，此处只做聚合，
     **零 LLM 调用**。聚合的是「整簇」而非单条，因为子报道常携带根没有的
@@ -410,14 +410,19 @@ async def _collect_cluster_entities(cluster_id: str) -> list[str]:
         cluster_id: 聚合根的 news.id（与 events.id 同值）
 
     Returns:
-        去重后的实体名列表（未规范化，规范化交给 entity_writer）
+        (names, type_map)：
+        - names：去重后的实体名列表（未规范化，规范化交给 entity_writer）
+        - type_map：{原始实体名: entity_type}，仅含成功判定类型的实体。
+          同簇多源冲突时取首个非空值（首次判定优先）。
     """
     if not entity_writer.enabled():
-        return []
+        return [], {}
 
     try:
+        # 同时取 entity_types：与 entities 逐位对齐，用于填充 entities.entity_type。
+        # 缺失（旧数据）时该位置为 NULL，映射里不记录，最终落库为 None。
         sql = text("""
-            SELECT entities
+            SELECT entities, entity_types
             FROM news
             WHERE (id = :cid OR related_to_id = :cid)
               AND entities IS NOT NULL
@@ -425,7 +430,7 @@ async def _collect_cluster_entities(cluster_id: str) -> list[str]:
         """)
         async with async_session() as session:
             result = await session.execute(sql, {"cid": cluster_id})
-            rows = result.scalars().all()
+            rows = result.all()
     except Exception as exc:  # noqa: BLE001 — 实体是增强功能，绝不阻断主流程
         logger.warning(
             "_collect_cluster_entities failed (cluster=%s): %s", cluster_id, exc,
@@ -436,12 +441,19 @@ async def _collect_cluster_entities(cluster_id: str) -> list[str]:
     # 并集去重，保持首次出现顺序（顺序影响 P1 聚类时的权重判定）
     seen: set[str] = set()
     names: list[str] = []
+    type_map: dict[str, str] = {}
     for row in rows:
-        for name in row or []:
-            if name and name not in seen:
-                seen.add(name)
-                names.append(name)
-    return names
+        ent_names, ent_types = row[0] or [], row[1] or []
+        for i, name in enumerate(ent_names):
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            names.append(name)
+            # 同簇内同一实体被多源提及时，取第一个非空类型（首次判定优先）
+            t = ent_types[i] if i < len(ent_types) else None
+            if t:
+                type_map[name] = t
+    return names, type_map
 
 
 def _build_update_params(cluster: dict, parsed: dict) -> dict:
@@ -762,11 +774,12 @@ async def _synthesize_one(
     # 独立事务把实体层故障隔离在主链路之外——符合「增强功能绝不阻断主流程」。
     if entity_writer.enabled():
         try:
-            entity_names = await _collect_cluster_entities(params["id"])
+            entity_names, entity_type_map = await _collect_cluster_entities(params["id"])
             if entity_names:
                 async with async_session() as ent_session:
                     linked = await entity_writer.link_event_entities(
-                        ent_session, params["id"], entity_names
+                        ent_session, params["id"], entity_names,
+                        type_map=entity_type_map,
                     )
                     await ent_session.commit()
                 if linked:

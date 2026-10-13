@@ -17,6 +17,7 @@
    活跃线滚雪球的问题由衰减本身解决。
 """
 
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -264,6 +265,11 @@ async def route_event(event_id: uuid.UUID) -> list[dict]:
     await _record_shadow(event_id, top)
     if not settings.THREAD_ROUTING_SHADOW:
         await _apply_routes(event_id, hits)
+
+    # 无命中 → 尝试建新线。
+    # 必须放在打分之后：只有确认「没有线能收」才该开新线，否则会重复建线。
+    if not hits:
+        await maybe_create_thread(event_id)
     return top
 
 
@@ -328,3 +334,84 @@ async def _apply_routes(event_id: uuid.UUID, hits: list[dict]) -> None:
             })
         await session.commit()
     logger.info("routed event %s -> %d threads", event_id, len(hits))
+
+
+# ─────────────────────────── 自动建线（冷启动） ───────────────────────────
+
+async def _load_event_core_entities(
+    event_id: uuid.UUID, limit: int = 5
+) -> list[tuple[str, int, int]]:
+    """取事件的核心实体（已排除 is_generic），按 mention_count 倒序。
+
+    返回 [(canonical_name, weight, mention_count), ...]。
+    mention_count 用于「事件本身的实体是否够格开线」的门槛判定——
+    一次性提及的生僻实体不该单独立线，否则线会碎片化。
+    """
+    sql = text("""
+        SELECT e.canonical_name, ee.weight, COALESCE(e.mention_count, 1)
+        FROM event_entities ee
+        JOIN entities e ON e.id = ee.entity_id
+        WHERE ee.event_id = :eid
+          AND COALESCE(e.is_generic, false) = false
+        ORDER BY ee.weight DESC, COALESCE(e.mention_count, 1) DESC
+        LIMIT :lim
+    """)
+    async with async_session() as session:
+        rows = (await session.execute(sql, {"eid": event_id, "lim": limit})).all()
+    return [(r[0], int(r[1] or 1), int(r[2] or 1)) for r in rows if r[0]]
+
+
+async def maybe_create_thread(event_id: uuid.UUID) -> uuid.UUID | None:
+    """无命中时按设计规则建新线（embryo），返回新线 id 或 None。
+
+    规则（world-thread-design.md §5.3）：
+        无命中 且 核心实体 >= 2 且 mention_count 达标 → 建线 embryo
+
+    为什么必须实现：router 只在已有线里挑，没有线就永远「无命中」，
+    无命中又不建线 → 冷启动死锁，thread_route_scores 永远空。
+    这是影子期跑不出来的根因。
+
+    影子模式同样建线——因为影子期要看的是「建了几条、合不合理」，
+    不建线就没有任何观测对象。但建线本身不写 thread_events（仍由
+    _apply_routes 在非影子模式下负责），保持影子语义一致。
+
+    Returns:
+        新建线的 id；未达建线门槛时返回 None。
+    """
+    if not settings.THREAD_ROUTING_ENABLED:
+        return None
+
+    ents = await _load_event_core_entities(event_id)
+    if len(ents) < settings.THREAD_MIN_CORE_ENTITIES:
+        return None
+
+    # mention_count 门槛：至少 THREAD_MIN_CORE_ENTITIES 个实体达标，
+    # 避免「一个热实体 + 一个冷门实体」凑数开线。
+    qualified = [x for x in ents if x[2] >= settings.THREAD_MIN_MENTION_COUNT]
+    if len(qualified) < settings.THREAD_MIN_CORE_ENTITIES:
+        return None
+
+    core = {name: weight for name, weight, _ in qualified[:5]}
+    mechs = await _load_event_mechanisms(event_id)
+    mechanism = mechs[0] if mechs else None
+
+    sql = text("""
+        INSERT INTO threads
+            (title, mechanism_key, status, core_entities, chapter_count, last_event_at)
+        SELECT e.title, :mech, 'embryo', CAST(:core AS jsonb), 0, e.last_updated_at
+        FROM events e
+        WHERE e.id = :eid
+        RETURNING id
+    """)
+    async with async_session() as session:
+        tid = (await session.execute(sql, {
+            "eid": event_id, "mech": mechanism, "core": json.dumps(core),
+        })).scalar()
+        await session.commit()
+
+    if tid:
+        logger.info(
+            "auto-created thread %s for event %s (entities=%d, mech=%s)",
+            tid, event_id, len(qualified), mechanism,
+        )
+    return tid

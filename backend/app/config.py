@@ -217,6 +217,40 @@ class Settings(BaseSettings):
     # 单条事件最多保留的实体数（解析器硬截断，防 LLM 返回超长数组）
     ENTITY_EXTRACTION_MAX_ITEMS: int = 5
 
+    # ── 世界线 P0：实体层信源名过滤 ──
+    # 漏洞：LLM 会把发文媒体（Yahoo Finance / Seeking Alpha / MarketWatch 等）误当作
+    # 事件参与实体抽出来，落库后污染归线的 E 值（实体 Jaccard）——两条不相关的线只要
+    # 都引了同一家媒体就会被判相似，而 E 在 S=0.55E+0.30M+0.15R 里权重最高。
+    # 过滤规则：归一化后命中下列任一信源名即剔除（写入 is_generic 而非丢弃，
+    # 保留 mention_count 以便回溯误杀）。可用 .env 的 JSON 数组覆盖。
+    ENTITY_SOURCE_BLOCKLIST: list[str] = Field(
+        default_factory=lambda: [
+            # 财经媒体 / 通讯社（纯信源，非事件参与者）
+            "Yahoo Finance", "YahooFinance", "Yahoo", "Seeking Alpha", "SeekingAlpha",
+            "MarketWatch", "Benzinga", "Barron's", "Barrons", "Investing.com",
+            "CNBC", "Reuters", "Bloomberg", "Financial Times", "FT", "WSJ",
+            "Wall Street Journal", "TheStreet", "Zacks", "Motley Fool",
+            "TechCrunch", "The Verge", "The Verge AI", "Wired", "Ars Technica",
+            "Engadget", "VentureBeat", "MarkTechPost", "Simon Willison",
+            "富途新闻", "财联社", "新浪财经", "东方财富", "同花顺", "雪球",
+            "证券时报", "上海证券报", "中国证券报", "第一财经", "21世纪经济报道",
+            # 交易所 / 监管（作为"来源"时是发布渠道，不是事件主体）
+            "SEC EDGAR", "SEC", "EDGAR", "NASDAQ", "NYSE", "HKEX",
+        ]
+    )
+    # 豁免名单：既是信源名、本身也是真实事件主体的机构。
+    # 例：OpenAI Blog 是信源，但 OpenAI 是事件主体；Anthropic / NVIDIA 同理。
+    # 命中豁免时保留为实体（前提是 LLM 确实从正文抽出了它）。
+    ENTITY_SOURCE_ALLOWLIST: list[str] = Field(
+        default_factory=lambda: [
+            "OpenAI", "Anthropic", "NVIDIA", "Nvidia", "Google", "Microsoft",
+            "Apple", "Amazon", "Meta", "Tesla", "DeepMind", "xAI",
+        ]
+    )
+    # 从数据库动态加载近 N 天出现过的 news.source 追加进黑名单（0 = 关闭）。
+    # 覆盖未被静态表收录的新增信源；开库查询成本极低（DISTINCT 单列）。
+    ENTITY_SOURCE_BLOCKLIST_FROM_DB_DAYS: int = 30
+
     # ── 世界线 P1-c：归线打分（S = 0.55E + 0.30M + 0.15R）──
     # 总开关：关闭后不做任何归线计算，事件正常合成但不挂线。
     THREAD_ROUTING_ENABLED: bool = True
@@ -238,6 +272,9 @@ class Settings(BaseSettings):
     THREAD_MAX_LINES_PER_EVENT: int = 3
     # 候选线扫描上限（性能保护，按 last_event_at 倒序取最近 N 条 active 线）
     THREAD_CANDIDATE_LIMIT: int = 200
+    # ── 自动建线门槛（world-thread-design.md §5.3：核心实体 >= 2 才建 embryo 线）──
+    THREAD_MIN_CORE_ENTITIES: int = 2        # 开线所需最少非泛化实体数
+    THREAD_MIN_MENTION_COUNT: int = 1        # 实体 mention_count 达标线（1=不额外限制）
 
     # ── 事件级排序信号（纯规则，无需额外模型调用）──
     # 合成时算出 impact/novelty/urgency/confidence/relevance 五个 0-10 信号，

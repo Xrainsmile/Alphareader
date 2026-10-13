@@ -291,6 +291,12 @@ async def _store_scored_items(items: list[ScoredNewsItem]) -> tuple[int, list[st
                     item_entities = getattr(item, "entities", None) or []
                     if item_entities:
                         values["entities"] = list(item_entities)[:5]
+                        # 类型与名字逐位对齐；缺失时补 None 保证长度一致。
+                        raw_types = getattr(item, "entity_types", None) or []
+                        values["entity_types"] = [
+                            (raw_types[i] if i < len(raw_types) else None)
+                            for i in range(len(values["entities"]))
+                        ]
 
                     stmt = (
                         pg_insert(News)

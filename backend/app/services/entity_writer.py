@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -39,6 +39,85 @@ GENERIC_ENTITIES: frozenset[str] = frozenset({
     "美国", "中国", "欧洲", "日本", "全球市场", "国际市场",
     "资本市场", "金融市场", "经济", "政策", "监管",
 })
+
+# ── 信源名黑名单（运行时）────────────────────────────────────
+# 由 settings.ENTITY_SOURCE_BLOCKLIST（静态）与 DB 近期 news.source（动态）合并而成。
+# _SOURCE_BLOCKLIST_LOADED 标记是否已加载，避免每批重复查库。
+_SOURCE_BLOCKLIST: set[str] = set()
+_SOURCE_BLOCKLIST_LOADED: bool = False
+
+
+def _norm_key(name: str) -> str:
+    """黑名单比对键：去空白、去常见媒体后缀、全小写。"""
+    s = (name or "").strip().lower()
+    s = re.sub(r"\s+", "", s)
+    # 剥离信源常见的频道后缀，使 "OpenAI Blog" → "openai"、"Yahoo Finance" → "yahoo"。
+    # 注意：不剥离 "ai" —— 会误伤 OpenAI / xAI / DeepMind 等真实主体名。
+    # 且仅在剩余部分仍是合理主体（≥3 字符）时才剥离，避免 "FT" 被剥成空。
+    for suffix in ("blog", "news", "finance", "media", "press", "wire", "report"):
+        if s.endswith(suffix) and len(s) - len(suffix) >= 3:
+            s = s[: -len(suffix)]
+            break
+    return s
+
+
+async def _load_source_blocklist(session: AsyncSession | None = None) -> set[str]:
+    """合并静态黑名单与 DB 近期信源，返回归一化的比对键集合。
+
+    失败时退化到纯静态表，绝不抛异常（实体属增强功能）。
+    """
+    global _SOURCE_BLOCKLIST, _SOURCE_BLOCKLIST_LOADED
+
+    if _SOURCE_BLOCKLIST_LOADED:
+        return _SOURCE_BLOCKLIST
+
+    keys = {_norm_key(n) for n in settings.ENTITY_SOURCE_BLOCKLIST}
+    # 豁免名单：既是信源又是真实主体的机构，不进黑名单
+    allow = {_norm_key(n) for n in settings.ENTITY_SOURCE_ALLOWLIST}
+    keys -= allow
+
+    days = int(getattr(settings, "ENTITY_SOURCE_BLOCKLIST_FROM_DB_DAYS", 30) or 0)
+    if days > 0:
+        try:
+            from app.models.news import News
+
+            owns_session = session is None
+            if owns_session:
+                from app.database import async_session as _session_factory
+
+                session = _session_factory()
+            try:
+                cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+                rows = (
+                    await session.execute(
+                        select(News.source).where(
+                            News.source.isnot(None), News.created_at >= cutoff
+                        ).distinct()
+                    )
+                ).scalars().all()
+                for s in rows:
+                    k = _norm_key(s)
+                    if k and k not in allow:
+                        keys.add(k)
+            finally:
+                if owns_session:
+                    await session.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("source blocklist DB load failed, using static only: %s", exc)
+
+    _SOURCE_BLOCKLIST = keys
+    _SOURCE_BLOCKLIST_LOADED = True
+    logger.info("Entity source blocklist loaded: %d keys", len(keys))
+    return _SOURCE_BLOCKLIST
+
+
+def is_source_name(name: str, blocklist: set[str] | None = None) -> bool:
+    """判断实体名是否为发文媒体（信源）而非事件主体。"""
+    if not name:
+        return False
+    keys = blocklist if blocklist is not None else _SOURCE_BLOCKLIST
+    return _norm_key(name) in keys
+
 
 # ── 规则归一化 ──────────────────────────────────────────────────
 # 公司后缀 / 国家后缀 / 空白与大小写
@@ -116,6 +195,16 @@ def canonicalize(name: str) -> tuple[str, bool]:
     if norm in GENERIC_ENTITIES:
         return norm, True
 
+    # 信源名过滤：发文媒体不构成事件主体，标记为 generic 以排除出归线 Jaccard。
+    # 注意 allowlist 优先——OpenAI/Anthropic 这类既是信源又是真实主体的机构要保留。
+    # 黑名单未加载时（_SOURCE_BLOCKLIST 空）跳过，避免误杀全部实体。
+    if _SOURCE_BLOCKLIST and is_source_name(norm):
+        _norm = _norm_key(norm)
+        allow = {_norm_key(n) for n in settings.ENTITY_SOURCE_ALLOWLIST}
+        if _norm not in allow:
+            logger.debug("entity dropped as source name: %r", raw)
+            return norm, True
+
     # 别名表：大小写不敏感
     key = norm.lower()
     if key in ALIAS_MAP:
@@ -131,23 +220,41 @@ async def upsert_entities(
     session: AsyncSession,
     names: list[str],
     seen_at: datetime | None = None,
+    type_map: dict[str, str] | None = None,
 ) -> dict[str, Entity]:
     """批量 upsert 实体卡，返回 {canonical_name: Entity}。
 
     只增不减：mention_count 累加，last_seen_at 取最大，first_seen_at 不覆盖。
     规范名唯一（canonical_name 上有 unique 约束），用 ON CONFLICT 累加。
+
+    Args:
+        names: LLM 抽取的**原始**实体名（未规范化）
+        seen_at: 提及时间
+        type_map: {原始实体名: entity_type}，由调用方从 news.entity_types 聚合而来。
+            未命中的实体 entity_type 为 None——规格要求"未知就是 None，不强行填"。
+            已存在的实体卡**不覆盖**已有类型（首次判定优先，避免类型抖动）。
     """
     if not names:
         return {}
 
+    # 首次调用时加载信源黑名单（静态配置 + DB 近期信源）
+    await _load_source_blocklist(session)
+
     now = seen_at or datetime.now(timezone.utc)
-    # 去重：同一批里可能有多个别名指向同一规范名
+    type_map = type_map or {}
+    # 去重：同一批里可能有多个别名指向同一规范名。
+    # 类型用原始名查（canonicalize 会改写名字），同一规范名取首个非空类型。
     canonical_map: dict[str, bool] = {}
+    canonical_types: dict[str, str | None] = {}
     for n in names:
         canon, is_generic = canonicalize(n)
         if not canon:
             continue
-        canonical_map[canon] = is_generic
+        if canon not in canonical_map:
+            canonical_map[canon] = is_generic
+            canonical_types[canon] = type_map.get(n)
+        elif canonical_types.get(canon) is None:
+            canonical_types[canon] = type_map.get(n)
 
     if not canonical_map:
         return {}
@@ -155,6 +262,7 @@ async def upsert_entities(
     rows = [
         {
             "canonical_name": canon,
+            "entity_type": canonical_types.get(canon),
             "is_generic": is_generic,
             "mention_count": 1,
             "first_seen_at": now,
@@ -165,6 +273,8 @@ async def upsert_entities(
     ]
 
     stmt = pg_insert(Entity).values(rows)
+    # 已存在的实体卡：只累加 mention_count 与 last_seen_at。
+    # entity_type 不覆盖（首次判定优先，防止同一实体在多事件中类型抖动）。
     stmt = stmt.on_conflict_do_update(
         index_elements=["canonical_name"],
         set_={
@@ -186,6 +296,7 @@ async def link_event_entities(
     event_id: str,
     names: list[str],
     default_weight: int = 1,
+    type_map: dict[str, str] | None = None,
 ) -> int:
     """建立 events ↔ entities 关联，返回成功关联条数。
 
@@ -196,7 +307,7 @@ async def link_event_entities(
         return 0
 
     try:
-        entity_map = await upsert_entities(session, names)
+        entity_map = await upsert_entities(session, names, type_map=type_map)
         if not entity_map:
             return 0
 
