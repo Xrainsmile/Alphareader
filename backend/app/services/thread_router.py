@@ -375,13 +375,35 @@ async def _attach_event(
             rid = (await session.execute(
                 sql, {"tid": thread_id, "eid": event_id, "score": score}
             )).scalar()
+            if rid:
+                await _sync_chapter_count(thread_id, session=session)
             await session.commit()
     else:
         rid = (await session.execute(
             sql, {"tid": thread_id, "eid": event_id, "score": score}
         )).scalar()
         # 不 commit：由调用方统一提交，保证建线与挂载原子性
+        if rid:
+            await _sync_chapter_count(thread_id, session=session)
     return rid is not None
+
+
+async def _sync_chapter_count(thread_id: uuid.UUID, session) -> None:
+    """把 threads.chapter_count 同步为 thread_events 实际行数。
+
+    chapter_count 是冗余字段，之前只在建线时置 1、后续挂载不递增，
+    导致线看着全是单章（孤岛率 100% 的假象），而实际已有 13 章的线。
+    统一以关联表为准重算，避免这类字段漂移。
+    """
+    await session.execute(
+        text("""
+            UPDATE threads
+            SET chapter_count = COALESCE(c.cnt, 0)
+            FROM (SELECT COUNT(*) cnt FROM thread_events WHERE thread_id = :tid) c
+            WHERE id = :tid
+        """),
+        {"tid": thread_id},
+    )
 
 
 async def _apply_routes(event_id: uuid.UUID, hits: list[dict]) -> None:
