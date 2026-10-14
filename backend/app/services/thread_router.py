@@ -353,9 +353,23 @@ def is_market_snapshot(title: str) -> bool:
     """
     if not settings.THREAD_MARKET_SNAPSHOT_ENABLED or not title:
         return False
-    for p in settings.THREAD_MARKET_SNAPSHOT_PATTERNS:
+    # 1) 强信号：直接判快照（描述的是盘面本身，无追踪标的）
+    for p in settings.THREAD_MARKET_SNAPSHOT_STRONG:
         if re.search(p, title):
             return True
+
+    # 2) 弱信号：先检查是否有豁免事件（有具体事件 → 盘面只是结果）
+    weak_hit = False
+    for p in settings.THREAD_MARKET_SNAPSHOT_WEAK:
+        if re.search(p, title):
+            weak_hit = True
+            break
+    if weak_hit:
+        for p in settings.THREAD_MARKET_SNAPSHOT_RESCUE:
+            if re.search(p, title):
+                return False
+        return True
+
     return False
 
 
