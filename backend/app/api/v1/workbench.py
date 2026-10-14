@@ -760,17 +760,23 @@ async def digest_thread_progress(
       1) 过滤 noise 角色 —— 与世界线详情页 _chapter_rows 的
          `COALESCE(te.role,'core') <> 'noise'` 保持一致。noise 章节不参与展示，
          若不排除，本端点算出的章号会比详情页看到的最大章号大。
-      2) 章号取 MAX(te.chapter_no)。chapter_no 方向为「最早章 = #1、最新章 = #N」
-         （依据 workbench.py 中 display_no 的回退式 total - i + 1，i=1 为最新章），
-         故 MAX 即最新章，可直接拼「第 N 章」。
-      chapter_count 仅作参考返回（它由 _sync_chapter_count 维护，含 noise，
-         与展示章号可能不等，前端不要用它当「第 N 章」）。
+      ★ 2) 两个字段的作用域不同，不能混：
+         · latest_chapter_no = 整条线的最大章号（线的位置），
+           必须跨全量章节取，**不能受 digest 过滤影响**。
+           早期版本写成 MAX(te.chapter_no) 直接跟在 WHERE l.digest_id=:d 后面，
+           导致章号只在「本期收录的几个事件」里取最大值——
+           若本期收的不是最新两章，就会显示比详情页更小的章号（实测 34 vs 36）。
+           两处章号对不上 = 「按章号摘错章」，治理动作会寻址到错误的章节。
+         · new_chapters = 本期新增数（本期增量），受 digest 过滤，正确。
+         故 latest_chapter_no 走独立子查询，new_chapters 留在主聚合。
     """
     rows = (await db.execute(text("""
         SELECT t.id AS thread_id, t.title AS thread_title,
                t.status AS thread_status, t.chapter_count,
                COUNT(DISTINCT l.event_id) AS new_chapters,
-               MAX(te.chapter_no) AS latest_chapter_no,
+               (SELECT MAX(x.chapter_no) FROM thread_events x
+                 WHERE x.thread_id = t.id
+                   AND COALESCE(x.role, 'core') <> 'noise') AS latest_chapter_no,
                array_agg(te.snapshot_title ORDER BY te.chapter_no DESC) AS new_titles
         FROM digest_event_links l
         JOIN thread_events te ON te.event_id = l.event_id
