@@ -30,6 +30,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import async_session
+from app.services.entity_writer import canonicalize  # noqa: F401  P0-6 动态归一化
 
 logger = logging.getLogger(__name__)
 
@@ -426,8 +427,16 @@ async def _load_event_entities(event_id: uuid.UUID) -> dict[str, int]:
     for name, w in rows:
         if not name:
             continue
-        # ★ P0-3：披露形式 / 通用名词不参与归线。
+        # ★ P0-3：披露形式不参与归线。
         #   它们描述的是"怎么说的"而非"说的是谁"，作为锚点会把无关事件串线。
+        if name in blocked:
+            continue
+        # ★ P0-6：加载时动态归一化。
+        #   ALIAS_MAP 是**持续扩充**的，而存量 canonical_name 是写入那一刻的
+        #   快照。实测 18 个实体（Nvidia/AMD/IEA/三星电子/美光科技...）在库里
+        #   仍是英文或啰嗦写法，与线侧中文规范名零交集，E 恒为 0。
+        #   比较时才归一化，可覆盖全部存量，无需回刷数据库。实测 +3 条。
+        name = canonicalize(name)[0]
         if name in blocked:
             continue
         w = int(w or 1)
@@ -498,14 +507,149 @@ def _thread_entity_weights(core_entities: object) -> dict[str, int]:
     """
     blocked = _denylist()
     if isinstance(core_entities, dict):
-        return {
-            str(k): int(v or 1)
-            for k, v in core_entities.items()
-            if str(k) not in blocked
-        }
-    if isinstance(core_entities, list):
-        return {str(x): 1 for x in core_entities if str(x) not in blocked}
-    return {}
+        raw = {str(k): int(v or 1) for k, v in core_entities.items()}
+    elif isinstance(core_entities, list):
+        raw = {str(x): 1 for x in core_entities}
+    else:
+        return {}
+
+    # ★ P0-6：与事件侧对称，线侧也在比较时动态归一化。
+    #   ALIAS_MAP 持续扩充，存量 core_entities 里的旧写法（如「霍尔木兹」）
+    #   需要在此归一到线侧规范名，才能与事件侧对齐。
+    out: dict[str, int] = {}
+    for k, v in raw.items():
+        c = canonicalize(k)[0]
+        if c in blocked:
+            continue
+        out[c] = max(out.get(c, 0), v)
+    return out
+
+
+async def _semantic_route(
+    event_id: uuid.UUID,
+    ev_title: str,
+    ev_kind: str,
+    excluded: set,
+    now: datetime,
+) -> list[dict] | None:
+    """P3-1：语义归线。cos(事件向量, 线原型) 排序取 Top-1。
+
+    Returns:
+        None = 语义不可用（无事件向量 / 无线有原型）→ 调用方决定是否回退规则
+        list = 排序后的候选，命中项 join=True
+
+    ★ 与规则路的三点本质差异：
+      1. 不设绝对阈值（实测 F1 从 0.766 掉到 0.562），只按 rank 取第一
+      2. 不做 entity_gate（主题型线 84% 的漏归出自此处）
+      3. 仍是「先硬拦截、后排序」：market_snapshot / 人工排除 / 类型互斥
+         三类拦截型规则保留，它们决定"要不要归"，语义只决定"归哪条"
+    """
+    from app.services import thread_prototype as tp
+
+    ev_vec = await _load_event_embedding(event_id)
+    if ev_vec is None:
+        return None
+
+    protos = await _load_thread_prototypes()
+    if not protos:
+        return None
+
+    threads = await _load_candidate_threads()
+    tmap = {str(t["id"]): t for t in threads}
+
+    scored: list[dict] = []
+    for tid, proto in protos.items():
+        t = tmap.get(tid)
+        if t is None:
+            continue
+        # ① 人工排除优先于一切（与规则路一致）
+        if uuid.UUID(tid) in excluded:
+            continue
+        # ② 类型互斥一票否决（与规则路一致）
+        th_kind = _infer_thread_kind(t)
+        if settings.THREAD_KIND_GATE_ENABLED and kind_conflict(ev_kind, th_kind):
+            scored.append({
+                "thread_id": uuid.UUID(tid), "title": t.get("title"),
+                "S": 0.0, "sim": 0.0, "join": False,
+                "gate": f"kind_conflict:{ev_kind}/{th_kind}",
+            })
+            continue
+
+        sim = tp.cosine(ev_vec, proto)
+        # ③ 时间断线：作为**排序微调**（乘在相似度上），不做门控。
+        #    规则路把它放在门控之后调权，语义路没有门控，故直接乘。
+        gap = (time_gap_penalty(t.get("last_event_at"), now)
+               if settings.THREAD_TIME_GAP_ENABLED else 1.0)
+        s = sim * gap
+
+        if sim < settings.THREAD_SEMANTIC_MIN_SIM:
+            scored.append({
+                "thread_id": uuid.UUID(tid), "title": t.get("title"),
+                "S": round(s, 4), "sim": round(sim, 4), "join": False,
+                "gate": f"sim<{settings.THREAD_SEMANTIC_MIN_SIM}",
+            })
+            continue
+
+        scored.append({
+            "thread_id": uuid.UUID(tid), "title": t.get("title"),
+            "S": round(s, 4), "sim": round(sim, 4),
+            "E": 0.0, "M": 0.0, "R": 0.0,
+            "join": False,  # 排序后再定
+            "gate": "",
+        })
+
+    if not scored:
+        return None
+
+    scored.sort(key=lambda x: x["S"], reverse=True)
+    # ★ 只取第一。人工基线实测每事件恰好归 1 条线（441/441），
+    #   Top-1 口径与业务定义吻合；取 Top-2/3 会让精确率从 76.6% 掉到 43.8%/30.1%。
+    if scored and scored[0].get("gate") == "":
+        scored[0]["join"] = True
+    return scored
+
+
+async def _load_event_embedding(event_id: uuid.UUID) -> "np.ndarray | None":
+    """取事件 embedding。同 event_id 多行时取最新一行。"""
+    sql = text("""
+        SELECT event_embedding FROM news
+        WHERE event_id = :eid AND event_embedding IS NOT NULL
+        ORDER BY event_last_updated_at DESC NULLS LAST
+        LIMIT 1
+    """)
+    async with async_session() as session:
+        row = (await session.execute(sql, {"eid": event_id})).first()
+    if not row or row[0] is None:
+        return None
+    try:
+        import numpy as np
+        return np.asarray(row[0], dtype=np.float32)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def _load_thread_prototypes() -> dict[str, "np.ndarray"]:
+    """加载所有有原型的线：{thread_id_str: 归一化向量}。"""
+    sql = text("""
+        SELECT id::text, embedding FROM threads
+        WHERE embedding IS NOT NULL
+          AND status NOT IN ('merged', 'split')
+    """)
+    async with async_session() as session:
+        rows = (await session.execute(sql)).all()
+    out = {}
+    try:
+        import numpy as np
+    except Exception:  # noqa: BLE001
+        return out
+    for tid, emb in rows:
+        if emb is None:
+            continue
+        try:
+            out[tid] = np.asarray(emb, dtype=np.float32)
+        except Exception:  # noqa: BLE001
+            continue
+    return out
 
 
 async def route_event(
@@ -552,6 +696,34 @@ async def route_event(
     now = reference_at or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
+
+    # ★ P3-1（2026-10-14 方向二）：语义归线优先。
+    #   实测纯语义 F1=0.766 显著优于规则 0.578，且优于任何融合方案。
+    #   语义不可用时按 THREAD_SEMANTIC_FALLBACK_RULE 决定是否回退规则路
+    #   （默认 false：回退会拉低精确率 15.8pp）。
+    if settings.THREAD_SEMANTIC_ENABLED:
+        semantic = await _semantic_route(event_id, ev_title, ev_kind, excluded, now)
+        if semantic is not None:
+            top = semantic[: settings.THREAD_MAX_LINES_PER_EVENT]
+            hits = [x for x in top if x["join"]]
+
+            if hits and settings.THREAD_SEMANTIC_LLM_VERIFY:
+                hits = await _llm_verify(event_id, hits)
+
+            await _record_shadow(event_id, top)
+            if not settings.THREAD_ROUTING_SHADOW:
+                await _apply_routes(event_id, hits)
+            if not hits:
+                await maybe_create_thread(event_id)
+            return top
+
+        if not settings.THREAD_SEMANTIC_FALLBACK_RULE:
+            # 语义不可用且不回退 → 留痕后直接返回，不建线也不乱归。
+            # 「宁可不归」优于「归错线」：归错会污染线叙事，不归只是漏。
+            logger.info("semantic route unavailable for event %s, no fallback", event_id)
+            await _record_shadow(event_id, [])
+            return []
+
     scored: list[dict] = []
     for t in threads:
         tid = t["id"]
@@ -784,7 +956,23 @@ async def _attach_event(
             #   而 thread_router 的 Jaccard 分母依赖它——分母冻结的长线
             #   会持续吸事件，正是「8-K 扎堆成一条线」的成因。
             await _refresh_profile_safely(thread_id, session)
+            await _refresh_prototype_safely(thread_id, session)
     return rid is not None
+
+
+async def _refresh_prototype_safely(thread_id: uuid.UUID, session) -> None:
+    """P3-1：挂章后重算线语义原型；异常只记 log，绝不阻断挂线。
+
+    与 _refresh_profile_safely 同构：原型是增强功能，刷新失败只会让
+    下次归线少一个候选，抛异常却会让整个挂章事务回滚，代价大得多。
+    """
+    if not settings.THREAD_SEMANTIC_ENABLED:
+        return
+    try:
+        from app.services import thread_prototype
+        await thread_prototype.refresh_thread_prototype(thread_id, session=session)
+    except Exception as exc:  # noqa: BLE001 — 兜底，绝不阻断挂线
+        logger.warning("refresh thread prototype failed (thread=%s): %s", thread_id, exc)
 
 
 async def _refresh_profile_safely(thread_id: uuid.UUID, session) -> None:

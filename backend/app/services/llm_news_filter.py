@@ -138,11 +138,14 @@ SYSTEM_PROMPT_CN = """你是财经新闻分析师。按下列标准评估每条�
 
 score 为0—10整数；summary ≤80字，概括主体、事件与关键数据；why_it_matters ≤40字，点明对盈利、估值、供需、政策或市场预期的具体影响，有量化对比或预期差时优先写入；tags 为3—5个字符串（板块、公司、事件定性），可为空数组；is_highlight 仅当 score>=8 且强催化已发生或正式确认、原文含量化依据、核心进展在7天内、来源可靠非未确认传闻时为 true。
 
-entities 为3—5个对象数组，每个对象含 name 与 type 两个字段：name 为实体常用名（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；type 为该实体类型，取值仅限 org（机构/公司）、person（人物）、place（地点）、asset（资产）、commodity（商品）、concept（概念）六者之一，无法判定时填 null。禁止泛称（市场、行业、全球、整体）、禁止推断或补充原文未出现的实体、禁止输出股票代码、禁止输出纯数字或数字编号（车型代号、股票代码、表单编号、序号等，如 8295、02423、00700）。按与该事件的相关度降序。可为空数组。
+entities 为3—8个对象数组，每个对象含 name 与 type 两个字段：name 为实体常用名（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；type 为该实体类型，取值仅限 org（机构/公司）、person（人物）、place（地点）、asset（资产）、commodity（商品）、concept（概念）六者之一，无法判定时填 null。禁止泛称（市场、行业、全球、整体）、禁止推断或补充原文未出现的实体、禁止输出股票代码、禁止输出纯数字或数字编号（车型代号、股票代码、表单编号、序号等，如 8295、02423、00700）。按与该事件的相关度降序。可为空数组。
 
 示例：entities: [{"name":"英伟达","type":"org"},{"name":"黄仁勋","type":"person"},{"name":"台积电","type":"org"}]
 
 实体用于长期事件串联，宁缺毋滥：拿不准就少写，绝不编造。
+但对**多主体新闻**（多家公司/机构同日动作、板块普涨普跌、名单式披露），
+须把各家主体名都列出，上限内尽量给足——漏掉主体的后果与编造同等严重：
+世界线按实体交集归线，主体缺失会导致该新闻接不回它本来的世界线。
 
 ## 摘要与标题去重（强制）
 
@@ -200,9 +203,12 @@ chinese_title ≤30字，chinese_summary ≤80字，以简体中文为主体；�
 
 score 为0—10整数；why_it_matters ≤40字，说明对盈利、估值、供需、政策或市场预期的具体影响；tags 为3—5个中文标签，可为空数组；is_highlight 仅当 score>=8 且催化已确认、含量化依据、进展在7天内、来源可靠时为 true。
 
-entities 为 3—5 个对象数组，每个对象含 name 与 type 两个字段：name 为实体常用名（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；type 取值仅限 org（机构/公司）、person（人物）、place（地点）、asset（商品）、commodity（大宗商品）、concept（概念）六者之一，无法判定时填 null。禁止泛称（市场、行业、全球、整体）、禁止推断或补充原文未出现的实体、禁止输出股票代码、禁止输出纯数字或数字编号（车型代号、股票代码、表单编号、序号等，如 8295、02423、00700）。按与该事件的相关度降序。可为空数组。
+entities 为 3—8 个对象数组，每个对象含 name 与 type 两个字段：name 为实体常用名（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；type 取值仅限 org（机构/公司）、person（人物）、place（地点）、asset（商品）、commodity（大宗商品）、concept（概念）六者之一，无法判定时填 null。禁止泛称（市场、行业、全球、整体）、禁止推断或补充原文未出现的实体、禁止输出股票代码、禁止输出纯数字或数字编号（车型代号、股票代码、表单编号、序号等，如 8295、02423、00700）。按与该事件的相关度降序。可为空数组。
 
 实体用于长期事件串联，宁缺毋滥：拿不准就少写，绝不编造。
+但对**多主体新闻**（多家公司/机构同日动作、板块普涨普跌、名单式披露），
+须把各家主体名都列出，上限内尽量给足——漏掉主体的后果与编造同等严重：
+世界线按实体交集归线，主体缺失会导致该新闻接不回它本来的世界线。
 
 ## 标题与摘要去重（强制）
 
@@ -255,7 +261,7 @@ SYSTEM_PROMPT_EN_SCORE = """你是财经新闻分析师。仅评估每条英文�
 
 score 为0—10整数；tags 为3—5个中文标签，可为空数组；is_highlight 仅当 score>=8 且催化已确认、含量化依据、进展在7天内、来源可靠时为 true，否则 false。
 
-entities: 3-5 objects, each with "name" and "type". "name" is a concrete entity explicitly mentioned in the text (companies, institutions, persons, places, commodities, assets). "type" must be one of: org, person, place, asset, commodity, concept; use null when uncertain. No generic terms (market, industry, global), no inference beyond the text, no ticker symbols, no pure-numeric or numeric-code names (model codes, stock codes, form numbers, serials such as 8295, 02423, 00700). Order by relevance, descending. May be [].
+entities: 3-8 objects, each with "name" and "type". "name" is a concrete entity explicitly mentioned in the text (companies, institutions, persons, places, commodities, assets). "type" must be one of: org, person, place, asset, commodity, concept; use null when uncertain. No generic terms (market, industry, global), no inference beyond the text, no ticker symbols, no pure-numeric or numeric-code names (model codes, stock codes, form numbers, serials such as 8295, 02423, 00700). Order by relevance, descending. May be [].
 
 Example: "entities": [{"name":"NVIDIA","type":"org"},{"name":"Jensen Huang","type":"person"}]
 
@@ -352,7 +358,7 @@ SYSTEM_PROMPT_EN_SINGLE = (
     "- chinese_summary：score>=6 时≤80字；score<6 时 \"\"\n"
     "- why_it_matters：score>=6 时≤40字，说明对盈利、估值、供需、政策或市场预期的具体影响；score<6 时 \"\"\n"
     "- tags：3—5个中文标签；score<6 时可为空数组 []\n"
-    "- entities：3—5个对象数组，每个对象含 name 与 type 两个字段；name 为实体常用名"
+    "- entities：3—8个对象数组，每个对象含 name 与 type 两个字段；name 为实体常用名"
     "（公司、机构、人物、地点、商品、资产的常用名），须为原文明确出现的具体名词；"
     "type 取值仅限 org、person、place、asset、commodity、concept 六者之一，无法判定时填 null；"
     "禁止泛称（市场、行业、全球、整体）、禁止推断或补充原文未出现的实体、禁止输出股票代码；"
