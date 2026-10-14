@@ -13,6 +13,8 @@
   1. chapter_no / chapter_seq 全为 NULL：归线代码 _attach_event 只写
      chapter_id，未分配展示序号。故本文件所有章节排序一律回退到
      events.last_updated_at，绝不能 ORDER BY chapter_no（会得到随机序）。
+     ★ 2026-10-14 定：章节时间轴统一**倒序**（最新在前），
+       与简报口径一致；display_no 仍按时间正序编号。
   2. occurred_at 全为 NULL：同上，章节没有自己的发生时间。
      时间基准统一取 events.last_updated_at（812/812 非空，可靠）。
   3. thread_transmissions 为 0 条：传导链尚未生成，属「功能未启用」
@@ -108,14 +110,24 @@ def _json_list(v):
 
 
 async def _chapter_rows(thread_id: uuid.UUID, db: AsyncSession, limit: int = 200) -> list[dict]:
-    """取一条线的全部章节，按事件更新时间正序。
+    """取一条线的全部章节，按事件更新时间**倒序**（最新章节排最前）。
+
+    ★ 排序方向（2026-10-14 定）：时间轴纵向呈现走倒序，越近的章节越靠前——
+      用户进线要看的是「现在走到哪了」，不是从第一章考古。
+      这与 news_digests / history_digests 的倒序口径一致。
 
     ★ 排序必须回退到 events.last_updated_at：
       chapter_no / chapter_seq / occurred_at 三字段当前全 NULL，
       按它们排序会得到数据库任意序，时间轴直接失真。
 
+    ★ display_no 仍然按**时间正序**编号（最早章 = #1，最新章 = #N）：
+      章节号是叙事序号，不随展示方向翻转。倒序渲染时屏幕上是 #N → #1 递减，
+      这是预期效果，不是 bug。
+
     ★ occurred_at 用 COALESCE 兜底到事件时间，确保前端永远有可用时间戳，
       但它与事件时间是同一值——前端若展示需注明「取自事件更新时间」。
+
+    ★ limit 语义随方向变化：现在截的是**最新** 200 章，不是最早 200 章。
     """
     rows = (await db.execute(text("""
         SELECT te.chapter_id, te.event_id, te.role, te.match_score,
@@ -129,18 +141,19 @@ async def _chapter_rows(thread_id: uuid.UUID, db: AsyncSession, limit: int = 200
         JOIN events e ON e.id = te.event_id
         WHERE te.thread_id = :t
           AND COALESCE(te.role, 'core') <> 'noise'
-        ORDER BY e.last_updated_at ASC
+        ORDER BY e.last_updated_at DESC
         LIMIT :lim
     """), {"t": thread_id, "lim": limit})).mappings().all()
 
+    total = len(rows)
     out = []
     for i, r in enumerate(rows, start=1):
         d = dict(r)
         d["chapter_id"] = str(r["chapter_id"])
         d["event_id"] = str(r["event_id"])
-        # 展示序号：因 chapter_no 为 NULL，由查询顺序生成。
+        # 展示序号：chapter_no 为 NULL，由查询顺序反推（倒序列表 → 正序编号）。
         # 前端不应把它当持久序号缓存，重排后可能变。
-        d["display_no"] = i
+        d["display_no"] = total - i + 1
         d["role_label"] = ROLE_LABELS.get(r["role"] or "core", r["role"] or "core")
         out.append(d)
     return out

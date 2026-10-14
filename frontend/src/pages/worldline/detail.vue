@@ -35,8 +35,9 @@
         <!-- ══════ 章节时间轴 ══════ -->
         <view class="wd-section">
           <text class="wd-section-title">章节时间轴</text>
-          <!-- 排序说明：chapter_no 尚未分配，当前按事件更新时间排序 -->
-          <text class="wd-section-hint">按事件更新时间正序排列</text>
+          <!-- 排序说明：chapter_no 尚未分配，章节按事件更新时间倒序（最新在前），
+               显示序号 #N 仍按时间正序编号 -->
+          <text class="wd-section-hint">按事件更新时间倒序排列（最新章节在前）</text>
 
           <EmptyState v-if="!thread.chapters.length" text="暂无章节" />
           <view v-else class="wd-timeline">

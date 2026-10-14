@@ -543,7 +543,14 @@ function renderChapters(boxId,items,withCheck){
   items.forEach(c=>{
     h+='<tr>'+
       (withCheck?'<td><input type="checkbox" class="c-chk" value="'+esc(c.chapter_id)+'"></td>':'')+
-      '<td style="color:var(--muted)">'+(c.chapter_no!=null?c.chapter_no:'-')+'</td>'+
+      // chapter_no 当前全 NULL，回退显示日期——倒序下日期是可辨识的相对位置线索
+      '<td style="color:var(--muted)" title="'+esc(c.occurred_at||'')+'">'+
+        (c.chapter_no!=null
+          ? c.chapter_no
+          : (c.occurred_at
+              ? '<span style="font-size:11px">'+esc(String(c.occurred_at).slice(0,10))+'</span>'
+              : '-'))+
+        '</td>'+
       '<td>'+esc((c.title||'-').slice(0,60))+
         '<br><span class="badge '+(c.assigned_by==='manual'?'b-manual':'b-algo')+'">'+
         esc(c.assigned_by||'algo')+'</span></td>'+

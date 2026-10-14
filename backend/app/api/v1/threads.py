@@ -255,7 +255,20 @@ async def list_chapters(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    """章节列表（按展示序号 chapter_no 正序，即线的时间轴）。
+    """章节列表（**倒序**：最新章节在前，即线的时间轴）。
+
+    ★ 排序方向（2026-10-14 定）：与工作台 workbench.py 的时间轴口径统一为倒序。
+      管理台的典型动作是「摘掉最近误挂的那一章」，倒序省去翻到列表末尾。
+
+    ★ 排序键三级回退：
+       1) te.chapter_no DESC —— 未来分配了展示序号后，序号最大即最新，优先采用；
+       2) e.last_updated_at DESC —— chapter_no 当前全 NULL，回退事件更新时间
+          （812/812 非空，可靠）。绝不单独 ORDER BY chapter_no，会得到随机序；
+       3) te.created_at DESC —— 兜底，保证同时间戳下顺序稳定可复现。
+
+    ★ events 用 LEFT JOIN 而非 JOIN：thread_events.event_id 虽 NOT NULL，
+      但 events 有 90 天清理策略，JOIN 会让章节在列表里静默消失——
+      治理页面上「章节消失」比「时间缺失」严重得多。
 
     noise 章节默认排除——它是人工判定的「挂错了」，不该出现在线的时间轴上。
     这一点和 chapter_seq「context/noise 置 NULL 不计入」是同一个意图。
@@ -273,10 +286,14 @@ async def list_chapters(
     rows = (await db.execute(text(f"""
         SELECT te.chapter_id, te.event_id, te.role, te.chapter_no, te.chapter_seq,
                te.assigned_by, te.match_score, te.snapshot_title,
-               te.snapshot_summary, te.occurred_at
+               te.snapshot_summary, te.occurred_at,
+               COALESCE(te.occurred_at, e.last_updated_at) AS sort_at
         FROM thread_events te
+        LEFT JOIN events e ON e.id = te.event_id
         WHERE {' AND '.join(where)}
-        ORDER BY te.chapter_no NULLS LAST, te.chapter_seq
+        ORDER BY te.chapter_no DESC NULLS LAST,
+                 e.last_updated_at DESC NULLS LAST,
+                 te.created_at DESC
         LIMIT :lim OFFSET :off
     """), params)).mappings().all()
     return {"total": len(rows), "items": [
@@ -290,7 +307,9 @@ async def list_chapters(
             "match_score": r["match_score"],
             "title": r["snapshot_title"],
             "summary": r["snapshot_summary"],
-            "occurred_at": r["occurred_at"],
+            # occurred_at 当前多 NULL，回退到事件更新时间，保证治理台有可读日期
+            "occurred_at": r["occurred_at"] or r["sort_at"],
+            "time_is_fallback": r["occurred_at"] is None and r["sort_at"] is not None,
         } for r in rows
     ]}
 

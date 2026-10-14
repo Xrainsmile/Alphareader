@@ -190,7 +190,10 @@ async def test_meta_reports_data_health(db):
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_chapters_ordered_by_event_time(db):
-    """章节必须按事件更新时间正序——chapter_no 全 NULL，按它排会得到随机序。"""
+    """章节必须按事件更新时间倒序（最新在前）——chapter_no 全 NULL，按它排会得到随机序。
+
+    2026-10-14：时间轴改为倒序呈现，越近的章节越靠前。
+    """
     from sqlalchemy import text
 
     tid = (await db.execute(text("""
@@ -203,11 +206,11 @@ async def test_chapters_ordered_by_event_time(db):
     rows = (await db.execute(text("""
         SELECT e.last_updated_at
         FROM thread_events te JOIN events e ON e.id = te.event_id
-        WHERE te.thread_id = :t ORDER BY e.last_updated_at ASC
+        WHERE te.thread_id = :t ORDER BY e.last_updated_at DESC
     """), {"t": tid})).scalars().all()
 
     assert len(rows) >= 3
-    assert rows == sorted(rows), "章节时间轴非正序，时间轴失真"
+    assert rows == sorted(rows, reverse=True), "章节时间轴非倒序，时间轴失真"
 
 
 @needs_pg
