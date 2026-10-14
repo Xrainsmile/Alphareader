@@ -74,6 +74,17 @@ class MergeBody(OpBody):
     target_thread_id: uuid.UUID
 
 
+class UnmergeBody(OpBody):
+    """撤销合并。
+
+    target_thread_id 可选：不填则从审计记录自动取当初的合并目标，
+    填了则做一致性校验，防止误撤销到别的线上。
+    """
+
+    source_thread_id: uuid.UUID
+    target_thread_id: uuid.UUID | None = None
+
+
 class SplitBody(OpBody):
     new_title: str = Field(..., max_length=200)
     chapter_ids: list[uuid.UUID] = Field(..., min_length=1)
@@ -416,6 +427,20 @@ async def merge_threads(body: MergeBody, db: AsyncSession = Depends(get_db)):
     if src["status"] in TERMINAL_STATUSES:
         raise HTTPException(409, f"source thread already {src['status']}")
 
+    # ★ 撤销所需的事实必须在 INSERT 之前采集：
+    #   先算出哪些 event 在目标线里已存在（会被 ON CONFLICT 跳过），
+    #   剩下的才是真正搬过去的。撤销时只回删这一批，不误伤目标线原有章节。
+    conflict_ids = set((await db.execute(text("""
+        SELECT te.event_id FROM thread_events te
+        WHERE te.thread_id = :src
+          AND EXISTS (SELECT 1 FROM thread_events d
+                      WHERE d.thread_id = :dst AND d.event_id = te.event_id)
+    """), {"src": body.source_thread_id, "dst": body.target_thread_id})).scalars().all())
+
+    src_event_ids = (await db.execute(text("""
+        SELECT event_id FROM thread_events WHERE thread_id = :src
+    """), {"src": body.source_thread_id})).scalars().all()
+
     moved = (await db.execute(text("""
         INSERT INTO thread_events
             (thread_id, event_id, role, chapter_id, chapter_no, chapter_seq,
@@ -428,6 +453,7 @@ async def merge_threads(body: MergeBody, db: AsyncSession = Depends(get_db)):
         ON CONFLICT (thread_id, event_id) DO NOTHING
     """), {"dst": body.target_thread_id, "src": body.source_thread_id})).rowcount
 
+    # ── 源线置终态 + 目标线计数 ──
     await db.execute(text("""
         UPDATE threads SET status = 'merged', merged_into_id = :dst,
                updated_at = now() WHERE id = :src
@@ -437,15 +463,105 @@ async def merge_threads(body: MergeBody, db: AsyncSession = Depends(get_db)):
         WHERE id = :dst
     """), {"dst": body.target_thread_id, "n": moved or 0})
 
+    revert_payload = {
+        "moved_chapters": moved or 0,
+        "target_title": dst["title"],
+        # ── 撤销依据：记录「合并前是什么样」，撤销时照单还原 ──
+        "prev_status": src["status"],
+        "prev_merged_into_id": (
+            str(src["merged_into_id"]) if src.get("merged_into_id") else None),
+        "prev_chapter_count": src.get("chapter_count") or 0,
+        "moved_event_ids": [str(e) for e in src_event_ids if e not in conflict_ids],
+        "skipped_conflicts": len(conflict_ids),
+    }
     await _audit(db, body.source_thread_id, "merge", "thread",
                  body.target_thread_id, body.operator, body.reason,
-                 {"moved_chapters": moved or 0, "target_title": dst["title"]})
+                 revert_payload)
     await _audit(db, body.target_thread_id, "merge", "thread",
                  body.source_thread_id, body.operator, body.reason,
                  {"received_chapters": moved or 0, "source_title": src["title"]})
     await db.commit()
     return {"ok": True, "moved_chapters": moved or 0,
             "merged_into_id": str(body.target_thread_id)}
+
+
+@router.post("/unmerge")
+async def unmerge_threads(body: UnmergeBody, db: AsyncSession = Depends(get_db)):
+    """撤销一次合并：把源线恢复到合并前的状态。
+
+    ★ 为什么能精确撤销：
+      merge 不删除源线的 thread_events 行，只是把源线置为 merged 终态、
+      往目标线 INSERT 了一批副本。因此「撤销」= 从目标线回删这批副本 +
+      把源线的状态和指针改回去。原线数据从未丢失。
+
+    ★ 为什么只回删 moved_event_ids：
+      目标线可能本来就有同名事件（merge 时的 ON CONFLICT 跳过），
+      也可能是人工后加的。无差别删除目标线上所有相关行会误伤人工判定。
+      审计里记的 moved_event_ids 是「当初真正搬过去的」清单，按单回删。
+
+    幂等性：源线已不是 merged 就拒绝，避免重复撤销把状态搞乱。
+    """
+    src = await _require_thread(db, body.source_thread_id)
+    if src["status"] != "merged":
+        raise HTTPException(
+            409, f"thread is '{src['status']}', not merged — nothing to undo")
+
+    target_id = src.get("merged_into_id")
+    if body.target_thread_id and target_id:
+        if str(target_id) != str(body.target_thread_id):
+            raise HTTPException(
+                400, "target_thread_id does not match the recorded merge target")
+
+    # 取最近一次 merge 审计，读回撤销依据
+    row = (await db.execute(text("""
+        SELECT target_id, payload, operator, reason
+        FROM thread_operations
+        WHERE thread_id = :src AND operation = 'merge'
+        ORDER BY created_at DESC, id DESC LIMIT 1
+    """), {"src": body.source_thread_id})).mappings().first()
+
+    if not row:
+        raise HTTPException(404, "no merge record found for this thread")
+    if body.target_thread_id is None:
+        target_id = row["target_id"]
+
+    payload = row["payload"] or {}
+    prev_status = payload.get("prev_status") or "active"
+    prev_count = payload.get("prev_chapter_count") or 0
+    moved_ids = payload.get("moved_event_ids") or []
+
+    # ── 1. 从目标线回删当初搬过去的那批 ──
+    deleted = 0
+    if moved_ids:
+        deleted = (await db.execute(text("""
+            DELETE FROM thread_events
+            WHERE thread_id = :dst AND event_id = ANY(:ids)
+        """), {"dst": target_id,
+               "ids": [uuid.UUID(str(e)) for e in moved_ids]})).rowcount or 0
+
+    # ── 2. 目标线计数回退 ──
+    await db.execute(text("""
+        UPDATE threads SET chapter_count = GREATEST(chapter_count - :n, 0),
+               updated_at = now() WHERE id = :dst
+    """), {"dst": target_id, "n": deleted})
+
+    # ── 3. 源线恢复：状态 + 清空指针 + 计数 ──
+    await db.execute(text("""
+        UPDATE threads SET status = :st, merged_into_id = NULL,
+               chapter_count = :cnt, updated_at = now() WHERE id = :src
+    """), {"st": prev_status, "cnt": prev_count, "src": body.source_thread_id})
+
+    await _audit(db, body.source_thread_id, "unmerge", "thread",
+                 target_id, body.operator, body.reason,
+                 {"restored_status": prev_status, "removed_from_target": deleted,
+                  "reverted_merge_reason": row["reason"]})
+    await _audit(db, target_id, "unmerge", "thread",
+                 body.source_thread_id, body.operator, body.reason,
+                 {"removed_chapters": deleted,
+                  "source_title": src["title"]})
+    await db.commit()
+    return {"ok": True, "restored_status": prev_status,
+            "removed_from_target": deleted}
 
 
 @router.post("/{thread_id}/split")
@@ -473,6 +589,20 @@ async def split_thread(
     """), {"nid": new_id, "title": body.new_title, "src": thread_id})
 
     ids = [str(c) for c in body.chapter_ids]
+    # ★ 撤销所需的事实必须在 INSERT 之前采集：
+    #   先算出哪些 event 在目标线里已存在（会被 ON CONFLICT 跳过），
+    #   剩下的才是真正搬过去的。撤销时只回删这一批，不误伤目标线原有章节。
+    conflict_ids = set((await db.execute(text("""
+        SELECT te.event_id FROM thread_events te
+        WHERE te.thread_id = :src
+          AND EXISTS (SELECT 1 FROM thread_events d
+                      WHERE d.thread_id = :dst AND d.event_id = te.event_id)
+    """), {"src": body.source_thread_id, "dst": body.target_thread_id})).scalars().all())
+
+    src_event_ids = (await db.execute(text("""
+        SELECT event_id FROM thread_events WHERE thread_id = :src
+    """), {"src": body.source_thread_id})).scalars().all()
+
     moved = (await db.execute(text("""
         INSERT INTO thread_events
             (thread_id, event_id, role, chapter_id, assigned_by, match_score,
@@ -648,3 +778,73 @@ async def move_event(body: MoveBody, db: AsyncSession = Depends(get_db)):
 def _json(v) -> str:
     import json
     return json.dumps(v)
+
+
+# ═══════════════ 线画像滚动重算（P1-c-2，方案 2）═══════════════
+
+
+class RetitleBody(OpBody):
+    """重算线画像。
+
+    lock_title=true  重算后把标题锁进 pinned_fields，后续不再被自动 rollup 覆盖
+    force=true       忽略标题锁强制重算（人工改过标题后仍想让算法重来一次）
+    """
+    lock_title: bool = False
+    force: bool = False
+
+
+@router.post("/{thread_id}/profile/refresh")
+async def refresh_profile(
+    thread_id: uuid.UUID, body: RetitleBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """滚动重算单条线的画像：core_entities / title / last_event_at。
+
+    为什么必须提供这个端点：P1-c 只在建线时写一次这三个字段，之后永不更新，
+    导致线名永远是首章标题（「CECO Environmental 提交 8-K」），
+    且 Jaccard 分母冻结在首章规模，长线持续吸事件。人工发现某线跑偏后，
+    需要一键把它纠正回来，而不是等下次挂章。
+    """
+    from app.services import thread_profile
+
+    await _require_thread(db, thread_id)
+    out = await thread_profile.refresh_thread_profile(
+        thread_id, session=db, force_title=body.force
+    )
+    if body.lock_title and out.get("new_title"):
+        # 标题锁复用 pinned_fields：模型注释即「人工锁定的字段，
+        # 归线算法检测到后不得覆盖」，语义完全对口，不必新增列。
+        await db.execute(
+            text("""
+                UPDATE threads
+                SET pinned_fields = COALESCE(pinned_fields, '{}'::jsonb)
+                        || CAST(:p AS jsonb)
+                WHERE id = :t
+            """),
+            {"t": thread_id, "p": _json({"title": out["new_title"]})},
+        )
+    await _audit(db, thread_id, "move", "thread", thread_id,
+                 body.operator, body.reason or "profile refresh",
+                 {"new_title": out.get("new_title"),
+                  "anchors": out.get("anchors"),
+                  "suspicious": out.get("suspicious")})
+    await db.commit()
+    return out
+
+
+@router.get("/audit/suspicious")
+async def audit_suspicious_threads(
+    min_chapters: int = Query(3, ge=2),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """列出「聚合错误」的可疑线：章节多但无跨章共性实体。
+
+    判据：没有任何实体出现在 ≥2 个章节里，且章节数 >= min_chapters。
+    这类线就是「8-K 扎堆」那种——章节之间根本不是同一件事，
+    只靠一个泛化实体硬串。这是方案 3 洗数据时的拆分清单来源。
+    """
+    from app.services import thread_profile
+
+    return await thread_profile.audit_threads(
+        min_chapters=min_chapters, limit=limit
+    )

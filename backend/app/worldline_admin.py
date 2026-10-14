@@ -229,7 +229,23 @@ tr.sel td{background:#eff6ff}
             <input id="m-reason" placeholder="如：实为同一事件链"></div>
         </div>
         <button class="btn btn-danger btn-sm" onclick="doMerge()">执行合并</button>
-        <div class="note">★ 不可撤销。chapter_id 保持不变；冲突章节跳过，不覆盖目标线人工判定。</div>
+        <div class="note">★ 可撤销（见下方）。chapter_id 保持不变；冲突章节跳过，不覆盖目标线人工判定。</div>
+      </div>
+
+      <!-- 撤销合并 -->
+      <div class="card" id="card-unmerge" style="display:none">
+        <h3>撤销合并 <span class="hint">把当前线从 merged 态恢复回来</span></h3>
+        <div class="form-row">
+          <div class="form-group"><label>目标线 ID（留空自动取）</label>
+            <input id="um-dst" class="mono" placeholder="留空则从合并留痕自动读取"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>操作人</label><input id="um-op" value="human"></div>
+          <div class="form-group"><label>原因</label>
+            <input id="um-reason" placeholder="如：合并判断有误"></div>
+        </div>
+        <button class="btn btn-green btn-sm" onclick="doUnmerge()">撤销合并</button>
+        <div class="note">★ 仅回删当初真正搬过去的那批章节，不误伤目标线原有内容；源线数据从未删除，可完整还原。</div>
       </div>
 
       <!-- 拆分 -->
@@ -412,6 +428,9 @@ async function selectThread(t){
     (t.pinned?'<span class="badge b-pinned">已置顶</span>':'')+
     ' <span style="color:var(--muted);font-size:12px">'+(t.chapter_count||0)+' 章</span>';
   renderThreads();
+  // merged 态才显示撤销卡片
+  $('card-unmerge').style.display = (t.status === 'merged') ? 'block' : 'none';
+  if (t.status === 'merged') $('um-dst').value = '';
   try{
     const d=await apiCall(THREADS+'/'+t.id);
     const pf=(d.pinned_fields&&typeof d.pinned_fields==='object')?d.pinned_fields:{};
@@ -486,7 +505,29 @@ async function doMerge(){
   }catch(e){ showMsg('合并失败：'+e.message,false) }
 }
 
-// ── 章节 ──
+// ── 撤销合并 ──
+async function doUnmerge(){
+  if(!needSel()) return;
+  const dst=$('um-dst').value.trim();
+  if(!confirm('确认撤销合并？\n源线将恢复为合并前的状态，当初搬过去的章节从目标线回删。')) return;
+  const body=opBody('um');
+  body.source_thread_id=SEL.id;
+  if(dst) body.target_thread_id=dst;
+  try{
+    const d=await apiCall(THREADS+'/unmerge',{method:'POST',body:body});
+    showMsg('已撤销合并，源线恢复为 '+(d.restored_status||'active')+
+      '，目标线回删 '+(d.removed_from_target||0)+' 章',true);
+    const t=Object.assign({},SEL,{status:d.restored_status||'active'});
+    SEL=t;
+    $('sel-meta').innerHTML=statusBadge(t.status)+' '+
+      ' <span style="color:var(--muted);font-size:12px">'+(t.chapter_count||0)+' 章</span>';
+    $('card-unmerge').style.display='none';
+    $('um-dst').value='';
+    loadThreads(_offset); loadAudit();
+  }catch(e){ showMsg('撤销失败：'+e.message,false) }
+}
+
+// ── 撤销合并 ──
 async function loadChapters(boxId,withCheck){
   if(!SEL) return;
   try{

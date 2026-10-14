@@ -78,7 +78,8 @@ class ThreadOperation(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "operation IN ('pin','unpin','merge','split','remove','move','restore')",
+            "operation IN ('pin','unpin','merge','split','remove','move',"
+            "'restore','unmerge')",
             name="ck_thread_op_operation",
         ),
         CheckConstraint(
