@@ -9,6 +9,72 @@ Provides:
 
 from __future__ import annotations
 
+# ══════════════ 测试库强制隔离（2026-10-14 事故后新增）══════════════
+#
+# 事故：在 alpha-web 生产容器内跑 pytest，容器由 docker-compose 的 env_file
+# 注入了 POSTGRES_HOST=db / DATABASE_URL=@db:5432/alphareader，测试直连生产库，
+# INSERT 打在真实表上（news_events 不存在、events.occurred_at 不存在、
+# thread_operations 违反 CHECK），4 条 ERROR 计入巡检并触发企微告警。
+# 所幸事务回滚、无脏数据落库——但生产库不该被测试触碰，一次例外就可能真写入。
+#
+# 策略：必须在 `from app.database import ...` 之前改写环境变量，
+# 让 Settings（computed_field）与 os.getenv 两条通路都拿到测试库。
+#   · 设 TEST_DATABASE_URL → 显式指定测试库（推荐，可指独立 PG 实例）
+#   · 未设 → 降级本地 127.0.0.1 + alphareader_test，并清除 DATABASE_URL
+#     （清除后 integration 标记的测试自动 skip，不会误连）
+#   · 确需真连生产：ALPHAREADER_TEST_ALLOW_PROD_DB=1（须本人明确确认）
+import os
+
+_LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
+
+
+def _enforce_test_db_isolation() -> None:
+    """把测试会话的 DB 目标强制隔离到非生产库（import app 之前执行）。"""
+    if os.getenv("ALPHAREADER_TEST_ALLOW_PROD_DB") == "1":
+        print(
+            "[conftest] ⚠️  ALPHAREADER_TEST_ALLOW_PROD_DB=1"
+            " —— 本次测试将直连当前 DB，请确认不是生产！"
+        )
+        return
+
+    host = (os.getenv("POSTGRES_HOST") or "").strip()
+    if host in _LOCAL_HOSTS:
+        return  # 本机开发库，无需干预
+
+    test_url = (os.getenv("TEST_DATABASE_URL") or "").strip()
+    if test_url:
+        from urllib.parse import urlparse
+
+        p = urlparse(test_url)
+        db_name = p.path.lstrip("/") if p.path else "?"
+        if p.hostname:
+            os.environ["POSTGRES_HOST"] = p.hostname
+        if p.port:
+            os.environ["POSTGRES_PORT"] = str(p.port)
+        if db_name != "?":
+            os.environ["POSTGRES_DB"] = db_name
+        if p.username:
+            os.environ["POSTGRES_USER"] = p.username
+        if p.password:
+            os.environ["POSTGRES_PASSWORD"] = p.password
+        os.environ["DATABASE_URL"] = test_url
+        print(f"[conftest] 测试库已隔离 → {p.hostname}/{db_name}（来自 TEST_DATABASE_URL）")
+        return
+
+    # 未显式配置：退到本地同名 test 库，并清掉 DATABASE_URL 让 integration 测试 skip
+    os.environ["POSTGRES_HOST"] = "127.0.0.1"
+    os.environ["POSTGRES_DB"] = os.getenv("POSTGRES_TEST_DB", "alphareader_test")
+    os.environ.pop("DATABASE_URL", None)
+    print(
+        "[conftest] ⚠️  检测到非本地数据库（POSTGRES_HOST=%s），已强制隔离：\n"
+        "              POSTGRES_HOST=127.0.0.1  POSTGRES_DB=%s  DATABASE_URL 已清除\n"
+        "              integration 测试将自动 skip；指定测试库请设 TEST_DATABASE_URL。"
+        % (host, os.environ["POSTGRES_DB"])
+    )
+
+
+_enforce_test_db_isolation()
+
 import json
 from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock

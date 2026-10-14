@@ -3,4 +3,7 @@
 
 pytest==8.3.4
 pytest-asyncio==0.24.0
+# pytest.ini 的 addopts 含 --timeout，缺此插件时 pytest 直接报
+# "unrecognized arguments" 无法启动（2026-10-14 实测）
+pytest-timeout==2.3.1
 aiosqlite==0.20.0
