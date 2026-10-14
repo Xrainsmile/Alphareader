@@ -1,0 +1,496 @@
+{
+  "generated_at": "2026-10-14",
+  "ground_truth_total": 441,
+  "candidates": 78,
+  "excluded_count": 52,
+  "excluded": [
+    {
+      "event_id": "b8b5da36-eed2-4635-9a54-4fdc0392df53",
+      "title": "港股黄金石油板块走强，现货金价重回4400美元",
+      "thread_title": "原油供给冲击与价格传导",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块集体走强，无主体独立事件"
+    },
+    {
+      "event_id": "20d953ce-da93-40af-97a9-d346457039e2",
+      "title": "Moderna盘前大涨50%带动疫苗股集体走强",
+      "thread_title": "Moderna/默沙东mRNA肿瘤疫苗",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅盘面涨跌，无主体具体事件"
+    },
+    {
+      "event_id": "6cca2796-d883-45d0-9ecc-d69173bffa19",
+      "title": "美股生物医药板块盘中大涨，Moderna涨幅超150%",
+      "thread_title": "Moderna/默沙东mRNA肿瘤疫苗",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块集体大涨，无主体独立事件"
+    },
+    {
+      "event_id": "fbb91282-5902-4c9e-8e6d-a9f6b8367294",
+      "title": "美股三大指数集体收涨 SpaceX大涨15.83%",
+      "thread_title": "SpaceX资本运作与频谱扩张",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "指数普涨及个股跟涨，无主体事件"
+    },
+    {
+      "event_id": "11af6919-7de5-428c-803a-f19a65e7ef88",
+      "title": "港股恒指低开高走转涨，小米逆市领涨",
+      "thread_title": "小米业绩与玄戒芯片",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数与个股盘面涨跌，无主体事件"
+    },
+    {
+      "event_id": "9632cc3b-916c-4807-a1a9-08fc105224a7",
+      "title": "港股科网股集体下挫 腾讯音乐绩后跌超12%",
+      "thread_title": "腾讯回购与AI投入",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块整体下挫，仅行情播报"
+    },
+    {
+      "event_id": "1296ea43-ca9a-4b51-ab37-af8e0a8e4e05",
+      "title": "腾讯控股尾盘急跌近5% 市值一度跌破4万亿港元",
+      "thread_title": "腾讯回购与AI投入",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述腾讯股价尾盘下跌，无主体事件"
+    },
+    {
+      "event_id": "5bbddc59-504d-41ea-8058-6133f67fc7e3",
+      "title": "港股开盘走低 腾讯绩后跌逾3% 有色板块承压",
+      "thread_title": "腾讯回购与AI投入",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "盘面整体走低，无主体独立事件"
+    },
+    {
+      "event_id": "61283017-9936-409d-b9a4-276254b512f7",
+      "title": "港股生物医药与存储PCB板块集体走强",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述板块集体走强，无主体事件"
+    },
+    {
+      "event_id": "12ab84e8-314b-4820-830d-09b3593305b5",
+      "title": "美股光通信与存储概念股集体走强",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块集体走强，无明确触发事件"
+    },
+    {
+      "event_id": "7f42abfc-de40-482e-9ea7-51d073e9770d",
+      "title": "创业板指跌逾2%，中际旭创跌超3%成交额破110亿",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数与个股下跌，无主体事件"
+    },
+    {
+      "event_id": "5bb006b6-ba8b-4e6e-95c5-d2427beeecc2",
+      "title": "美股光通信板块集体走强 Lumentum领涨",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块集体走强，无主体独立事件"
+    },
+    {
+      "event_id": "169e2378-d3c4-4416-84d1-48fd9fc8f300",
+      "title": "美股科技板块普跌，光通信存储半导体领跌",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述板块普跌盘面，无主体事件"
+    },
+    {
+      "event_id": "b2a397e4-1ea3-4725-83cc-19ed55afe21e",
+      "title": "港股PCB与有色金属板块集体走强",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块集体走强，无主体独立事件"
+    },
+    {
+      "event_id": "ad7c19e9-65a7-48e2-9afb-6a691572b89e",
+      "title": "港股光通信芯片及大模型股8月24日集体大跌",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块集体大跌，无主体独立事件"
+    },
+    {
+      "event_id": "2a905c4d-2904-405b-8836-dbe0badd6161",
+      "title": "港股PCB与生物技术板块8月25日早盘走强",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块集体走强无主体事件，纯盘面播报"
+    },
+    {
+      "event_id": "8f37332b-8bed-4adf-88b6-74c90a2bbc8a",
+      "title": "港股光通信与PCB板块盘中走强",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅板块盘中走强，无主体事件"
+    },
+    {
+      "event_id": "dd7d76c1-a3c8-4c60-92a6-d7d246694473",
+      "title": "美股半导体板块盘中反转，英伟达创两月新高",
+      "thread_title": "英伟达AI算力基建版图",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述板块盘中反转与个股涨跌，无主体事件"
+    },
+    {
+      "event_id": "98dbd6bb-308f-4110-9e77-2f02ab2d5d4e",
+      "title": "A股三大指数翻红 存储芯片MLCC领涨",
+      "thread_title": "存储与HBM超级周期",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数与板块普涨，无主体事件"
+    },
+    {
+      "event_id": "5bbe2f31-42e8-4b22-96be-cdd771c0edb1",
+      "title": "美股三大指数开盘分化，存储概念股上涨",
+      "thread_title": "存储与HBM超级周期",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数开盘分化及个股跟涨，无主体事件"
+    },
+    {
+      "event_id": "95ef1b3b-f887-4bcc-af65-85be48d9b003",
+      "title": "美股三大指数收跌，AI存储板块逆势走强",
+      "thread_title": "存储与HBM超级周期",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数与板块涨跌，无主体事件"
+    },
+    {
+      "event_id": "b6cfe5ca-3463-450c-9003-61bbb1d2a63d",
+      "title": "美股半导体及存储板块集体下挫",
+      "thread_title": "存储与HBM超级周期",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述板块集体下跌的盘面表现"
+    },
+    {
+      "event_id": "d09aa6dc-722e-4b39-b2be-2bce21ccd185",
+      "title": "港股恒指科指收涨超1%，AI概念股智谱MINIMAX领涨",
+      "thread_title": "大模型厂商竞争",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数与个股当日涨跌，无主体事件"
+    },
+    {
+      "event_id": "ab02f11f-ee93-4de8-8881-3e64f89c5e32",
+      "title": "港股开盘科技股领涨，有色金属板块跟涨",
+      "thread_title": "矿业与工业金属",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述开盘板块普涨，无主体事件"
+    },
+    {
+      "event_id": "5420a2cf-f691-445b-9aa6-240edf8c7dea",
+      "title": "港股科技与铝业板块盘中集体走强",
+      "thread_title": "矿业与工业金属",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "多板块普涨无驱动事件，纯盘面播报"
+    },
+    {
+      "event_id": "4a2c7528-a0a5-47ba-be55-804ccc1442a6",
+      "title": "美股稀土及有色金属概念股集体上涨",
+      "thread_title": "矿业与工业金属",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块普涨无主体事件，纯盘面播报"
+    },
+    {
+      "event_id": "3faeac9a-5e21-45c1-b802-0ff6d79908e2",
+      "title": "台积电股价创新高，纳指盘中同步刷新纪录",
+      "thread_title": "台积电先进制程与AI代工",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述股价指数创新高，无主体事件"
+    },
+    {
+      "event_id": "3f25f7f5-4c58-4f12-b99b-54a68b4e52e2",
+      "title": "美股加密货币概念股盘中集体走高",
+      "thread_title": "比特币与加密资产",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块集体走高，无主体事件"
+    },
+    {
+      "event_id": "288683e2-74bc-4e27-bbdf-3da04d7c38db",
+      "title": "美股加密货币概念股集体走强",
+      "thread_title": "比特币与加密资产",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅板块集体走强，无主体事件"
+    },
+    {
+      "event_id": "abf4e6fc-7709-48b8-88ec-469038d3981c",
+      "title": "黄金市场异动引发关注",
+      "thread_title": "黄金避险行情",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述金价波动，无主体事件或驱动因素"
+    },
+    {
+      "event_id": "8f488c86-1e24-4054-812f-1d0cf56507a0",
+      "title": "A股港股收涨，养殖贵金属板块领涨",
+      "thread_title": "黄金避险行情",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数与板块涨跌，无主体事件"
+    },
+    {
+      "event_id": "c1d4f531-928f-4d05-9bc7-0906f864ed2c",
+      "title": "港股开盘恒指科指齐涨，科技黄金股领涨",
+      "thread_title": "黄金避险行情",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述开盘指数与个股普涨，无主体事件"
+    },
+    {
+      "event_id": "c7abfbf4-33fa-454f-b68c-4315d9f269e1",
+      "title": "港股有色板块走弱 黄金股领跌",
+      "thread_title": "黄金避险行情",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述板块普跌，无主体事件"
+    },
+    {
+      "event_id": "e99702eb-1088-4ba7-9556-cbfe1e6647a0",
+      "title": "港股黄金股集体走高 紫金黄金国际涨超6%",
+      "thread_title": "黄金避险行情",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "板块集体走高，无主体独立事件"
+    },
+    {
+      "event_id": "fe5d1e01-31d7-4923-8acf-3bcb336b09d6",
+      "title": "A股港股开盘走强，半导体与贵金属板块领涨",
+      "thread_title": "黄金避险行情",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "开盘指数与板块普涨，无主体事件"
+    },
+    {
+      "event_id": "4253a56a-892c-41bf-893a-a41f2a5aad3f",
+      "title": "港股开盘恒指科指齐涨，生物医药黄金股领涨",
+      "thread_title": "黄金避险行情",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述开盘指数与板块涨跌，无主体事件"
+    },
+    {
+      "event_id": "34bc7ee9-59c9-43e4-bc3e-61b4bef76c25",
+      "title": "美股三大指数集体收涨，银行黄金股走强",
+      "thread_title": "黄金避险行情",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数与板块当日涨跌，无主体事件"
+    },
+    {
+      "event_id": "c2421f0e-c7c0-4d41-8eb4-a1bd9dd9fdf3",
+      "title": "A股三大指数全线翻红 中船系稀土领涨",
+      "thread_title": "稀土与关键矿产",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数由跌转涨的盘面表现"
+    },
+    {
+      "event_id": "ece349ac-9ec3-4945-9075-275c5f228b6e",
+      "title": "韩国KOSPI盘中跌3% 半导体权重股领跌后收窄",
+      "thread_title": "海外经济数据与央行政策",
+      "rule": "snapshot",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数与个股盘面波动，无主体事件"
+    },
+    {
+      "event_id": "a729c3f9-47b7-49ce-9837-31dfa6b5b28e",
+      "title": "国际油价日内先跌2%后短线拉升逾1美元",
+      "thread_title": "原油供给冲击与价格传导",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "仅描述油价盘中波动，无驱动事件"
+    },
+    {
+      "event_id": "6909e06f-7d14-406b-986c-be9cf5443f58",
+      "title": "港股科技指数走强 小米宁德时代领涨",
+      "thread_title": "小米业绩与玄戒芯片",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "仅描述指数与个股盘中上涨，无主体事件"
+    },
+    {
+      "event_id": "c23ac5e1-f080-4706-be8a-c179a3619956",
+      "title": "港股科技板块多线走强 光通信PCB存储领涨",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "板块普涨无明确主体事件，仅盘面播报"
+    },
+    {
+      "event_id": "f5b87e4d-da6e-49e3-97d8-d3c9a7955f4a",
+      "title": "A股港股美股芯片光通信板块联动走强",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "仅描述三地板块联动上涨，无主体事件"
+    },
+    {
+      "event_id": "bd880ac3-d999-495c-a13a-6ff187bf5c5a",
+      "title": "美股网络安全与光通信板块个股集体创新高",
+      "thread_title": "AI服务器与光通信硬件链",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "仅板块个股集体走强，无主体事件"
+    },
+    {
+      "event_id": "baba00a4-b03f-42bc-aad5-701dd64179e7",
+      "title": "英伟达戴尔股价齐创新高，AI硬件需求持续走强",
+      "thread_title": "英伟达AI算力基建版图",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "仅描述股价创新高，无主体事件"
+    },
+    {
+      "event_id": "78fd1ee7-0061-44c5-b3b3-43044c585757",
+      "title": "标普500首破7800点 存储概念股领涨",
+      "thread_title": "存储与HBM超级周期",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "指数首破点位及板块普涨，无主体独立事件"
+    },
+    {
+      "event_id": "7a0ccdb5-1a1d-4d46-afac-9da968862d41",
+      "title": "美股存储板块8月18日普跌",
+      "thread_title": "存储与HBM超级周期",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "仅描述板块普跌盘面，无主体事件"
+    },
+    {
+      "event_id": "7921638a-78ff-43d1-8748-6cad45dba442",
+      "title": "智谱港股股价大跌超16% 成交额逾66亿港元",
+      "thread_title": "大模型厂商竞争",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "个股大跌无主体事件，仅盘面表现"
+    },
+    {
+      "event_id": "0d4373b7-d637-48cd-b5fb-6943fff0dce6",
+      "title": "港股有色金属及锂业股逆市走强",
+      "thread_title": "矿业与工业金属",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "板块集体走强，无主体独立事件"
+    },
+    {
+      "event_id": "18d0843b-780c-4cbe-bd7b-ea8ad1ce396c",
+      "title": "博通股价一度跌5%成标普500跌幅最大成分股",
+      "thread_title": "谷歌TPU与定制AI芯片",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "仅个股盘面下跌，无主体事件"
+    },
+    {
+      "event_id": "69eb31ec-449b-4eef-8b9c-5c905a7d4254",
+      "title": "加密货币集体拉升，比特币突破6.9万美元",
+      "thread_title": "比特币与加密资产",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "仅描述币价集体上涨，无主体事件"
+    },
+    {
+      "event_id": "b1933df6-7a7b-45c2-83ea-fbbd1919878a",
+      "title": "美股加密货币概念股全线走强，比特币突破6.9万美元",
+      "thread_title": "比特币与加密资产",
+      "rule": "event",
+      "llm": "snapshot",
+      "llm_reason": "仅描述板块跟涨，无主体独立事件"
+    }
+  ],
+  "kept_disagreement": [
+    {
+      "event_id": "91d11396-3e9f-4075-8621-2c217a2ab97b",
+      "title": "沙特机场与油轮遇袭 油价盘初走高",
+      "rule": "snapshot",
+      "llm": "event",
+      "llm_reason": "沙特机场与油轮遇袭是主体事件"
+    },
+    {
+      "event_id": "e147d7e7-aae7-4f82-9358-56e1066c3c15",
+      "title": "港股mRNA肿瘤疫苗概念股集体高开",
+      "rule": "snapshot",
+      "llm": "event",
+      "llm_reason": "Moderna突破为原因事件，非纯盘面"
+    },
+    {
+      "event_id": "94b01f30-3546-44cb-b8cf-261bfd5eb072",
+      "title": "SpaceX上市后首份财报营收增92% 盘前跌超8%",
+      "rule": "snapshot",
+      "llm": "event",
+      "llm_reason": "SpaceX发布上市后首份财报"
+    },
+    {
+      "event_id": "be12cf54-f06d-4029-8344-336bc65dcab8",
+      "title": "阿里巴巴配股募资约100亿美元，港股开盘跌超8%",
+      "rule": "snapshot",
+      "llm": "event",
+      "llm_reason": "阿里配股募资是主体事件"
+    },
+    {
+      "event_id": "6b49a1cc-4168-4dd9-b02a-5f021f5e24c7",
+      "title": "中概股及光通信概念美股盘前普跌",
+      "rule": "snapshot",
+      "llm": "event",
+      "llm_reason": "阿里配售新股及光通信利空为具体事件"
+    },
+    {
+      "event_id": "d133ffd9-68a4-4671-aea5-4d5abfe1f9fb",
+      "title": "CoreWeave财报超预期营收翻倍盘后大涨",
+      "rule": "snapshot",
+      "llm": "event",
+      "llm_reason": "CoreWeave发布财报，主体事件"
+    },
+    {
+      "event_id": "d2d68919-6979-4f3c-9544-8dc7c19b39d2",
+      "title": "Cerebras二季度营收不及预期盘前跌17%",
+      "rule": "snapshot",
+      "llm": "event",
+      "llm_reason": "Cerebras发布财报，主体事件"
+    },
+    {
+      "event_id": "fda64660-4fc5-4d29-82d0-4151e75c3570",
+      "title": "闪迪业绩指引不及预期 盘后股价跌8%",
+      "rule": "snapshot",
+      "llm": "event",
+      "llm_reason": "闪迪发布财报及业绩指引，主体事件"
+    },
+    {
+      "event_id": "48b6d3a8-050c-4ba4-afda-b1436028de66",
+      "title": "美股开盘上涨，美光科技CEO称需求超供给50%",
+      "rule": "snapshot",
+      "llm": "event",
+      "llm_reason": "美光CEO称需求超供给50%为具体表态"
+    },
+    {
+      "event_id": "7f098413-7587-4bb8-b874-7ca4d69a86ee",
+      "title": "戴尔科技盘中涨逾5%，扩展AI数据平台",
+      "rule": "snapshot",
+      "llm": "event",
+      "llm_reason": "戴尔宣布扩展AI数据平台，有主体动作"
+    }
+  ]
+}
