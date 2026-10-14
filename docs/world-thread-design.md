@@ -203,6 +203,66 @@ ORDER BY te.chapter_no DESC NULLS LAST,
 
 结论：排序可以回退，但**不能两个页面各回退到不同的键**。章号是跨页面的指代契约，一旦分叉，人工治理动作就会打偏。
 
+**⚠️ 分叉事故 2：作用域分叉（2026-10-14，简报「世界线进展」区块）**
+
+同一个分叉家族的第二种形态：不是**排序键**不同，而是**聚合作用域**不同。
+
+**事故经过**：简报新增「世界线进展」区块，要显示「这条线走到第 N 章 + 本期新增 M 章」。实现时把两个字段写进了同一条聚合 SQL：
+
+```sql
+SELECT t.id, t.title,
+       COUNT(DISTINCT l.event_id) AS new_chapters,   -- 本期增量（要受 digest 过滤）
+       MAX(te.chapter_no)         AS latest_chapter_no  -- ✗ 也被 digest 过滤了
+FROM digest_event_links l
+JOIN thread_events te ON te.event_id = l.event_id
+JOIN threads t ON t.id = te.thread_id
+WHERE l.digest_id = :d            -- ← 这个条件同时压住了上面两个字段
+GROUP BY t.id, ...
+```
+
+`WHERE l.digest_id = :d` 把聚合范围压到「本期简报收录的那几个事件」。
+对 `new_chapters`（本期增量）这是**正确**的；对 `latest_chapter_no`（线的位置）这是**错误**的——
+它变成了「本期收录事件里的最大章号」，而非「整条线的最大章号」。
+只要本期收的不是最新的那几章，算出的章号就偏小。
+
+**实测（digest 693，2026-10-13 evening）**：
+
+| 世界线 | 错误显示 | 详情页真实 | 偏差 |
+|---|---|---|---|
+| 海外经济数据与央行政策 | 第 34 章 | 第 36 章 | -2 |
+| AI应用软件与云厂商变现 | 第 9 章 | 第 11 章 | -2 |
+| AI服务器与光通信硬件链 | 第 23 章 | 第 23 章 | 0（碰巧本期收的就是最新章） |
+
+三条线里两条错。第三条**不是正确，只是运气**——这类 bug 的可怕之处正在于此：
+抽样验证时容易被"看起来对"的样本蒙混过关。
+
+**正确写法**：两个字段的作用域必须分开，章号走独立子查询，不受 digest 过滤：
+
+```sql
+SELECT t.id, t.title, t.chapter_count,
+       COUNT(DISTINCT l.event_id) AS new_chapters,   -- 受 digest 过滤：本期增量
+       (SELECT MAX(x.chapter_no) FROM thread_events x   -- 不受 digest 过滤：线的位置
+         WHERE x.thread_id = t.id
+           AND COALESCE(x.role, 'core') <> 'noise') AS latest_chapter_no
+FROM digest_event_links l
+JOIN thread_events te ON te.event_id = l.event_id
+JOIN threads t ON t.id = te.thread_id
+WHERE l.digest_id = :d AND COALESCE(te.role, 'core') <> 'noise'
+GROUP BY t.id, ...
+```
+
+**两条通则可推广到任何「按子集统计，同时展示全集属性」的场景**：
+
+1. **先分清每个字段的作用域**——「本期 +M」是子集属性，「第 N 章」是全集属性。
+   两者混在一条 `WHERE` 下必然有一个错。
+2. **过滤条件就是作用域声明**。`WHERE` 写下去的瞬间，就决定了该查询里所有聚合的可见范围。
+   需要不同作用域的字段，只能拆成子查询或 `FILTER (WHERE ...)`，不能靠事后回退。
+
+**与事故 1 的关系**：两次都是「同一个语义在不同页面/不同计算里有两个答案」，
+一次错在排序键，一次错在作用域。共同教训是——
+**章号是跨页面的指代契约，任何一处算错，人工按章号寻址的治理动作就会打偏。**
+新增任何展示章号的地方，都要回头对一遍详情页口径（`_chapter_rows`），不能只相信自己这条 SQL 跑出来的数。
+
 **② 并发安全**：章节号分配用 PG advisory lock（事务级，提交自动释放），
 不用 `max+1`。`uq_thread_chapter_seq` 是最后防线——即使锁失效也宁可报错，不静默错号。
 
