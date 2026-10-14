@@ -66,6 +66,25 @@ def weighted_jaccard(
     return inter / union
 
 
+def weighted_jaccard_normalized(
+    ev_entities: dict[str, int],
+    thread_entities: dict[str, int],
+) -> float:
+    """归一化加权 Jaccard（P0-5）：两侧各除以自身 Σw 后再算 Σmin/Σmax。
+
+    解决 core_entities 权重跨章节累加导致的 E 被系统性压低问题，
+    详见 compute_score 内注释。归一化后 E 与线的成熟度解耦。
+    """
+    if not ev_entities or not thread_entities:
+        return 0.0
+    se = sum(ev_entities.values()) or 1
+    st = sum(thread_entities.values()) or 1
+    keys = set(ev_entities) | set(thread_entities)
+    inter = sum(min(ev_entities.get(k, 0) / se, thread_entities.get(k, 0) / st) for k in keys)
+    union = sum(max(ev_entities.get(k, 0) / se, thread_entities.get(k, 0) / st) for k in keys)
+    return inter / union if union > 0 else 0.0
+
+
 def shared_entity_count(
     ev_entities: dict[str, int],
     thread_entities: dict[str, int],
@@ -178,7 +197,22 @@ def compute_score(
     影子模式的核心产出就是这个四元组：没有分项，7 天后无法判断
     是 E 偏高还是 M 偏低导致的误判，权重就没法调。
     """
-    e = weighted_jaccard(ev_entities, thread_entities)
+    # ★ P0-5（2026-10-14）：加权 Jaccard 归一化（修复 E 被系统性压低）。
+    #
+    # 背景：core_entities 权重是**跨章节累加**的（伊朗在某线出现 21 章 → 权
+    # 重 21），Σw 随线成熟单调增长；单事件 Σw 通常只有 3~6。未归一化时：
+    #     分子 ≤ min(事件Σw, 线Σw) ≈ 5    分母 ≈ 5 + 63 = 68  → E ≤ 0.073
+    # 实测 441 条真实配对（事件 vs 其人工基线所属线）E 中位数仅 0.036、
+    # p75 仅 0.077；六条主线的 E 理论上限只有 0.073~0.161。
+    # 后果：T_JOIN_ENTITY 设 0.15 或 0.30 都会误杀几乎全部真阳性——
+    # 门控越紧、线越成熟，误杀越彻底（负反馈：好线反而归不进去）。
+    #
+    # 正解：两侧各除以自身 Σw，让 Jaccard 比较**权重分布形态**而非绝对量级，
+    # E 回到 0~1 且与线的成熟度解耦。实测中位数 0.036 → 0.111。
+    if settings.THREAD_E_NORMALIZE:
+        e = weighted_jaccard_normalized(ev_entities, thread_entities)
+    else:
+        e = weighted_jaccard(ev_entities, thread_entities)
     m = mechanism_score(ev_mechanisms, thread_mechanism)
     r = recency_bonus(last_event_at, now)
 

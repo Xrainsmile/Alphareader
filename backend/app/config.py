@@ -365,6 +365,12 @@ class Settings(BaseSettings):
     # 胚胎线至少几章才转 active（P2-10 配套：1-2 章不足以证明是条线）
     THREAD_MIN_CHAPTERS_ACTIVE: int = 3
 
+    # ★ P0-5（2026-10-14）：加权 Jaccard 是否做归一化。
+    # true  = 两侧各除以自身 Σw 后再算（推荐，默认）
+    # false = 直接用原始累加权重算 → 成熟线 Σw 大，E 被压到 0.07 以下，
+    #         门控无论怎么设都会误杀真阳性
+    THREAD_E_NORMALIZE: bool = True
+
     # ★ P0-3（2026-10-14）：披露形式 / 通用名词实体黑名单。
     # 命中这些名字的实体不得作为归线锚点、也不得计入 Jaccard 分子。
     # 依据：现网 12 条 8-K 线（40+ 章）把几十家无关公司串成一条线，只因
