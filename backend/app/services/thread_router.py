@@ -711,10 +711,13 @@ async def route_event(
                 hits = await _llm_verify(event_id, hits)
 
             await _record_shadow(event_id, top)
+            # ★ 只有「非影子」且「确实没归上」才建新线。
+            #   影子模式下绝不建线——否则灰度期会凭空多出一堆线，
+            #   等切正式开关时这批线已经在污染线池，无法撤销。
             if not settings.THREAD_ROUTING_SHADOW:
                 await _apply_routes(event_id, hits)
-            if not hits:
-                await maybe_create_thread(event_id)
+                if not hits:
+                    await maybe_create_thread(event_id)
             return top
 
         if not settings.THREAD_SEMANTIC_FALLBACK_RULE:
