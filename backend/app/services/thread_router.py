@@ -11,14 +11,18 @@
    覆盖率会让长线（实体多）天然吸走所有事件，正是要防的「强行归类」。
 3. is_generic 实体一律排除在 E 之外。否则两条无关的线会因为都提到
    「市场」「美国」而被判相似。
-4. mechanism_hints 为空数组 → 对所有线兼容（无约束），不是 unknown，
-   也不是归到某条默认线。空 = 不参与门控。
+4. mechanism_hints 为空 **= 该维度无信息**，做权重重分配而非补固定分
+   （P0-1，2026-10-14）。旧实现补 1.0/0.5 后照常按 0.30 加权，等于白送分；
+   生产库覆盖率仅 1.9%，实测 S 有 79% 与"是否同一条线"无关。
 5. R 用指数衰减（半衰期 72h），天然落在 (0,1]，不需要额外的 CAP。
    活跃线滚雪球的问题由衰减本身解决。
+6. 披露形式 / 通用名词实体（8-K、原油、AI…）一律排除（P0-3）。
+   它们描述"怎么说的"而非"说的是谁"，作为锚点会把无关事件串成一条线。
 """
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -31,6 +35,9 @@ logger = logging.getLogger(__name__)
 
 # 不参与归线的线状态（已合并/已拆分，保留重定向指针但不再接收新事件）
 _INELIGIBLE_STATUS = {"merged", "split"}
+
+# P0-3 黑名单缓存（配置不变时不重复构造集合）
+_DENY_CACHE: set[str] | None = None
 
 
 def weighted_jaccard(
@@ -131,7 +138,9 @@ def mechanism_score(
     丢失了「线有机制、事件无机制」时应有的中间态信息。
     """
     if not ev_mechanisms:
-        return settings.THREAD_M_MISSING_SCORE
+        # ★ P0-1：返回 None 表示"该维度无信息"，由 compute_score 做权重重分配。
+        # 旧实现返回固定分（1.0 / 0.5）并照常计入加权和，等于白送 0.30 分。
+        return None
     if not thread_mechanism:
         return 0.5
     return 1.0 if thread_mechanism in ev_mechanisms else 0.0
@@ -172,12 +181,180 @@ def compute_score(
     e = weighted_jaccard(ev_entities, thread_entities)
     m = mechanism_score(ev_mechanisms, thread_mechanism)
     r = recency_bonus(last_event_at, now)
-    s = (
-        settings.THREAD_SCORE_W_ENTITY * e
-        + settings.THREAD_SCORE_W_MECHANISM * m
-        + settings.THREAD_SCORE_W_RECENCY * r
-    )
-    return s, e, m, r
+
+    # ★ P0-1（2026-10-14）：机制未知时做权重重分配，而非给固定分。
+    #
+    # 背景：生产库 mechanism_hints 抽取覆盖率仅 1.9%（16/838），98% 的事件
+    # 走 M_MISSING 分支。若照旧按 0.30 权重计入一个固定值（原 1.0、现 0.5），
+    # 等于向每条候选线无条件发放 0.30*0.5=0.15 ~ 0.30*1.0=0.30 的"保底分"；
+    # 叠加 R≈1 的 0.15，S 凭空 >= 0.30，实体门控一旦放宽就立刻过线。
+    # 实测现网 S 有 79% 来自 M+R、与"是否同一条线"无关，M 均值 0.991。
+    #
+    # 正解：机制未知 = 该维度无信息，应将其权重**摊回**已知维度（E、R），
+    # 使 S 始终表示"已有证据下的加权平均"，而不是"未知项按中位猜测补齐"。
+    # 这样 S 与 E 单调相关，T_JOIN 才真正有区分度。
+    w_e = settings.THREAD_SCORE_W_ENTITY
+    w_m = settings.THREAD_SCORE_W_MECHANISM
+    w_r = settings.THREAD_SCORE_W_RECENCY
+    if settings.THREAD_M_REDISTRIBUTE_WEIGHT and m is None:
+        s = (w_e * e + w_r * r) / max(w_e + w_r, 1e-6)
+    else:
+        # m 为 None 时回落到 M_MISSING_SCORE（兼容开关关闭的旧行为）
+        s = w_e * e + w_m * (settings.THREAD_M_MISSING_SCORE if m is None else m) + w_r * r
+    return s, e, (0.5 if m is None else m), r
+
+
+def infer_event_kind(title: str, entities: list[str] | None = None) -> str:
+    """P1-6（2026-10-14）：推断事件类型，用于跨类型硬门控。
+
+    返回类型标签：
+        disclosure  信息披露（8-K / 财报 / 监管文件）
+        market      市场快照（指数 / 板块 / 开盘收盘）
+        rating      投行评级 / 目标价调整
+        geopolitics 地缘冲突 / 军事 / 制裁
+        macro       宏观数据 / 央行政策
+        earnings    公司业绩 / 经营
+        deal        并购 / 融资 / 资本运作
+        product     产品发布 / 技术进展
+        other       其他
+
+    为什么需要：现网把"闪迪业绩指引"和"伊朗封锁海峡"混在同一条线，
+    根因是只比实体不比类型——两者可能共享"油价""美股"这类通用实体。
+    世界线是**争夺标的 + 推进机制**的连续叙事，类型不同则机制必然不同。
+    """
+    t = (title or "").strip()
+    if not t:
+        return "other"
+    rules: list[tuple[str, list[str]]] = [
+        ("disclosure", [r"8-K", r"8-K/A", r"10-K", r"10-Q", r"6-K", r"20-F",
+                        r"提交.{0,4}文件", r"披露.{0,6}文件", r"SEC"]),
+        ("rating", [r"目标价", r"评级", r"跑赢行业", r"上调.{0,4}至", r"下调.{0,4}至",
+                    r"维持.{0,4}评级", r"给予.{0,4}评级"]),
+        ("market", [r"开盘", r"收盘", r"收涨", r"收跌", r"领涨", r"领跌", r"走强",
+                    r"走弱", r"下挫", r"翻红", r"低开", r"高开", r"盘中", r"夜盘",
+                    r"盘初", r"三大指数", r"创业板指", r"恒指", r"科创50"]),
+        ("geopolitics", [r"袭击", r"遭袭", r"遇袭", r"军事", r"军演", r"制裁",
+                         r"封锁", r"停火", r"武装", r"导弹", r"无人机袭击",
+                         r"霍尔木兹", r"海峡", r"战争", r"冲突"]),
+        ("macro", [r"CPI", r"PPI", r"PMI", r"非农", r"失业率", r"GDP", r"通胀",
+                   r"美联储", r"央行", r"利率", r"加息", r"降息", r"国债收益率",
+                   r"贸易帐", r"逆差", r"顺差", r"LPR", r"MLF", r"消费信心"]),
+        ("deal", [r"收购", r"洽购", r"合并", r"并购", r"私有化", r"融资",
+                  r"配售", r"增发", r"IPO", r"招股", r"定增", r"要约"]),
+        ("earnings", [r"业绩", r"财报", r"半年报", r"中报", r"净利", r"营收",
+                      r"盈利", r"亏损", r"指引", r"派息", r"股息", r"回购"]),
+        ("product", [r"发布", r"推出", r"上线", r"获批", r"试乘", r"量产",
+                     r"下线", r"首发", r"亮相"]),
+    ]
+    for kind, pats in rules:
+        for p in pats:
+            if re.search(p, t, re.I):
+                return kind
+    return "other"
+
+
+# ★ P1-6：跨类型禁止合并的组合。
+# 设计原则：不是列"哪些能合"（列不全），而是列"哪些绝不能合"。
+# 前者会随业务演进失效，后者是守恒的硬约束。
+_INCOMPATIBLE_KINDS: dict[str, set[str]] = {
+    "geopolitics": {"earnings", "product", "rating"},
+    "earnings": {"geopolitics", "market", "disclosure"},
+    "market": {"earnings", "geopolitics", "deal"},
+    "disclosure": {"earnings", "geopolitics", "market"},
+    "rating": {"geopolitics", "market"},
+    "product": {"geopolitics"},
+    "macro": {"earnings", "product"},
+    "deal": {"market", "geopolitics"},
+}
+
+
+def kind_conflict(kind_a: str, kind_b: str) -> bool:
+    """两个事件类型是否互斥（不可归入同一条线）。"""
+    if not kind_a or not kind_b or kind_a == kind_b:
+        return False
+    if kind_a == "other" or kind_b == "other":
+        return False   # 未知类型不参与否决，避免误杀
+    return kind_b in _INCOMPATIBLE_KINDS.get(kind_a, set())
+
+
+async def _load_event_title(event_id: uuid.UUID) -> str:
+    """取事件标题（P1-6 类型推断用）。失败返回空串，不阻断归线。"""
+    sql = text("SELECT COALESCE(title, '') FROM events WHERE id = :eid")
+    async with async_session() as session:
+        val = (await session.execute(sql, {"eid": event_id})).scalar()
+    return str(val or "")
+
+
+def _infer_thread_kind(thread: dict) -> str:
+    """推断一条线的事件类型。
+
+    优先用线标题（rollup 后的标题最能代表线主题）；标题缺失时退回
+    mechanism_key。返回 'other' 表示未知——未知类型不参与互斥否决，
+    避免门控误杀真实归线（宁可放过，不可错杀）。
+    """
+    t = (thread.get("title") or "").strip()
+    if t:
+        return infer_event_kind(t)
+    mk = (thread.get("mechanism_key") or "").strip()
+    if not mk:
+        return "other"
+    # 机制键形如「地缘对抗」「价格传导」「业绩兑现」，用关键词回退映射
+    if re.search(r"地缘|制裁|军事|冲突", mk):
+        return "geopolitics"
+    if re.search(r"价格|供需|油价", mk):
+        return "macro"
+    if re.search(r"业绩|营收|财报", mk):
+        return "earnings"
+    if re.search(r"模型|产品|技术", mk):
+        return "product"
+    return "other"
+
+
+def is_market_snapshot(title: str) -> bool:
+    """P2-11（2026-10-14）：是否为日频市场快照（不进世界线）。
+
+    现网约 150 条「港股开盘XX」「A股三大指数XX」被当成世界线章节。
+    它们是**市场脉搏**——描述当天盘面，不构成"争夺标的 + 推进机制"的叙事。
+    混进世界线会稀释主线：一条 33 章的线里可能有一半是无关的收盘综述。
+    """
+    if not settings.THREAD_MARKET_SNAPSHOT_ENABLED or not title:
+        return False
+    for p in settings.THREAD_MARKET_SNAPSHOT_PATTERNS:
+        if re.search(p, title):
+            return True
+    return False
+
+
+def time_gap_penalty(last_event_at, now: datetime) -> float:
+    """P1-7（2026-10-14）：时间断线惩罚系数，落在 (0, 1]。
+
+    世界线是**连续追踪**的叙事。现网 33 章巨型线跨 2026-08-05 ~ 10-13，
+    中间 9 月完全空窗仍算同一条线——那是两条被硬粘起来的线。
+    规则：间隔超过 THREAD_TIME_GAP_DAYS 后线性衰减，超过 2 倍则趋于 0，
+    由调用方乘到 S 上（软惩罚，不硬否决：避免误杀确有长期跨度的线）。
+    """
+    if last_event_at is None:
+        return 1.0
+    if last_event_at.tzinfo is None:
+        last_event_at = last_event_at.replace(tzinfo=timezone.utc)
+    days = (now - last_event_at).total_seconds() / 86400.0
+    limit = max(settings.THREAD_TIME_GAP_DAYS, 1e-6)
+    if days <= limit:
+        return 1.0
+    # 超过 limit 后线性降到 0（2*limit 天时归零）
+    return max(0.0, 1.0 - (days - limit) / limit)
+
+
+def _denylist() -> set[str]:
+    """P0-3：披露形式 / 通用名词实体黑名单（带缓存）。
+
+    设计要点：这是**减法**而非加法——不去穷举"哪些实体有区分度"
+    （永远列不全），而是剔除已知的"形式类"与"通用类"名字。
+    """
+    global _DENY_CACHE
+    if _DENY_CACHE is None:
+        _DENY_CACHE = {str(x).strip() for x in (settings.THREAD_ENTITY_DENYLIST or []) if str(x).strip()}
+    return _DENY_CACHE
 
 
 async def _load_event_entities(event_id: uuid.UUID) -> dict[str, int]:
@@ -196,9 +373,14 @@ async def _load_event_entities(event_id: uuid.UUID) -> dict[str, int]:
     async with async_session() as session:
         rows = (await session.execute(sql, {"eid": event_id})).all()
     core = settings.THREAD_CORE_ENTITY_WEIGHT
+    blocked = _denylist()
     out: dict[str, int] = {}
     for name, w in rows:
         if not name:
+            continue
+        # ★ P0-3：披露形式 / 通用名词不参与归线。
+        #   它们描述的是"怎么说的"而非"说的是谁"，作为锚点会把无关事件串线。
+        if name in blocked:
             continue
         w = int(w or 1)
         # 同一规范名可能有多条关联（不同别名归并后），取最大权重
@@ -266,10 +448,15 @@ def _thread_entity_weights(core_entities: object) -> dict[str, int]:
     - 对象式 {"胡塞武装": 3, "曼德海峡": 1}
     - 数组式 ["胡塞武装", "曼德海峡"]（默认权重 1）
     """
+    blocked = _denylist()
     if isinstance(core_entities, dict):
-        return {str(k): int(v or 1) for k, v in core_entities.items()}
+        return {
+            str(k): int(v or 1)
+            for k, v in core_entities.items()
+            if str(k) not in blocked
+        }
     if isinstance(core_entities, list):
-        return {str(x): 1 for x in core_entities}
+        return {str(x): 1 for x in core_entities if str(x) not in blocked}
     return {}
 
 
@@ -302,6 +489,18 @@ async def route_event(
     excluded = await _load_manual_exclusions(event_id)
     threads = await _load_candidate_threads()
 
+    # ★ P1-6：事件类型硬门控。只比实体不比类型，会把「闪迪业绩指引」
+    #   和「伊朗封锁海峡」混进同一条线——两者共享"油价/美股"这类通用实体，
+    #   但争夺标的与推进机制完全不同。
+    ev_title = await _load_event_title(event_id)
+    ev_kind = infer_event_kind(ev_title, list(ev_ents.keys()))
+
+    # ★ P2-11：日频市场快照不进世界线。放在打分之前短路，
+    #   既省算力也从根上避免"收盘综述污染主线叙事"。
+    if is_market_snapshot(ev_title):
+        logger.info("skip market snapshot event %s: %s", event_id, (ev_title or "")[:40])
+        return []
+
     now = reference_at or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
@@ -311,6 +510,17 @@ async def route_event(
         # ① 硬筛选第一关：人工排除优先于一切。
         #    人工治理是权威——被摘除过的线绝不能再自动归回，否则治理失效。
         if tid in excluded:
+            continue
+        # ★ P1-6 硬筛选第 1.5 关：事件类型互斥则直接否决（一票否决）。
+        th_kind = _infer_thread_kind(t)
+        if settings.THREAD_KIND_GATE_ENABLED and kind_conflict(ev_kind, th_kind):
+            scored.append({
+                "thread_id": tid,
+                "title": t.get("title"),
+                "S": 0.0, "E": 0.0, "M": 0.0, "R": 0.0,
+                "join": False,
+                "gate": f"kind_conflict:{ev_kind}/{th_kind}",
+            })
             continue
         th_ents = _thread_entity_weights(t.get("core_entities"))
         s, e, m, r = compute_score(
@@ -322,6 +532,12 @@ async def route_event(
         #    仅判 E=0 不够：实测 8-K 线与任意提交 8-K 的事件 E 恒 > 0，
         #    于是 S = 0.30*1.0(M空) + 0.15*1.0(R新线) = 0.45 稳定过阈值，
         #    几十家无关公司被串成一条线。必须给 E 设下限并要共现数兜底。
+        # ★ P1-7：时间断线。间隔超过 THREAD_TIME_GAP_DAYS 的线乘衰减系数。
+        #   放在门控**之后**：先保证实体/类型合格，再按时间连续性调权，
+        #   避免顺序颠倒导致长期线被过早否决。
+        gap = time_gap_penalty(t.get("last_event_at"), now) if settings.THREAD_TIME_GAP_ENABLED else 1.0
+        if gap < 1.0:
+            s = s * gap
         shared = shared_entity_count(ev_ents, th_ents)
         passed, why = entity_gate(e, shared)
         if not passed:
@@ -350,6 +566,11 @@ async def route_event(
     top = scored[: settings.THREAD_MAX_LINES_PER_EVENT]
     hits = [x for x in top if x["join"]]
 
+    # ★ P2-9：规则判定的灰色地带送 LLM 语义复核。
+    #   规则只能判"形似"，判不了"是否同一条叙事"——8-K 扎堆就是铁证。
+    if hits and settings.THREAD_LLM_VERIFY_ENABLED:
+        hits = await _llm_verify(event_id, hits)
+
     await _record_shadow(event_id, top)
     if not settings.THREAD_ROUTING_SHADOW:
         await _apply_routes(event_id, hits)
@@ -359,6 +580,70 @@ async def route_event(
     if not hits:
         await maybe_create_thread(event_id)
     return top
+
+
+async def _llm_verify(event_id: uuid.UUID, hits: list[dict]) -> list[dict]:
+    """P2-9：对灰色地带的命中做语义复核，返回通过校验的子集。
+
+    只查 should_verify(S) 为真的项；LLM 不可用/返回非法一律放行。
+    """
+    try:
+        from app.services import thread_verifier
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("thread_verifier import failed: %s", exc)
+        return hits
+
+    need = [h for h in hits if thread_verifier.should_verify(h["S"])]
+    if not need:
+        return hits
+
+    ev_title, ev_summary = await _load_event_text(event_id)
+    out = []
+    for h in hits:
+        if h not in need:
+            out.append(h)
+            continue
+        ch = await _load_recent_chapters(h["thread_id"], limit=5)
+        meta = await _load_thread_meta(h["thread_id"])
+        verdict = await thread_verifier.verify(
+            ev_title, ev_summary,
+            meta.get("title") or h.get("title") or "",
+            meta.get("contested_asset") or "",
+            meta.get("mechanism_key") or "",
+            ch,
+        )
+        if verdict is False:
+            logger.info("llm rejected: event=%s thread=%s", event_id, h["thread_id"])
+            h["gate"] = "llm_reject"
+            continue
+        out.append(h)
+    return out
+
+
+async def _load_event_text(event_id: uuid.UUID) -> tuple[str, str]:
+    sql = text("SELECT COALESCE(title,''), COALESCE(summary,'') FROM events WHERE id=:eid")
+    async with async_session() as session:
+        r = (await session.execute(sql, {"eid": event_id})).first()
+    return (r[0] or "", r[1] or "") if r else ("", "")
+
+
+async def _load_recent_chapters(thread_id: uuid.UUID, limit: int = 5) -> list[str]:
+    sql = text("""
+        SELECT COALESCE(snapshot_title,'') FROM thread_events
+        WHERE thread_id=:tid ORDER BY chapter_seq DESC NULLS LAST, created_at DESC LIMIT :lim
+    """)
+    async with async_session() as session:
+        rows = (await session.execute(sql, {"tid": thread_id, "lim": limit})).scalars().all()
+    return [x for x in rows if x]
+
+
+async def _load_thread_meta(thread_id: uuid.UUID) -> dict:
+    sql = text("""
+        SELECT title, contested_asset, mechanism_key FROM threads WHERE id=:tid
+    """)
+    async with async_session() as session:
+        r = (await session.execute(sql, {"tid": thread_id})).mappings().first()
+    return dict(r) if r else {}
 
 
 async def _record_shadow(event_id: uuid.UUID, scored: list[dict]) -> None:
@@ -522,13 +807,21 @@ async def _load_event_core_entities(
         FROM event_entities ee
         JOIN entities e ON e.id = ee.entity_id
         WHERE ee.event_id = :eid
-          AND COALESCE(e.is_generic, false) = false
+            AND COALESCE(e.is_generic, false) = false
         ORDER BY ee.weight DESC, COALESCE(e.mention_count, 1) DESC
         LIMIT :lim
     """)
     async with async_session() as session:
         rows = (await session.execute(sql, {"eid": event_id, "lim": limit})).all()
-    return [(r[0], int(r[1] or 1), int(r[2] or 1)) for r in rows if r[0]]
+    # ★ P1-5（2026-10-14）：线的锚实体必须是专有名词（公司、地名、人名、
+    #   商品名），剔除披露形式与通用名词。现网 33 章巨型线的 core_entities
+    #   是 {伊朗, 原油, 石油}——后两个跨所有能源新闻，不具区分度，
+    #   是"该拆的没拆"的直接成因。
+    blocked = _denylist()
+    return [
+        (r[0], int(r[1] or 1), int(r[2] or 1))
+        for r in rows if r[0] and str(r[0]) not in blocked
+    ]
 
 
 async def maybe_create_thread(event_id: uuid.UUID) -> uuid.UUID | None:

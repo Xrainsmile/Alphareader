@@ -310,17 +310,79 @@ class Settings(BaseSettings):
     THREAD_M_MISSING_SCORE: float = 0.5
     # E 下限：实体重合比例低于此值直接否决（不论 S 高）。
     # 0.15 对应「10 实体线 vs 5 实体事件、重合 2 个」的下沿（2/13≈0.154）。
-    THREAD_T_JOIN_ENTITY: float = 0.15
+    # ★ P0-2（2026-10-14）：0.15 -> 0.30。
+    #   实测生产库命中项 E 均值仅 0.203、最低 0.0526，大量"只沾到一个实体"
+    #   的配对通过了门控。人工基线聚合显示：真实同主题配对重合实体普遍 >= 3，
+    #   0.30 能保留真阳性并挡掉形式相似误配（8-K 线扎堆的直接成因之一）。
+    THREAD_T_JOIN_ENTITY: float = 0.30
     # 最少共同实体数：只共享 1 个实体不足以证明同一条线。
     # ★ 注意不能用「共同**核心**实体（weight>=3）」判定：
     #   link_event_entities 唯一调用点（event_synthesizer）用默认 default_weight=1，
     #   全库 event_entities.weight 恒为 1，weight>=3 永远不成立 → 会误杀全部归线。
-    THREAD_MIN_SHARED_ENTITIES: int = 2
+    # ★ P0-2（2026-10-14）：2 -> 3，与 T_JOIN_ENTITY=0.30 配套。
+    THREAD_MIN_SHARED_ENTITIES: int = 3
     # 门控总开关：false 则整套门控退化为仅 E<=0 否决（等同收紧前行为）。
     # ★ 必须保留：服务器 THREAD_ROUTING_SHADOW=false（真实写入，非影子模式），
     #   门控一旦误判会直接污染生产数据；且机制命中的线 M=1.0 使 S 恒 >= 0.45，
     #   T_JOIN 对它们完全失效，门控是唯一防线。没有开关就只能改代码重新发版回退。
     THREAD_ENTITY_GATE_ENABLED: bool = True
+
+    # ★ P0-1（2026-10-14）：机制未知时是否做权重重分配（核心止血项）。
+    # true  = S = (wE*E + wR*R) / (wE + wR)，M 维度整体退出（推荐，默认）
+    # false = 旧行为：M 取 M_MISSING_SCORE 后照常按 wM 计入 → 白送 0.15~0.30 分
+    # 生产库 mechanism_hints 覆盖率仅 1.9%（16/838），此开关必须保持 true。
+    THREAD_M_REDISTRIBUTE_WEIGHT: bool = True
+
+    # ── 世界线 P1（2026-10-14 结构改进）──
+    # P1-6：事件类型硬门控。类型互斥的事件禁止归入同一条线。
+    # 现网把"公司业绩"和"地缘冲突"混线，根因是只比实体不比类型。
+    THREAD_KIND_GATE_ENABLED: bool = True
+    # P1-7：时间断线。章节间隔超过该天数后 S 线性衰减，2 倍时归零。
+    # 世界线是连续追踪的叙事，长期空窗后应视为新线而非老线续章。
+    THREAD_TIME_GAP_ENABLED: bool = True
+    THREAD_TIME_GAP_DAYS: float = 30.0
+    # P1-8：碎片线合并扫描。core_entities Jaccard 超过该阈值即建议合并。
+    THREAD_MERGE_SIMILARITY: float = 0.60
+
+    # ── 世界线 P2（2026-10-14 质量层）──
+    # P2-9：LLM 二次语义校验。规则判 join 且 S 落在
+    # [T_JOIN, T_JOIN + BAND) 的灰色地带时送 DeepSeek 复核。
+    # 只查灰色地带：明显命中不查（省 token），已被规则挡掉的不查。
+    # 失败一律放行（宁可放过不可错杀——误杀导致线碎片化的代价更高）。
+    THREAD_LLM_VERIFY_ENABLED: bool = False   # 先关，观察规则层效果后再开
+    THREAD_LLM_VERIFY_BAND: float = 0.15
+    # P2-10：embryo 归档。超过该天数无新章节的 embryo 线置 dormant。
+    # 现网 300/312 条是 embryo 孤岛（96%），需要定期清扫。
+    THREAD_EMBRYO_ARCHIVE_DAYS: int = 30
+    # P2-11：市场快照隔离。命中这些模式的事件不进世界线，
+    # 归入独立的「市场脉搏」视图。现网约 150 条日频综述被当成世界线章节。
+    THREAD_MARKET_SNAPSHOT_ENABLED: bool = True
+    THREAD_MARKET_SNAPSHOT_PATTERNS: list[str] = [
+        r"开盘", r"收盘", r"三大指数", r"创业板指", r"科创50", r"恒指",
+        r"恒生科技", r"板块集体", r"板块走强", r"板块走弱", r"集体走高",
+        r"集体下挫", r"盘初", r"盘中", r"夜盘", r"盘前", r"盘后", r"异动",
+    ]
+    # 胚胎线至少几章才转 active（P2-10 配套：1-2 章不足以证明是条线）
+    THREAD_MIN_CHAPTERS_ACTIVE: int = 3
+
+    # ★ P0-3（2026-10-14）：披露形式 / 通用名词实体黑名单。
+    # 命中这些名字的实体不得作为归线锚点、也不得计入 Jaccard 分子。
+    # 依据：现网 12 条 8-K 线（40+ 章）把几十家无关公司串成一条线，只因
+    # 共享「8-K」这个**披露形式**；「原油/市场/AI/通胀」等通用名词同理——
+    # 33 章巨型线的 core_entities 是 {伊朗, 原油, 石油}，后两个无区分度。
+    # 世界线要的是「争夺标的」，不是「表述形式」。
+    THREAD_ENTITY_DENYLIST: list[str] = [
+        # 披露形式 / 监管文件
+        "8-K", "8-K/A", "10-K", "10-Q", "6-K", "20-F", "S-1", "424B5",
+        "财报", "季报", "年报", "半年报", "中报", "业绩公告", "重大协议",
+        "重大事项", "经营业绩", "其他事项", "退市通知", "监管披露",
+        "SEC", "美国证券交易委员会", "披露文件", "定期报告",
+        # 通用名词（跨所有同类新闻，无区分度）
+        "原油", "石油", "天然气", "油价", "市场", "股市", "板块", "指数",
+        "通胀", "经济", "金融", "投资", "资本", "增长", "预期", "数据",
+        "AI", "人工智能", "芯片", "半导体", "科技", "美元", "人民币",
+        "港元", "华尔街", "美股", "港股", "A股",
+    ]
 
     # ── 事件级排序信号（纯规则，无需额外模型调用）──
     # 合成时算出 impact/novelty/urgency/confidence/relevance 五个 0-10 信号，
