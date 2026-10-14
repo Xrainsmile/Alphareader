@@ -128,16 +128,20 @@ def snapshot():
 def apply(mode: str):
     if mode == "BEFORE":
         settings.THREAD_M_REDISTRIBUTE_WEIGHT = False
+        settings.THREAD_E_NORMALIZE = False
         settings.THREAD_T_JOIN_ENTITY = 0.15
         settings.THREAD_MIN_SHARED_ENTITIES = 2
+        settings.THREAD_T_JOIN = 0.40
         settings.THREAD_ENTITY_DENYLIST = []
         settings.THREAD_KIND_GATE_ENABLED = False
         settings.THREAD_TIME_GAP_ENABLED = False
         settings.THREAD_MARKET_SNAPSHOT_ENABLED = False
     else:  # AFTER
         settings.THREAD_M_REDISTRIBUTE_WEIGHT = True
-        settings.THREAD_T_JOIN_ENTITY = 0.30
-        settings.THREAD_MIN_SHARED_ENTITIES = 3
+        settings.THREAD_E_NORMALIZE = True
+        settings.THREAD_T_JOIN_ENTITY = 0.08
+        settings.THREAD_MIN_SHARED_ENTITIES = 1
+        settings.THREAD_T_JOIN = 0.15
         settings.THREAD_KIND_GATE_ENABLED = True
         settings.THREAD_TIME_GAP_ENABLED = True
         settings.THREAD_MARKET_SNAPSHOT_ENABLED = True
@@ -150,7 +154,9 @@ def apply(mode: str):
 # 回放
 # ---------------------------------------------------------------------------
 async def replay(mode: str, gt, events, ev_ents, ev_mechs, threads):
-    apply(mode)
+    # 只在这两种模式切换配置；"CFG" 表示由 sweep 在外部设定，原样保留
+    if mode in ("BEFORE", "AFTER"):
+        apply(mode)
     deny = tr._denylist()
 
     tp = fp = fn = 0
@@ -332,11 +338,91 @@ async def sweep(gt, events, ev_ents, ev_mechs, threads):
                 print("| %.2f | %d | %s | %d | %d | %d | %.3f | %.3f | %.3f |" % (
                     tje, ms, "on" if kg else "off",
                     r["tp"], r["fp"], r["fn"], r["precision"], r["recall"], r["f1"]))
+    # 真实配对的 S 分布（用当前 AFTER 配置）
+    apply("AFTER")
+    deny = tr._denylist()
+    ss = []
+    for eid, gt_tid in gt.items():
+        ev = events.get(eid)
+        if not ev:
+            continue
+        ents = {k: v for k, v in ev_ents.get(eid, {}).items() if k not in deny}
+        if not ents:
+            continue
+        t = next((x for x in threads if str(x["id"]) == gt_tid), None)
+        if not t:
+            continue
+        th_ents = tr._thread_entity_weights(t.get("core_entities"))
+        if not th_ents:
+            continue
+        now = ev["at"] or datetime.now(timezone.utc)
+        s, e, m, r = tr.compute_score(ents, th_ents, ev_mechs.get(eid, []),
+                                      t.get("mechanism_key"), t.get("last_event_at"), now)
+        ss.append(s)
+    if ss:
+        print("─" * 74)
+        print("真实配对的 S 分布（当前 AFTER 配置，机制缺失已做权重重分配）")
+        print("─" * 74)
+        print(f"  样本 {len(ss)} 条")
+        print(f"  S : min {min(ss):.3f} | p25 {pct(ss,.25):.3f} | 中位 {pct(ss,.50):.3f} "
+              f"| p75 {pct(ss,.75):.3f} | p90 {pct(ss,.90):.3f} | max {max(ss):.3f}")
+        print(f"  当前 T_JOIN = {settings.THREAD_T_JOIN} → "
+              f"有 {sum(1 for x in ss if x >= settings.THREAD_T_JOIN)}/{len(ss)} 条真阳性能过阈值")
+        print()
+        print("  → 若绝大多数真阳性的 S 都低于 T_JOIN，则阈值是瓶颈，")
+        print("    调门控无用（这正是上一轮所有 E 阈值结果相同的原因）。")
+        print()
+
+    # T_JOIN 扫描
+    print("─" * 74)
+    print("T_JOIN 阈值扫描（固定 E门控=0.08、最少共享=1、类型门控=on）")
+    print("─" * 74)
+    print("| T_JOIN | TP | FP | FN | Prec | Rec | F1 |")
+    print("|---|---|---|---|---|---|---|")
+    settings.THREAD_T_JOIN_ENTITY = 0.08
+    settings.THREAD_MIN_SHARED_ENTITIES = 1
+    settings.THREAD_KIND_GATE_ENABLED = True
+    best = None
+    for tj in (0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40):
+        settings.THREAD_T_JOIN = tj
+        r = await replay("CFG", gt, events, ev_ents, ev_mechs, threads)
+        print("| %.2f | %d | %d | %d | %.3f | %.3f | %.3f |" % (
+            tj, r["tp"], r["fp"], r["fn"], r["precision"], r["recall"], r["f1"]))
+        if best is None or r["f1"] > best[0]:
+            best = (r["f1"], tj, r)
     print()
-    results.sort(key=lambda x: -x[0])
-    f1, tje, ms, kg, r = results[0]
-    print("最优组合：E门控=%.2f，最少共享=%d，类型门控=%s → F1=%.3f "
-          "(P=%.3f R=%.3f)" % (tje, ms, "on" if kg else "off", f1, r["precision"], r["recall"]))
+    f1, tj, r = best
+    print("最优 T_JOIN=%.2f → F1=%.3f (P=%.3f R=%.3f)" % (
+        tj, f1, r["precision"], r["recall"]))
+    print()
+
+    # 联合扫描：E 门控 × 最少共享 × T_JOIN
+    print("─" * 74)
+    print("联合扫描：E门控 × 最少共享 × T_JOIN（类型门控=on）")
+    print("─" * 74)
+    print("| E门控 | 最少共享 | T_JOIN | TP | FP | FN | Prec | Rec | F1 |")
+    print("|---|---|---|---|---|---|---|---|---|---|")
+    settings.THREAD_KIND_GATE_ENABLED = True
+    joint = []
+    for tje in (0.05, 0.08, 0.12, 0.20):
+        for ms in (1, 2):
+            for tj in (0.10, 0.15, 0.20, 0.25):
+                settings.THREAD_T_JOIN_ENTITY = tje
+                settings.THREAD_MIN_SHARED_ENTITIES = ms
+                settings.THREAD_T_JOIN = tj
+                r = await replay("CFG", gt, events, ev_ents, ev_mechs, threads)
+                joint.append((r["f1"], tje, ms, tj, r))
+                print("| %.2f | %d | %.2f | %d | %d | %d | %.3f | %.3f | %.3f |" % (
+                    tje, ms, tj, r["tp"], r["fp"], r["fn"],
+                    r["precision"], r["recall"], r["f1"]))
+    joint.sort(key=lambda x: -x[0])
+    print()
+    f1, tje, ms, tj, r = joint[0]
+    print("★ 最优组合：E门控=%.2f，最少共享=%d，T_JOIN=%.2f → F1=%.3f "
+          "(P=%.3f R=%.3f, TP=%d FP=%d FN=%d)" % (
+              tje, ms, tj, f1, r["precision"], r["recall"],
+              r["tp"], r["fp"], r["fn"]))
+    settings.THREAD_T_JOIN = 0.40
     apply("AFTER")
     return results
 
