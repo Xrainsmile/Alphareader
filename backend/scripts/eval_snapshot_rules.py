@@ -50,13 +50,13 @@ async def main():
         for (eid,) in rows:
             gt.add(str(eid))
         evs = (await s.execute(text(
-            "SELECT id, COALESCE(title,'') FROM events"
+            "SELECT id, COALESCE(title,'') AS ev_title FROM events"
         ))).mappings().all()
 
     blocked_hit, blocked_miss, passed = [], [], 0
     th_gt = Counter()
     for r in evs:
-        title, eid = r["title"], str(r["id"])
+        title, eid = r["ev_title"], str(r["id"])
         if tr.is_market_snapshot(title):
             (blocked_hit if eid in gt else blocked_miss).append(title)
         else:
@@ -105,7 +105,7 @@ async def main():
     # 豁免机制生效情况
     rescued = 0
     for r in evs:
-        t = r["title"]
+        t = r["ev_title"]
         if any(re.search(p, t) for p in strong):
             continue
         if not any(re.search(p, t) for p in weak):
