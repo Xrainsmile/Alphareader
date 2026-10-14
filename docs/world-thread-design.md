@@ -179,6 +179,23 @@ T-02 后续可独立追加承运商绕行、战争险费率、运价指数、通
 若只有单一序号，回填历史事件时要么撞号、要么重排导致所有外部引用失效。
 现在 `chapter_id` 承担引用、`chapter_seq` 只做审计，彻底解耦。
 
+**★ 简报排序口径（2026-10-14 定）**
+
+凡返回简报列表的查询，一律两级排序，**二级键不能省**：
+
+```sql
+ORDER BY digest_date DESC, period_end DESC
+```
+
+- `digest_date` 只精确到天，一天内有多份简报（当前 早报 08:30 + 傍晚报 18:30）；
+- 只写 `ORDER BY digest_date DESC` → 同日两条顺序由 `GROUP BY`/`JOIN` 物理顺序决定，
+  **随机**，表现为「傍晚简报排在早间简报后面」；
+- 涉及位置：`digests.list_digests`、`workbench.thread_detail` 的 `history_digests`、
+  `workbench.thread_digests`。三处必须逐字一致。
+
+**⚠️ 曾漏改两处**：2026-10-14 主列表一直正确，但世界线详情页与 `thread_digests` 端点
+漏了 `period_end DESC`，同日简报乱序。修的时候记得三处一起改——单改主列表看不出问题。
+
 **★ 章节排序口径（2026-10-14 定，实现必须遵守）**
 
 `chapter_no` 是章节的**权威展示序号**，所有对外呈现章节顺序的地方都必须以它为排序键：

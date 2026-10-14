@@ -115,6 +115,16 @@ async def _chapter_rows(thread_id: uuid.UUID, db: AsyncSession, limit: int = 200
       用户进线要看的是「现在走到哪了」，不是从第一章考古。
       这与 news_digests / history_digests 的倒序口径一致。
 
+      ★ 简报倒序的排序键（2026-10-14 补）：
+        凡返回「简报列表」的查询，一律
+            ORDER BY digest_date DESC, period_end DESC
+        ——period_end 是二级键，不能省。
+        历史 bug：worldline detail / thread_digests 两处只写
+        ORDER BY d.digest_date DESC，同日多条简报（早报+傍晚报）的
+        先后顺序由 GROUP BY + JOIN 的物理顺序决定，随机；
+        于是同一天里「傍晚简报」会跑到「早间简报」后面。
+        简报主列表 /digests 一直是对的，两处关联简报遗漏了二级键。
+
     ★ 排序键统一为 chapter_no（2026-10-14 二次修订）：
       初版按 events.last_updated_at 排，实测与治理端 threads.py 分叉——
       同线同章节两个页面给出不同章号（10+ 条线，最多 19 章错位）。
@@ -390,7 +400,7 @@ async def get_workbench_thread(
         JOIN news_digests d ON d.id = l.digest_id
         WHERE te.thread_id = :t
         GROUP BY d.id, d.digest_date, d.period_label
-        ORDER BY d.digest_date DESC
+        ORDER BY d.digest_date DESC, d.period_end DESC
         LIMIT 20
     """), {"t": thread_id})).mappings().all()
 
@@ -833,7 +843,7 @@ async def thread_digests(
         JOIN news_digests d ON d.id = l.digest_id
         WHERE te.thread_id = :t
         GROUP BY d.id, d.digest_date, d.period_label
-        ORDER BY d.digest_date DESC
+        ORDER BY d.digest_date DESC, d.period_end DESC
         LIMIT :lim
     """), {"t": thread_id, "lim": limit})).mappings().all()
 
