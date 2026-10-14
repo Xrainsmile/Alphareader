@@ -189,24 +189,30 @@ async def test_meta_reports_data_health(db):
 @needs_pg
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_chapters_ordered_by_event_time(db):
-    """章节必须按事件更新时间倒序（最新在前）——chapter_no 全 NULL，按它排会得到随机序。
+async def test_chapters_ordered_by_chapter_no_desc(db):
+    """章节必须按 chapter_no 倒序（最新在前），且与治理端 threads.py 同源。
 
-    2026-10-14：时间轴改为倒序呈现，越近的章节越靠前。
+    ★ 2026-10-14 二次修订：初版按 events.last_updated_at 排，与治理端分叉——
+      同线同章两个页面给出不同章号（last_updated_at 只精确到日，同日并列，
+      chapter_no 当初分配时用了另一套次序）。分叉会导致在管理台摘错章。
+      故本断言盯的是权威展示序号 chapter_no，不是事件时间。
     """
     from sqlalchemy import text
 
     tid = (await db.execute(text("""
         SELECT thread_id FROM thread_events
+        WHERE chapter_no IS NOT NULL
         GROUP BY thread_id HAVING COUNT(*) >= 3 LIMIT 1
     """))).scalar()
     if not tid:
         pytest.skip("无多章世界线")
 
     rows = (await db.execute(text("""
-        SELECT e.last_updated_at
-        FROM thread_events te JOIN events e ON e.id = te.event_id
-        WHERE te.thread_id = :t ORDER BY e.last_updated_at DESC
+        SELECT te.chapter_no
+        FROM thread_events te
+        WHERE te.thread_id = :t AND te.chapter_no IS NOT NULL
+        ORDER BY te.chapter_no DESC NULLS LAST,
+                 te.created_at DESC
     """), {"t": tid})).scalars().all()
 
     assert len(rows) >= 3

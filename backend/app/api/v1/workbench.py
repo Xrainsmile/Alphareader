@@ -10,13 +10,12 @@
 
 ★ 三条贯穿全文件的数据现实（2026-10-13 实测生产库 303 线 / 832 章）：
 
-  1. chapter_no / chapter_seq 全为 NULL：归线代码 _attach_event 只写
-     chapter_id，未分配展示序号。故本文件所有章节排序一律回退到
-     events.last_updated_at，绝不能 ORDER BY chapter_no（会得到随机序）。
-     ★ 2026-10-14 定：章节时间轴统一**倒序**（最新在前），
-       与简报口径一致；display_no 仍按时间正序编号。
-  2. occurred_at 全为 NULL：同上，章节没有自己的发生时间。
-     时间基准统一取 events.last_updated_at（812/812 非空，可靠）。
+  1. chapter_no / chapter_seq 已被回填（2026-10-14 实测 441/441 非空，
+     此前文档记的「全 NULL」已过时）。章节排序**统一以 chapter_no 为准**，
+     last_updated_at 只作回退——两者曾分叉，导致工作台与管理台章号对不上。
+     ★ 2026-10-14 定：章节时间轴统一**倒序**（最新在前），与简报口径一致。
+     ★ 本文件与 threads.py 的章节 ORDER BY 必须逐字保持一致，否则分叉复发。
+  2. occurred_at 亦已回填（441/441 非空）。时间基准取它，回退 last_updated_at。
   3. thread_transmissions 为 0 条：传导链尚未生成，属「功能未启用」
      而非「数据为空」。前端必须区分这两种状态，不能一律显示空卡片。
 
@@ -110,27 +109,38 @@ def _json_list(v):
 
 
 async def _chapter_rows(thread_id: uuid.UUID, db: AsyncSession, limit: int = 200) -> list[dict]:
-    """取一条线的全部章节，按事件更新时间**倒序**（最新章节排最前）。
+    """取一条线的全部章节，按**倒序**呈现（最新章节排最前）。
 
     ★ 排序方向（2026-10-14 定）：时间轴纵向呈现走倒序，越近的章节越靠前——
       用户进线要看的是「现在走到哪了」，不是从第一章考古。
       这与 news_digests / history_digests 的倒序口径一致。
 
-    ★ 排序必须回退到 events.last_updated_at：
-      chapter_no / chapter_seq / occurred_at 三字段当前全 NULL，
-      按它们排序会得到数据库任意序，时间轴直接失真。
+    ★ 排序键统一为 chapter_no（2026-10-14 二次修订）：
+      初版按 events.last_updated_at 排，实测与治理端 threads.py 分叉——
+      同线同章节两个页面给出不同章号（10+ 条线，最多 19 章错位）。
+      根因：last_updated_at 只精确到日，同一天多条事件时间并列，
+      chapter_no 当初分配时用了另一套次序。
+      分叉的后果是「在管理台按章号摘章，摘到的不是工作台看到那条」，
+      属误操作风险，故统一以 chapter_no 为权威展示序号。
 
-    ★ display_no 仍然按**时间正序**编号（最早章 = #1，最新章 = #N）：
-      章节号是叙事序号，不随展示方向翻转。倒序渲染时屏幕上是 #N → #1 递减，
-      这是预期效果，不是 bug。
+      三级回退（与治理端 list_chapters 完全一致）：
+        1) chapter_no DESC   —— 权威展示序号，当前 441/441 非空
+        2) e.last_updated_at DESC —— chapter_no 为 NULL 时回退
+        3) te.created_at DESC     —— 兜底，保证同值顺序稳定可复现
+      三者顺序必须与 threads.py 保持一致，否则分叉会复发。
 
-    ★ occurred_at 用 COALESCE 兜底到事件时间，确保前端永远有可用时间戳，
-      但它与事件时间是同一值——前端若展示需注明「取自事件更新时间」。
+    ★ display_no 直接用 chapter_no：
+      此前由查询顺序反推，是 chapter_no 全 NULL 时期的权宜之计。
+      现在 chapter_no 已回填，反推值会与治理端打架，故改为直取。
+      chapter_no 仍为 NULL 时（未来新写入且未重排）才回退到反推。
 
-    ★ limit 语义随方向变化：现在截的是**最新** 200 章，不是最早 200 章。
+    ★ occurred_at 用 COALESCE 兜底到事件时间，确保前端永远有可用时间戳。
+
+    ★ limit 语义：截的是**最新** 200 章，不是最早 200 章。
     """
     rows = (await db.execute(text("""
         SELECT te.chapter_id, te.event_id, te.role, te.match_score,
+               te.chapter_no,
                COALESCE(te.snapshot_title, e.title) AS title,
                COALESCE(te.snapshot_summary, e.summary) AS summary,
                COALESCE(te.occurred_at, e.last_updated_at) AS occurred_at,
@@ -138,10 +148,12 @@ async def _chapter_rows(thread_id: uuid.UUID, db: AsyncSession, limit: int = 200
                e.confidence, e.relevance, e.why_important, e.latest_change,
                e.mechanism_hints, e.contested_assets
         FROM thread_events te
-        JOIN events e ON e.id = te.event_id
+        LEFT JOIN events e ON e.id = te.event_id
         WHERE te.thread_id = :t
           AND COALESCE(te.role, 'core') <> 'noise'
-        ORDER BY e.last_updated_at DESC
+        ORDER BY te.chapter_no DESC NULLS LAST,
+                 e.last_updated_at DESC NULLS LAST,
+                 te.created_at DESC
         LIMIT :lim
     """), {"t": thread_id, "lim": limit})).mappings().all()
 
@@ -151,9 +163,9 @@ async def _chapter_rows(thread_id: uuid.UUID, db: AsyncSession, limit: int = 200
         d = dict(r)
         d["chapter_id"] = str(r["chapter_id"])
         d["event_id"] = str(r["event_id"])
-        # 展示序号：chapter_no 为 NULL，由查询顺序反推（倒序列表 → 正序编号）。
-        # 前端不应把它当持久序号缓存，重排后可能变。
-        d["display_no"] = total - i + 1
+        # 权威章号优先；chapter_no 缺失时按倒序位置反推（最早章 = #1）
+        d["display_no"] = r["chapter_no"] if r["chapter_no"] is not None else total - i + 1
+        d["no_is_fallback"] = r["chapter_no"] is None
         d["role_label"] = ROLE_LABELS.get(r["role"] or "core", r["role"] or "core")
         out.append(d)
     return out
@@ -297,14 +309,14 @@ async def list_workbench_threads(
     if tid_list:
         pv = (await db.execute(text("""
             SELECT DISTINCT ON (te.thread_id, te.event_id)
-                   te.thread_id, te.event_id,
+                   te.thread_id, te.event_id, te.chapter_no,
                    COALESCE(te.snapshot_title, e.title) AS title,
                    COALESCE(te.occurred_at, e.last_updated_at) AS occurred_at
             FROM thread_events te
-            JOIN events e ON e.id = te.event_id
+            LEFT JOIN events e ON e.id = te.event_id
             WHERE te.thread_id = ANY(:tids)
               AND COALESCE(te.role,'core') <> 'noise'
-            ORDER BY te.thread_id, te.event_id, e.last_updated_at DESC
+            ORDER BY te.thread_id, te.event_id, te.chapter_no DESC NULLS LAST
         """), {"tids": tid_list})).mappings().all()
         for r in pv:
             k = str(r["thread_id"])
@@ -312,12 +324,17 @@ async def list_workbench_threads(
                 "event_id": str(r["event_id"]),
                 "title": r["title"],
                 "occurred_at": r["occurred_at"],
+                "chapter_no": r["chapter_no"],
             })
-        # 每条线只留最近 3 条
+        # 每条线只留最近 3 章。排序键与 _chapter_rows 一致（chapter_no 优先）：
+        #   列表预览与详情时间轴若不同源，会出现「列表说最新是 A，进去看到 B」。
         for k in preview_map:
             preview_map[k] = sorted(
                 preview_map[k],
-                key=lambda x: x["occurred_at"] or datetime.min.replace(tzinfo=timezone.utc),
+                key=lambda x: (
+                    x["chapter_no"] if x["chapter_no"] is not None else -1,
+                    x["occurred_at"] or datetime.min.replace(tzinfo=timezone.utc),
+                ),
                 reverse=True,
             )[:3]
 
