@@ -129,6 +129,18 @@ h1{font-size:26px;font-weight:800;margin-bottom:4px}
 .header-right select{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;
   background:#fff;cursor:pointer}
 .sub{color:var(--muted);font-size:14px;margin-bottom:24px}
+/* 管理入口 */
+.entries{display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap}
+.entry{display:flex;align-items:center;gap:9px;padding:11px 18px;border-radius:11px;
+  background:var(--card);border:1.5px solid var(--border);text-decoration:none;
+  color:var(--text);font-size:14px;font-weight:600;box-shadow:0 1px 8px rgba(0,0,0,.04);
+  transition:all .18s}
+.entry:hover{border-color:var(--text);background:#fbfbff;transform:translateY(-1px);
+  box-shadow:0 3px 12px rgba(0,0,0,.08)}
+.entry .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.entry .arrow{color:var(--muted);font-size:15px;margin-left:2px}
+.entry:hover .arrow{color:var(--text)}
+@media(max-width:600px){.entry{flex:1 1 100%;justify-content:space-between}}
 .tabs{display:flex;gap:8px;margin-bottom:24px}
 .tab{padding:10px 20px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;
   border:1.5px solid var(--border);background:#fff;color:var(--muted);transition:all .2s}
@@ -160,7 +172,7 @@ tr:hover td{background:#f8f8fc}
 </head>
 <body>
 
-<div class="header">
+  <div class="header">
   <div class="header-left"><h1>AlphaReader Dashboard</h1></div>
   <div class="header-right">
     <select id="daysPicker" onchange="refresh()">
@@ -170,6 +182,19 @@ tr:hover td{background:#f8f8fc}
     </select>
   </div>
 </div>
+
+<!-- 管理入口：跳转到各独立管理台 -->
+<div class="entries">
+  <a class="entry" href="/worldline-admin">
+    <span class="dot" style="background:var(--blue)"></span>
+    <span>世界线管理</span><span class="arrow">→</span>
+  </a>
+  <a class="entry" href="/sandbox-admin">
+    <span class="dot" style="background:var(--green)"></span>
+    <span>持仓管理</span><span class="arrow">→</span>
+  </a>
+</div>
+
 
 <div class="tabs">
   <div class="tab active" onclick="switchTab('user')">用户行为</div>
