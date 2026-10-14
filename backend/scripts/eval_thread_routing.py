@@ -431,12 +431,33 @@ async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--errors", type=int, default=15, help="展示多少条误归样本")
     ap.add_argument("--sweep", action="store_true", help="做阈值扫描而非单次评估")
+    ap.add_argument("--clean-baseline", metavar="PATH",
+                    help="用清洗清单剔除市场快照后再评估（干净 F1）")
     a = ap.parse_args()
 
     # 先固化默认黑名单，供 AFTER 模式恢复
     settings._DEFAULT_DENY = list(settings.THREAD_ENTITY_DENYLIST or [])
 
     gt, events, ev_ents, ev_mechs, threads = await load_all()
+
+    # ★ 2026-10-14：基线清洗。ground truth 里混着 12.9% 市场快照，
+    #   拿它当标准答案会惩罚正确规则（隔离快照被记 FN）。用清洗清单剔除
+    #   后再评估，才能得到不被污染的 F1。明细见 clean_baseline.py。
+    excluded = set()
+    if a.clean_baseline:
+        import json
+        try:
+            with open(a.clean_baseline, encoding="utf-8") as f:
+                payload = json.load(f)
+            excluded = {x["event_id"] for x in payload.get("excluded", [])}
+        except Exception as exc:  # noqa: BLE001
+            print("（清洗清单加载失败，用原始基线：%s）" % exc)
+        else:
+            before_n = len(gt)
+            gt = {k: v for k, v in gt.items() if k not in excluded}
+            print(f"基线清洗：剔除 {before_n - len(gt)} 条市场快照 "
+                  f"→ 干净基线 {len(gt)} 条（原 {before_n}）")
+
     print("=" * 74)
     print("世界线路由离线回放评估 —— ground truth = 人工基线")
     print("=" * 74)
