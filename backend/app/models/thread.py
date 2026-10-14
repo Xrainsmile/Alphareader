@@ -136,6 +136,11 @@ class ThreadRouteScore(Base):
     threshold: Mapped[float | None] = mapped_column(REAL, nullable=True)
     # 是否处于影子模式（非影子时也会留痕，用于对比影子期与生产期的分布漂移）
     shadow: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # 实体门控否决原因（'' = 通过门控；非空 = 否决原因，如 "shared=1 < 2"）。
+    # ★ 与 joined 必须分开存：joined=False 有「S 不够」和「被门控否决」两类成因，
+    #   混在一起无法判断该调阈值还是调门限，观测就失去意义。
+    #   用空串而非 NULL：NULL 会被 COUNT 跳过，易把「通过」误算成「无数据」。
+    gate: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

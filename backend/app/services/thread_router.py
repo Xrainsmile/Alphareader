@@ -59,6 +59,55 @@ def weighted_jaccard(
     return inter / union
 
 
+def shared_entity_count(
+    ev_entities: dict[str, int],
+    thread_entities: dict[str, int],
+) -> int:
+    """事件与线共有的**非泛化**实体个数。
+
+    与 E 互补：E 是比例，共现数是绝对量。两者都要——
+    E 防「长线靠比例优势吸事件」，共现数防「小线靠一两个实体硬凑高 E」。
+    """
+    return len(set(ev_entities) & set(thread_entities))
+
+
+def entity_gate(
+    e: float,
+    shared: int,
+) -> tuple[bool, str]:
+    """实体门控：归线的立身之本，不满足则一票否决（不看 S）。
+
+    两道关：
+      1. E >= THREAD_T_JOIN_ENTITY：实体重合比例过低
+      2. shared >= THREAD_MIN_SHARED_ENTITIES：只共享 1 个实体不足以证明同线
+
+    为什么必须独立于 S：S 是加分制，M 与 R 会在实体薄弱时把总分抬过阈值。
+    实测「任一共同实体 → S = 0.30*1.0 + 0.15*1.0 = 0.45 >= 0.40」，
+    单靠阈值挡不住。门控把「实体重合」从加分项改回**必要条件**。
+
+    ★ 为什么用「共同实体数」而不是「共同**核心**实体（weight>=3）」：
+      link_event_entities 的唯一调用点（event_synthesizer）用默认
+      default_weight=1 入参，全库 event_entities.weight 恒为 1，
+      weight >= THREAD_CORE_ENTITY_WEIGHT(3) 永远不成立。
+      若按核心实体判定，本门控会否决掉 100% 的候选，归线彻底停摆。
+
+    Returns:
+        (是否放行, 否决原因)。放行时原因为空串。
+    """
+    if not settings.THREAD_ENTITY_GATE_ENABLED:
+        # 紧急回退：只保留「E<=0 一票否决」，退回收紧前的宽松行为。
+        # 用于门控误杀正常归线时，改配置重启即可止血，无需改代码发版。
+        if e <= 0:
+            return False, "E=0"
+        return True, ""
+
+    if e < settings.THREAD_T_JOIN_ENTITY:
+        return False, f"E={e:.4f} < {settings.THREAD_T_JOIN_ENTITY}"
+    if shared < settings.THREAD_MIN_SHARED_ENTITIES:
+        return False, f"shared={shared} < {settings.THREAD_MIN_SHARED_ENTITIES}"
+    return True, ""
+
+
 def mechanism_score(
     ev_mechanisms: list[str] | None,
     thread_mechanism: str | None,
@@ -66,15 +115,23 @@ def mechanism_score(
     """机制匹配分 M。
 
     三条规则，优先级从高到低：
-    1. 事件机制为空数组 / None → 1.0（无约束，对所有线兼容）
+    1. 事件机制为空数组 / None → THREAD_M_MISSING_SCORE（默认 0.5，中性）
     2. 线未设机制（None 或空串）→ 0.5（中性，不惩罚也不奖励）
     3. 两者都有 → 命中 1.0，未命中 0.0
 
-    第 1 条是关键：mechanism_hints 为空表达「未识别到机制」，
-    语义是「不参与门控」，绝不等于「归到某条默认线」。
+    ★ 第 1 条曾被实现为 1.0，语义是「不参与门控」，但这是错的：
+    归线是**加分制**而非门控制，返回 1.0 等于每条线白送 0.30 分。
+    实测机制抽取覆盖率极低（绝大多数事件 mechanism_hints 为空），
+    于是 0.30 的加权被无条件发放；叠加新线 last_event_at=None 时
+    recency_bonus 也返回 1.0 的 0.15，S 恒 >= 0.45 ——
+    无论实体重不重合都能过 T_JOIN=0.40。
+
+    真正「不参与门控」的正确做法是让该分项取中性值，使总分由 E 主导。
+    0.5 而非 0.0：0.0 会让机制明确冲突的线与机制未知的线同分，
+    丢失了「线有机制、事件无机制」时应有的中间态信息。
     """
     if not ev_mechanisms:
-        return 1.0
+        return settings.THREAD_M_MISSING_SCORE
     if not thread_mechanism:
         return 0.5
     return 1.0 if thread_mechanism in ev_mechanisms else 0.0
@@ -261,19 +318,20 @@ async def route_event(
             t.get("last_event_at"), now,
         )
 
-        # ② 硬筛选第二关：没有共同核心实体时禁止归线。
-        #    缺失机制时 mechanism_score 返回 1.0（语义是"不参与门控"），
-        #    新线 last_event_at 为空时 recency_bonus 也返回 1.0，
-        #    两者叠加让 S = 0.30*1.0 + 0.15*1.0 = 0.45 直接过阈值——
-        #    实体完全不重合的无关事件反而会被合并进同一条线。
-        #    归线的立身之本是实体重合，E=0 必须一票否决。
-        if e <= 0:
+        # ② 硬筛选第二关：实体门控（E 下限 + 最少共现实体数），一票否决。
+        #    仅判 E=0 不够：实测 8-K 线与任意提交 8-K 的事件 E 恒 > 0，
+        #    于是 S = 0.30*1.0(M空) + 0.15*1.0(R新线) = 0.45 稳定过阈值，
+        #    几十家无关公司被串成一条线。必须给 E 设下限并要共现数兜底。
+        shared = shared_entity_count(ev_ents, th_ents)
+        passed, why = entity_gate(e, shared)
+        if not passed:
             scored.append({
                 "thread_id": tid,
                 "title": t.get("title"),
-                "S": round(s, 4), "E": 0.0,
+                "S": round(s, 4), "E": round(e, 4),
                 "M": round(m, 4), "R": round(r, 4),
                 "join": False,
+                "gate": why,
             })
             continue
 
@@ -285,6 +343,7 @@ async def route_event(
             "M": round(m, 4),
             "R": round(r, 4),
             "join": s >= settings.THREAD_T_JOIN,
+            "gate": "",
         })
 
     scored.sort(key=lambda x: x["S"], reverse=True)
@@ -317,9 +376,9 @@ async def _record_shadow(event_id: uuid.UUID, scored: list[dict]) -> None:
     sql = text("""
         INSERT INTO thread_route_scores
             (event_id, thread_id, score, score_entity, score_mechanism,
-             score_recency, joined, threshold, shadow)
+             score_recency, joined, threshold, shadow, gate)
         VALUES
-            (:eid, :tid, :s, :e, :m, :r, :joined, :th, :shadow)
+            (:eid, :tid, :s, :e, :m, :r, :joined, :th, :shadow, :gate)
     """)
     shadow = settings.THREAD_ROUTING_SHADOW
     async with async_session() as session:
@@ -334,6 +393,7 @@ async def _record_shadow(event_id: uuid.UUID, scored: list[dict]) -> None:
                 "joined": item["join"],
                 "th": settings.THREAD_T_JOIN,
                 "shadow": shadow,
+                "gate": item.get("gate", ""),
             })
         await session.commit()
 
@@ -377,6 +437,7 @@ async def _attach_event(
             )).scalar()
             if rid:
                 await _sync_chapter_count(thread_id, session=session)
+                await _refresh_profile_safely(thread_id, session)
             await session.commit()
     else:
         rid = (await session.execute(
@@ -385,7 +446,28 @@ async def _attach_event(
         # 不 commit：由调用方统一提交，保证建线与挂载原子性
         if rid:
             await _sync_chapter_count(thread_id, session=session)
+            # ★ 挂章后必须同步滚动重算线画像，与挂章同一事务。
+            #   不做这一步，core_entities 就永远停在「建线时的首章实体」，
+            #   而 thread_router 的 Jaccard 分母依赖它——分母冻结的长线
+            #   会持续吸事件，正是「8-K 扎堆成一条线」的成因。
+            await _refresh_profile_safely(thread_id, session)
     return rid is not None
+
+
+async def _refresh_profile_safely(thread_id: uuid.UUID, session) -> None:
+    """挂章后重算线画像；异常只记 log，绝不阻断挂线。
+
+    实体层「失败不影响主流程」的设计约束同样适用于此：画像重算是增强功能，
+    挂章成功但画像没刷新只会让下次归线质量下降，不会丢数据；
+    而抛异常会让整个挂章事务回滚，代价大得多。
+    """
+    if not settings.THREAD_PROFILE_REFRESH_ENABLED:
+        return
+    try:
+        from app.services import thread_profile
+        await thread_profile.refresh_thread_profile(thread_id, session=session)
+    except Exception as exc:  # noqa: BLE001 — 兜底，绝不阻断挂线
+        logger.warning("refresh thread profile failed (thread=%s): %s", thread_id, exc)
 
 
 async def _sync_chapter_count(thread_id: uuid.UUID, session) -> None:

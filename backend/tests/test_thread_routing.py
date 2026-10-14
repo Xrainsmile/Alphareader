@@ -32,18 +32,25 @@ from app.services import thread_router
 from app.services.thread_router import (
     _thread_entity_weights,
     compute_score,
+    entity_gate,
     mechanism_score,
     recency_bonus,
     route_event,
+    shared_entity_count,
     weighted_jaccard,
 )
 
 # ───────────────────────── 评分门控 ─────────────────────────
 
-def test_mechanism_score_missing_gives_full_marks():
-    """机制缺失返回 1.0 —— M 分被"免费拿满"的源头。"""
-    assert mechanism_score(None, "supply_shock") == 1.0
-    assert mechanism_score([], "supply_shock") == 1.0
+def test_mechanism_score_missing_is_neutral():
+    """机制缺失返回中性分（0.5），不再白送满分。
+
+    ★ 回归：此处原断言 == 1.0。1.0 在加分制下等于无条件发放 0.30 权重，
+    叠加新线 R=1.0 的 0.15 使 S 恒 >= 0.45，无论实体重不重合都过阈值，
+    是 8-K 扎堆成一条线的成因之一。
+    """
+    assert mechanism_score(None, "supply_shock") == 0.5
+    assert mechanism_score([], "supply_shock") == 0.5
 
 
 def test_recency_bonus_new_thread_gives_full_marks():
@@ -52,19 +59,49 @@ def test_recency_bonus_new_thread_gives_full_marks():
 
 
 def test_zero_entity_overlap_reaches_threshold_naively():
-    """E=0 时若 M、R 都拿满，裸 S 会压线过阈值——所以必须有显式门控。
+    """E=0 时裸 S 仍可达 0.30 —— 所以必须保留显式门控。
 
-    0.55*0 + 0.30*1.0 + 0.15*1.0 = 0.45 >= T_JOIN(0.40)
+    M 中性化后：0.55*0 + 0.30*0.5 + 0.15*1.0 = 0.30。
+    低于 T_JOIN(0.40)，但 **依赖 R=1.0**：若线是活跃的（R 高）且 E 极小
+    但仍 > 0（如 0.02），S 会重新逼近阈值。故门控不可省。
     """
     e = weighted_jaccard({"英伟达": 3}, {"胡塞武装": 3})
     assert e == 0.0, "零重合时 Jaccard 必须为 0"
 
     m = mechanism_score(None, "supply_shock")
     r = recency_bonus(None)
-    assert m == 1.0 and r == 1.0
+    assert m == 0.5, "空机制必须是中性分，不再是满分"
+    assert r == 1.0
 
     s = 0.55 * e + 0.30 * m + 0.15 * r
-    assert s >= 0.40, "裸 S 确实压线，单靠阈值挡不住"
+    assert 0.29 < s < 0.31, f"中性化后裸 S 应为 0.30，实得 {s}"
+
+
+def test_entity_gate_blocks_weak_overlap():
+    """回归：E 过低或共现数不足都必须一票否决，不论 S 多高。"""
+    # E 低于下限 → 否决
+    ok, why = entity_gate(0.05, 3)
+    assert ok is False and "E=" in why
+
+    # E 达标但只共享 1 个实体 → 否决（8-K 场景：靠单个泛化实体硬串）
+    ok, why = entity_gate(0.60, 1)
+    assert ok is False and "shared=" in why
+
+    # 两项达标 → 放行
+    ok, why = entity_gate(0.30, 2)
+    assert ok is True and why == ""
+
+
+def test_shared_entity_count_ignores_weight():
+    """共现只看实体是否存在，不看 weight。
+
+    ★ 回归：全库 event_entities.weight 恒为 1（link_event_entities 唯一
+    调用点用默认 default_weight=1），若门控按 weight>=3 的「核心实体」
+    判定，会否决 100% 候选、归线彻底停摆。故共现数必须与权重解耦。
+    """
+    assert shared_entity_count({"A": 1, "B": 1}, {"A": 1, "C": 1}) == 1
+    assert shared_entity_count({"A": 1, "B": 1}, {"A": 1, "B": 1}) == 2
+    assert shared_entity_count({"A": 1}, {"B": 1}) == 0
 
 
 async def test_route_event_filters_zero_entity_candidates():
@@ -93,7 +130,7 @@ async def test_route_event_filters_zero_entity_candidates():
         return {"英伟达": 3}
 
     async def _mechs(_eid):
-        return None  # → M=1.0
+        return None  # → M 中性 0.5
 
     async def _excl(_eid):
         return set()
@@ -119,6 +156,70 @@ async def test_route_event_filters_zero_entity_candidates():
             thread_router._load_candidate_threads,
             thread_router._record_shadow,
         ) = originals
+
+
+def test_single_shared_entity_blocked_despite_high_score():
+    """回归 8-K 扎堆：S 高达 0.85 但只共享 1 个实体，必须否决。
+
+    这是本次修复的核心场景。8-K 是 SEC 披露表单编号（文件类型，非事件主体），
+    所有「提交 8-K」的事件都共享它 → 无关公司被串成一条线。
+    E=1.0、S=0.85 都救不了它，唯有共现数门控能拦住。
+    """
+    ev = {"8-K": 1}
+    th = {"8-K": 1}
+
+    e = weighted_jaccard(ev, th)
+    m = mechanism_score(None, "regulation")
+    r = recency_bonus(None)
+    s = 0.55 * e + 0.30 * m + 0.15 * r
+
+    assert e == 1.0 and s > 0.8, "本场景裸分确实极高，单靠阈值挡不住"
+
+    ok, why = entity_gate(e, shared_entity_count(ev, th))
+    assert ok is False and "shared=" in why, "只共享 1 个实体必须否决"
+
+
+def test_real_same_thread_passes_gate():
+    """回归：真正的同线事件必须仍能被放行，门控不能误杀。
+
+    门控收紧后最常见的翻车是「一刀切把归线全掐死」，
+    这条测试守住下界：共享 3 个实体的正常事件必须过。
+    """
+    ev = {"A": 1, "B": 1, "C": 1, "D": 1}
+    th = {"A": 1, "B": 1, "C": 1, "E": 1}
+
+    e = weighted_jaccard(ev, th)
+    ok, why = entity_gate(e, shared_entity_count(ev, th))
+    assert ok is True and why == "", f"正常同线事件被误杀：{why}"
+
+
+def test_entity_gate_disable_restores_legacy_behavior():
+    """回归：THREAD_ENTITY_GATE_ENABLED=false 时必须退回收紧前行为。
+
+    ★ 这是生产的应急回退路径。服务器 THREAD_ROUTING_SHADOW=false（真实写入），
+    门控误杀会直接污染数据；且机制命中的线 M=1.0 使 S 恒 >= 0.45，
+    T_JOIN 对它们失效、门控是唯一防线。开关必须真能一键退回，
+    否则出事只能改代码发版。
+    """
+    from app.config import settings
+
+    orig = settings.THREAD_ENTITY_GATE_ENABLED
+    try:
+        settings.THREAD_ENTITY_GATE_ENABLED = False
+
+        # 只共享 1 个实体：收紧时否决，回退后放行（收紧前行为）
+        ok, _ = entity_gate(1.0, 1)
+        assert ok is True, "回退后不再按共现数否决"
+
+        # E=0 仍必须否决 —— 回退不能退回「零重合也归线」
+        ok, why = entity_gate(0.0, 0)
+        assert ok is False, "E=0 一票否决在任何模式下都要保留"
+
+        # E 低于下限但 > 0：回退后放行
+        ok, _ = entity_gate(0.05, 2)
+        assert ok is True, "回退后不再按 E 下限否决"
+    finally:
+        settings.THREAD_ENTITY_GATE_ENABLED = orig
 
 
 # ───────────────────────── reference_at（回填偏差） ─────────────────────────

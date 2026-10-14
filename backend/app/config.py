@@ -294,6 +294,34 @@ class Settings(BaseSettings):
     # 放宽到 10 让线的实体画像更完整，提升真实同主题命中的重叠度。
     THREAD_MAX_CORE_ENTITIES: int = 10
 
+    # ── 世界线 P1-c-2：线画像滚动重算 ──
+    # 线标题 / core_entities / last_event_at 随章节滚动重算（P1-c 只在建线时写一次，
+    # 导致「线名=首章标题」且长线实体画像冻结，是 8-K 扎堆成一条线的直接成因）。
+    THREAD_PROFILE_REFRESH_ENABLED: bool = True
+    # 至少几章才做 rollup 命名：1 章时首章标题就是最佳命名，没有 rollup 输入
+    THREAD_MIN_CHAPTERS_FOR_ROLLUP: int = 2
+
+    # ── 世界线 P1-c-3：归线止血（防「沾一个实体就归线」）──
+    # 事件 mechanism_hints 为空时的 M 取值。
+    # 原为 1.0（语义「不参与门控」），实测机制抽取覆盖率低、绝大多数事件为空，
+    # 等于每条线白送 0.30 分；叠加新线 R≈1.0 的 0.15，S 恒 >= 0.45 而无视 E，
+    # 任何沾到一个实体的事件都能过 T_JOIN=0.40 —— 这是 8-K 扎堆的成因之一。
+    # 改 0.5 中性：空机制不加分也不减分，归线重新由 E 主导。
+    THREAD_M_MISSING_SCORE: float = 0.5
+    # E 下限：实体重合比例低于此值直接否决（不论 S 高）。
+    # 0.15 对应「10 实体线 vs 5 实体事件、重合 2 个」的下沿（2/13≈0.154）。
+    THREAD_T_JOIN_ENTITY: float = 0.15
+    # 最少共同实体数：只共享 1 个实体不足以证明同一条线。
+    # ★ 注意不能用「共同**核心**实体（weight>=3）」判定：
+    #   link_event_entities 唯一调用点（event_synthesizer）用默认 default_weight=1，
+    #   全库 event_entities.weight 恒为 1，weight>=3 永远不成立 → 会误杀全部归线。
+    THREAD_MIN_SHARED_ENTITIES: int = 2
+    # 门控总开关：false 则整套门控退化为仅 E<=0 否决（等同收紧前行为）。
+    # ★ 必须保留：服务器 THREAD_ROUTING_SHADOW=false（真实写入，非影子模式），
+    #   门控一旦误判会直接污染生产数据；且机制命中的线 M=1.0 使 S 恒 >= 0.45，
+    #   T_JOIN 对它们完全失效，门控是唯一防线。没有开关就只能改代码重新发版回退。
+    THREAD_ENTITY_GATE_ENABLED: bool = True
+
     # ── 事件级排序信号（纯规则，无需额外模型调用）──
     # 合成时算出 impact/novelty/urgency/confidence/relevance 五个 0-10 信号，
     # 派生 0-3 加分并入「重要」排序的 HN 重力公式，使 Reports 标为"必须知道"的
