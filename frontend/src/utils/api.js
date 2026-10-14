@@ -626,6 +626,11 @@ export function fetchDigestThreadLinks(digestId) {
   return request(`/api/v1/workbench/digests/${digestId}/thread-links`)
 }
 
+/** 简报 → 世界线进展：本期各线推进到第几章 + 新增章节（Top 5） */
+export function fetchDigestThreadProgress(digestId) {
+  return request(`/api/v1/workbench/digests/${digestId}/thread-progress`)
+}
+
 /** 世界线 → 简报：收录过本线章节的历史简报 */
 export function fetchThreadDigests(threadId, limit = 20) {
   return request(`/api/v1/workbench/threads/${threadId}/digests${_qs({ limit })}`)

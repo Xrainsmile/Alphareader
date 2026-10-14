@@ -145,6 +145,33 @@
               <text class="dc-brief-toggle">{{ briefOpen(item.id) ? 'Hide Brief' : 'Read Brief' }}</text>
             </view>
 
+            <!-- 世界线进展：本期哪些线推进了（常驻首屏，无归线事件则整块不渲染）
+                 ★ 放在折叠详细解释区之外：what_changed 默认收起平时看不到，
+                   本区块必须常驻，否则等于没做。 -->
+            <view
+              v-if="threadProgressOf(item.id).length"
+              id="sec-thread-progress"
+              class="dc-section dc-tp"
+            >
+              <view class="dc-tp-head">
+                <text class="dc-section-title">世界线进展</text>
+                <text class="dc-tp-count">{{ threadProgressOf(item.id).length }} 条推进</text>
+              </view>
+              <view
+                v-for="tp in threadProgressOf(item.id)"
+                :key="tp.thread_id"
+                class="dc-tp-item"
+                @click.stop="goThread(tp)"
+              >
+                <view class="dc-tp-line">
+                  <text class="dc-tp-title">{{ tp.thread_title }}</text>
+                  <text v-if="tp.chapter_no" class="dc-tp-chapter">第 {{ tp.chapter_no }} 章</text>
+                  <text v-if="tp.new_chapters" class="dc-tp-delta">+{{ tp.new_chapters }}</text>
+                </view>
+                <text v-if="tp.new_titles.length" class="dc-tp-titles">{{ tp.new_titles.join(' / ') }}</text>
+              </view>
+            </view>
+
             <!-- 详细解释（默认折叠）-->
             <view v-if="hasBriefDetail(item)" v-show="briefOpen(item.id)" class="dc-section dc-overview dc-overview-fold">
               <text v-if="sc(item).what_changed" class="dc-change dc-change-standalone">
@@ -286,7 +313,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import mpHtml from 'mp-html/dist/uni-app/components/mp-html/mp-html.vue'
-import { fetchDigests, fetchDigestThreadLinks } from '@/utils/api'
+import { fetchDigests, fetchDigestThreadLinks, fetchDigestThreadProgress } from '@/utils/api'
 import { renderMarkdown } from '@/utils/markdown'
 import SiteFooter from '@/components/common/SiteFooter.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -557,6 +584,29 @@ async function loadThreadLinks(digestId) {
   }
 }
 
+// ── 简报 → 世界线进展 ──
+//
+// 与 threadLinksOf 同源（digest_event_links JOIN thread_events），但粒度不同：
+// threadLinksOf 是「事件→线」（单条事件挂哪些线），这里是「线→本期增量」
+// （本期哪些线推进了、推进到第几章）。同样运行时关联，失败不阻断简报阅读。
+const threadProgressMap = reactive({})   // { [digestId]: item[] }
+
+function threadProgressOf(digestId) {
+  return threadProgressMap[digestId] || []
+}
+
+async function loadThreadProgress(digestId) {
+  if (!digestId || threadProgressMap[digestId]) return
+  try {
+    const res = await fetchDigestThreadProgress(digestId)
+    threadProgressMap[digestId] = (res && res.items) || []
+  } catch (e) {
+    // 关联失败不阻断简报阅读：世界线进展是增强，不是简报本体
+    console.warn('[reports] 世界线进展加载失败:', e)
+    threadProgressMap[digestId] = []
+  }
+}
+
 /** 点击世界线入口 → 进入世界线并定位到关联章节 */
 function goThread(tl) {
   if (!tl || !tl.thread_id) return
@@ -599,6 +649,8 @@ async function loadDigests() {
     }
     // 世界线归属：异步补拉，失败也不影响简报本体阅读
     digestList.value.forEach((d) => loadThreadLinks(d.id))
+    // 世界线进展（本期推进到第几章）：同上，异步补拉
+    digestList.value.forEach((d) => loadThreadProgress(d.id))
     // 深链定位：自动展开并滚动到对应简报
     await applyDigestDeepLink()
   } catch (e) {
@@ -1243,6 +1295,62 @@ onMounted(() => {
   border: 1px solid var(--color-border);
 }
 .dc-tl-chip:active { background: var(--color-bg-hover); }
+
+/* ── 世界线进展：本期哪些线推进了（常驻首屏）──
+   与 dc-tl 的区别：dc-tl 是单条事件的归属 chip（横向排列），
+   dc-tp 是本期推进的线列表（纵向、带章号与增量）。 */
+.dc-tp {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+.dc-tp-head {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 12rpx;
+}
+.dc-tp-count {
+  font-size: 22rpx;
+  color: var(--color-text-hint);
+}
+.dc-tp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  padding: 14rpx 16rpx;
+  border-radius: var(--radius-r-md);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+}
+.dc-tp-item:active { background: var(--color-bg-hover); }
+.dc-tp-line {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 12rpx;
+}
+.dc-tp-title {
+  flex: 1;
+  font-size: 25rpx;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+}
+.dc-tp-chapter {
+  font-size: 22rpx;
+  color: var(--color-text-hint);
+  font-family: var(--font-numeric);
+}
+.dc-tp-delta {
+  font-size: 22rpx;
+  color: var(--color-success-text);
+  font-family: var(--font-numeric);
+}
+.dc-tp-titles {
+  font-size: 23rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
 .dc-tl-chip-text {
   font-size: 21rpx;
   color: var(--color-brand);

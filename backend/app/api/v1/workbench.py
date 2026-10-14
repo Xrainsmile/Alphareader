@@ -739,6 +739,74 @@ async def digest_thread_links(
     return {"digest_id": digest_id, "links": links}
 
 
+@router.get("/digests/{digest_id}/thread-progress")
+async def digest_thread_progress(
+    digest_id: int, db: AsyncSession = Depends(get_db)
+):
+    """简报 → 世界线进展：本期各条线推进到第几章、新增了哪些章节。
+
+    与 digest_thread_links 同源（digest_event_links JOIN thread_events），
+    但聚合粒度不同：links 是「事件→线」（每条事件挂哪些线），
+    本端点是「线→本期增量」（本期哪些线有推进）。
+
+    ★ 为什么运行时关联而不冗余存储：理由同 digest_thread_links——
+      归属是活数据，归线会被人工修正（移线/拆线），若把 thread_id
+      写死进简报快照，修正后历史简报会指向错误的线。
+
+    ★ 排序：人工 pinned 优先 → 本期新增章节数降序 → last_event_at 降序。
+      取 Top 5，控制「世界线进展」区块高度。
+
+    ★ 章号口径（两处必须一致，否则「第 N 章」会虚高）：
+      1) 过滤 noise 角色 —— 与世界线详情页 _chapter_rows 的
+         `COALESCE(te.role,'core') <> 'noise'` 保持一致。noise 章节不参与展示，
+         若不排除，本端点算出的章号会比详情页看到的最大章号大。
+      2) 章号取 MAX(te.chapter_no)。chapter_no 方向为「最早章 = #1、最新章 = #N」
+         （依据 workbench.py 中 display_no 的回退式 total - i + 1，i=1 为最新章），
+         故 MAX 即最新章，可直接拼「第 N 章」。
+      chapter_count 仅作参考返回（它由 _sync_chapter_count 维护，含 noise，
+         与展示章号可能不等，前端不要用它当「第 N 章」）。
+    """
+    rows = (await db.execute(text("""
+        SELECT t.id AS thread_id, t.title AS thread_title,
+               t.status AS thread_status, t.chapter_count,
+               COUNT(DISTINCT l.event_id) AS new_chapters,
+               MAX(te.chapter_no) AS latest_chapter_no,
+               array_agg(te.snapshot_title ORDER BY te.chapter_no DESC) AS new_titles
+        FROM digest_event_links l
+        JOIN thread_events te ON te.event_id = l.event_id
+        JOIN threads t ON t.id = te.thread_id
+        WHERE l.digest_id = :d
+          AND COALESCE(te.role, 'core') <> 'noise'
+        GROUP BY t.id, t.title, t.status, t.chapter_count, t.pinned, t.last_event_at
+        ORDER BY t.pinned DESC, COUNT(DISTINCT l.event_id) DESC, t.last_event_at DESC
+        LIMIT 5
+    """), {"d": digest_id})).mappings().all()
+
+    return {
+        "digest_id": digest_id,
+        "items": [
+            {
+                "thread_id": str(r["thread_id"]),
+                "thread_title": r["thread_title"],
+                "thread_status": r["thread_status"],
+                "thread_status_label": STATUS_LABELS.get(
+                    r["thread_status"], r["thread_status"]
+                ),
+                "chapter_count": int(r["chapter_count"] or 0),
+                # 展示用章号：以 chapter_no 为准，缺失时回退到章节总数
+                "chapter_no": int(
+                    r["latest_chapter_no"]
+                    if r["latest_chapter_no"] is not None
+                    else (r["chapter_count"] or 0)
+                ),
+                "new_chapters": int(r["new_chapters"] or 0),
+                "new_titles": [t for t in (r["new_titles"] or []) if t][:3],
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.get("/threads/{thread_id}/digests")
 async def thread_digests(
     thread_id: uuid.UUID,
