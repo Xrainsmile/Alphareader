@@ -295,7 +295,16 @@ _INCOMPATIBLE_KINDS: dict[str, set[str]] = {
     "geopolitics": {"earnings", "product", "rating"},
     "earnings": {"geopolitics", "market", "disclosure"},
     "market": {"earnings", "geopolitics", "deal"},
-    "disclosure": {"earnings", "geopolitics", "market"},
+    # ★ 2026-10-16 P0：disclosure 补 other。
+    #   根因：8-K 是纯披露格式，标题不携带业务语义（"XX提交8-K披露经营业绩"），
+    #   bge-m3 靠"经营业绩/协议"等通用词把它推到语义最近的大线上；
+    #   而叙事线标题（"AI应用软件与云厂商变现"）不含类型关键词，
+    #   _infer_thread_kind 判为 other，kind_conflict 对 other 一律放行，
+    #   于是 19/53 条待落地事件全是 8-K 误归（实测 S 0.597~0.656）。
+    #   disclosure 的价值在"披露动作"而非"叙事推进"，与任何未定型线都不相容。
+    #   风险：真实含 8-K 的并购/业绩事件会被一并拦下——但 8-K 标题本身
+    #   不携带业务语义，拦掉不亏（C 收容线兜底）。
+    "disclosure": {"earnings", "geopolitics", "market", "other"},
     "rating": {"geopolitics", "market"},
     "product": {"geopolitics"},
     "macro": {"earnings", "product"},
@@ -307,6 +316,12 @@ def kind_conflict(kind_a: str, kind_b: str) -> bool:
     """两个事件类型是否互斥（不可归入同一条线）。"""
     if not kind_a or not kind_b or kind_a == kind_b:
         return False
+    # ★ 2026-10-16 P0：disclosure 对"未定型线(other)"同样否决，
+    #   故本条必须**先于** other 早退判断，否则永不生效。
+    #   8-K 是纯披露格式，标题不携带业务语义，与任何叙事线都不相容；
+    #   叙事线标题又常判不出类型（→other），两者叠加正是 8-K 扎堆的成因。
+    if kind_a == "disclosure" and kind_b == "other":
+        return True
     if kind_a == "other" or kind_b == "other":
         return False   # 未知类型不参与否决，避免误杀
     return kind_b in _INCOMPATIBLE_KINDS.get(kind_a, set())
@@ -329,7 +344,14 @@ def _infer_thread_kind(thread: dict) -> str:
     """
     t = (thread.get("title") or "").strip()
     if t:
-        return infer_event_kind(t)
+        k = infer_event_kind(t)
+        if k != "other":
+            return k
+        # ★ 2026-10-16：title 判不出类型时回退 mechanism_key。
+        #   原写法 `if t: return infer_event_kind(t)` 让下面整段成为死代码——
+        #   线都有 title，且叙事线标题（"存储与HBM超级周期""AI应用软件与云厂商变现"）
+        #   不含任何类型关键词，一律判 other；other 又不参与互斥否决，
+        #   于是 8-K 长驱直入。这是 8-K 扎堆的**第二层根因**（第一层是 A）。
     mk = (thread.get("mechanism_key") or "").strip()
     if not mk:
         return "other"
@@ -341,6 +363,24 @@ def _infer_thread_kind(thread: dict) -> str:
     if re.search(r"业绩|营收|财报", mk):
         return "earnings"
     if re.search(r"模型|产品|技术", mk):
+        return "product"
+    # ★ 2026-10-16 P1（治本）：补 mechanism_key → kind 的映射缺口。
+    #   现网 36 条线里大量叙事线的 mechanism_key 含明确机制词，
+    #   却落到最后 return "other" —— 因为上面 4 条分支覆盖不全。
+    #   后果：other 不参与互斥否决，任何类型都能飘进来（8-K 扎堆的放大器）。
+    #   实测缺口线：存储与HBM「供需缺口→涨价→股价与下游成本」、
+    #   AI应用软件「AI收入→指引修正→股价分化」等，均应为 earnings/product 类
+    #   叙事线，此前一律判 other。
+    #   顺序要紧：先判具体机制，再回退宏泛词。
+    if re.search(r"产能|订单|出货|供应链|库存|涨价|缺口", mk):
+        return "earnings"
+    if re.search(r"指引|订阅|变现|收入|商业化|定价", mk):
+        return "product"
+    if re.search(r"利率|通胀|政策|流动性|估值|资产|资本|融资|募资|回购", mk):
+        return "macro"
+    if re.search(r"监管|审批|审查|谈判|管制|出口", mk):
+        return "deal"
+    if re.search(r"发射|频谱|部署|试点|扩张|投入", mk):
         return "product"
     return "other"
 
@@ -525,6 +565,62 @@ def _thread_entity_weights(core_entities: object) -> dict[str, int]:
     return out
 
 
+async def _load_disclosure_sink() -> dict | None:
+    """取 8-K 收容线（按 mechanism_key 识别，人工预置）。
+
+    为什么用 mechanism_key 而不是固定 uuid：uuid 在不同环境（本地/服务器/容器）
+    不一致，硬编码会在换库后指向空线。mechanism_key 是业务语义，可移植。
+    """
+    sql = text("""
+        SELECT id, title, mechanism_key, status
+        FROM threads
+        WHERE mechanism_key = :mk
+          AND status NOT IN ('merged', 'split')
+        ORDER BY chapter_count DESC, created_at ASC
+        LIMIT 1
+    """)
+    async with async_session() as session:
+        row = (await session.execute(
+            sql, {"mk": settings.THREAD_DISCLOSURE_SINK_KEY}
+        )).mappings().first()
+    return dict(row) if row else None
+
+
+async def _route_disclosure_sink(
+    event_id: uuid.UUID, ev_kind: str, excluded: set
+) -> list[dict] | None:
+    """8-K 等纯披露事件 → 收容线短路归线。
+
+    Returns:
+        None = 不适用（未启用 / 非 disclosure / 无收容线），调用方继续走语义路
+        list = 已命中收容线，调用方应直接返回
+
+    设计取舍：S 固定 1.0 而非语义分。收容线是"垃圾桶"不是"叙事线"，
+    语义分对它没有意义；给它 1.0 是为了让 thread_route_scores 里
+    这批记录可辨识（gate='disclosure_sink'），方便日后统计与审计。
+    """
+    if not settings.THREAD_DISCLOSURE_SINK_ENABLED:
+        return None
+    if ev_kind != "disclosure":
+        return None
+
+    sink = await _load_disclosure_sink()
+    if sink is None:
+        return None
+
+    tid = sink["id"]
+    if tid in excluded:
+        return None   # 人工排除优先于一切，与规则路/语义路一致
+
+    return [{
+        "thread_id": tid,
+        "title": sink.get("title"),
+        "S": 1.0, "sim": 1.0, "E": 0.0, "M": 0.0, "R": 0.0,
+        "join": True,
+        "gate": "disclosure_sink",
+    }]
+
+
 async def _semantic_route(
     event_id: uuid.UUID,
     ev_title: str,
@@ -696,6 +792,18 @@ async def route_event(
     now = reference_at or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
+
+    # ★ 2026-10-16 方案C：disclosure 收容线短路，优先于语义路。
+    #   顺序要紧：必须在 _semantic_route 之前。8-K 一旦进入语义排序，
+    #   就会被"经营业绩/重大协议"等通用词推到最近的大线上（实测 19/53 条）。
+    #   收容线命中则不建新线——8-K 没有叙事价值，不该触发 maybe_create_thread。
+    if settings.THREAD_DISCLOSURE_SINK_ENABLED:
+        sink_hits = await _route_disclosure_sink(event_id, ev_kind, excluded)
+        if sink_hits is not None:
+            await _record_shadow(event_id, sink_hits)
+            if not settings.THREAD_ROUTING_SHADOW:
+                await _apply_routes(event_id, sink_hits)
+            return sink_hits
 
     # ★ P3-1（2026-10-14 方向二）：语义归线优先。
     #   实测纯语义 F1=0.766 显著优于规则 0.578，且优于任何融合方案。
@@ -1119,9 +1227,82 @@ async def maybe_create_thread(event_id: uuid.UUID) -> uuid.UUID | None:
             )
         await session.commit()
 
-    if tid:
-        logger.info(
-            "auto-created thread %s for event %s (entities=%d, mech=%s)",
-            tid, event_id, len(qualified), mechanism,
-        )
+        if tid:
+            logger.info(
+                "auto-created thread %s for event %s (entities=%d, mech=%s)",
+                tid, event_id, len(qualified), mechanism,
+            )
     return tid
+
+
+# ─────────────────────────── 章节重排（chapter_no 分配） ───────────────────────────
+
+async def renumber_thread_chapters(thread_id: uuid.UUID, session=None) -> int:
+    """给一条线的章节重新分配 chapter_no：按事件发生时间**升序**，越早章号越小。
+
+    ★ 为什么需要它：
+      _attach_event 归线时把 chapter_no 置 NULL（归线只管「挂不挂」，
+      不管「排第几」），设计上由本函数统一分配。此前这个分配任务从未注册，
+      于是新章节永远停在 NULL，工作台按 total-i+1 反推，
+      把**最新的新闻编成最小的章号**（2026-10-16 的新闻显示为第 1~4 章），
+      即「越老的时间章节号反而更大」。
+
+    ★ 排序键：COALESCE(occurred_at, created_at) ASC
+      occurred_at 是事件发生时间（可能精确到日，00:00:00），
+      created_at 是归线写入时间（有秒级精度）。两者结合可保证同日多章
+      也有稳定次序。NULLS LAST 兜底极端情况。
+
+    ★ 幂等：整线全量重排，重复执行结果一致；返回更新的章节数。
+
+    ★ 只动 core/context，noise 保持 NULL（与 chapter_seq 的口径一致）。
+    """
+    sql = text("""
+        UPDATE thread_events te
+        SET chapter_no = r.no
+        FROM (
+            SELECT chapter_id,
+                   ROW_NUMBER() OVER (
+                       ORDER BY COALESCE(occurred_at, created_at) ASC NULLS LAST,
+                                created_at ASC,
+                                chapter_id ASC
+                   ) AS no
+            FROM thread_events
+            WHERE thread_id = :tid
+              AND COALESCE(role, 'core') <> 'noise'
+        ) r
+        WHERE te.chapter_id = r.chapter_id
+          AND (te.chapter_no IS DISTINCT FROM r.no)
+    """)
+    owns = session is None
+    if owns:
+        async with async_session() as session:
+            res = await session.execute(sql, {"tid": thread_id})
+            await session.commit()
+            return res.rowcount or 0
+    res = await session.execute(sql, {"tid": thread_id})
+    return res.rowcount or 0
+
+
+async def renumber_all_threads() -> dict:
+    """全量重排所有线的章节号，供定时任务与一次性回填调用。
+
+    逐线单独事务：单线失败不影响其余线，失败数计入 errors。
+    """
+    async with async_session() as session:
+        ids = (await session.execute(
+            text("SELECT id FROM threads ORDER BY created_at")
+        )).scalars().all()
+
+    updated = 0
+    errors = 0
+    for tid in ids:
+        try:
+            updated += await renumber_thread_chapters(tid)
+        except Exception as e:  # noqa: BLE001  单线失败不阻断全局
+            errors += 1
+            logger.warning("renumber failed for thread %s: %s", tid, e)
+    logger.info(
+        "chapter renumber finished: threads=%d, chapters_updated=%d, errors=%d",
+        len(ids), updated, errors,
+    )
+    return {"threads": len(ids), "chapters_updated": updated, "errors": errors}

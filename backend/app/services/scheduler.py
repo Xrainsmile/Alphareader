@@ -287,6 +287,28 @@ async def _event_maintenance_job():
         raise
 
 
+async def _chapter_renumber_job():
+    """每日全量重排章节号（chapter_no 的唯一分配入口）。
+
+    ★ 补齐了缺失的一环：_apply_routes 归线时置 chapter_no=NULL，
+      注释写「由章节重排任务统一分配」，但该任务此前从未注册——
+      结果新章节永远是 NULL，前端反推出「最新新闻 = 第 1 章」的倒挂。
+      本 job 就是这个任务。
+
+    每天 04:10 运行（与 04:00 事件维护错开），非关键路径，
+    失败不影响主管线，仅告警。
+    """
+    try:
+        from app.services.thread_router import renumber_all_threads
+        result = await renumber_all_threads()
+        logger.info("Chapter renumber job completed: %s", result)
+        return result
+    except Exception as e:
+        logger.exception("Chapter renumber job failed: %s", e)
+        await send_alert("🔴 Chapter Renumber Job Failed", f"{type(e).__name__}: {e}")
+        raise
+
+
 async def _llm_usage_summary_job():
     """每日 00:00 汇总上一天各 scene 的 LLM token 消耗，并清空进程内累加器。
 
@@ -1204,6 +1226,24 @@ async def _run_scheduler_jobs():
         ),
         id="event_maintenance_0400",
         name=f"Event Status Maintenance (Daily 04:00 {settings.TIMEZONE})",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=MISFIRE_GRACE_TIME,
+    )
+
+    # ── 章节号每日重排：04:10 给全部世界线按事件发生时间升序分配 chapter_no ──
+    # 归线(_apply_routes)只管挂线不管排序，chapter_no 置 NULL 由本任务统一分配。
+    # 缺失此任务时新章节永远 NULL，前端反推会把最新新闻编成第 1 章（章号与时间倒挂）。
+    # 与 04:00 事件维护错开 10 分钟，避免同抢 DB 写连接。
+    scheduler.add_job(
+        _chapter_renumber_job,
+        trigger=CronTrigger(
+            hour="4",
+            minute="10",
+            timezone=settings.TIMEZONE,
+        ),
+        id="chapter_renumber_0410",
+        name=f"Chapter Renumber (Daily 04:10 {settings.TIMEZONE})",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=MISFIRE_GRACE_TIME,
