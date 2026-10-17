@@ -1260,6 +1260,13 @@ async def renumber_thread_chapters(thread_id: uuid.UUID, session=None) -> int:
       阶段一先把该线全部置 NULL（NULL 不参与唯一约束，多行 NULL 合法），
       阶段二再从 NULL 逐个赋 1..N，新值互不相同，不再冲突。
 
+    ★ 阶段二的 WHERE 必须带 te.thread_id = :tid：
+      chapter_id 不是主键（主键是 id），实测有 5 个 chapter_id 同时挂在两条线上
+      （同一事件被归到两条线）。JOIN 时若不限定 thread_id，
+      会把另一条线的行也一起 UPDATE，新值 1..N 撞上对方已有的章号 → UniqueViolation。
+      这正是 4009def3 / 496104a4 两条线失败的原因（对方是 c60390d4）。
+      阶段一已带 thread_id 过滤，只清本线，不受影响。
+
     ★ 幂等：整线全量重排，重复执行结果一致；返回赋值的章节数。
 
     ★ 只动 core/context，noise 保持 NULL（与 chapter_seq 的口径一致）。
@@ -1286,6 +1293,7 @@ async def renumber_thread_chapters(thread_id: uuid.UUID, session=None) -> int:
               AND COALESCE(role, 'core') <> 'noise'
         ) r
         WHERE te.chapter_id = r.chapter_id
+          AND te.thread_id = :tid
     """)
     owns = session is None
     if owns:
