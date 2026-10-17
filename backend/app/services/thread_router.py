@@ -1227,11 +1227,11 @@ async def maybe_create_thread(event_id: uuid.UUID) -> uuid.UUID | None:
             )
         await session.commit()
 
-        if tid:
-            logger.info(
-                "auto-created thread %s for event %s (entities=%d, mech=%s)",
-                tid, event_id, len(qualified), mechanism,
-            )
+    if tid:
+        logger.info(
+            "auto-created thread %s for event %s (entities=%d, mech=%s)",
+            tid, event_id, len(qualified), mechanism,
+        )
     return tid
 
 
