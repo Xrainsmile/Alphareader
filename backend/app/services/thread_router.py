@@ -1252,11 +1252,26 @@ async def renumber_thread_chapters(thread_id: uuid.UUID, session=None) -> int:
       created_at 是归线写入时间（有秒级精度）。两者结合可保证同日多章
       也有稳定次序。NULLS LAST 兜底极端情况。
 
-    ★ 幂等：整线全量重排，重复执行结果一致；返回更新的章节数。
+    ★ 必须两阶段更新，不能用单条 UPDATE ... FROM 原地重排：
+      thread_events 上有 UNIQUE(thread_id, chapter_no)，PostgreSQL 的唯一约束
+      是「逐行立即检查」而非语句末检查。原地把 1,2,3... 改成 3,2,1 时，
+      中间态必然出现同一 (thread_id, no) 被两行同时持有 → UniqueViolation。
+      实测 37 条线中 27 条因此失败。
+      阶段一先把该线全部置 NULL（NULL 不参与唯一约束，多行 NULL 合法），
+      阶段二再从 NULL 逐个赋 1..N，新值互不相同，不再冲突。
+
+    ★ 幂等：整线全量重排，重复执行结果一致；返回赋值的章节数。
 
     ★ 只动 core/context，noise 保持 NULL（与 chapter_seq 的口径一致）。
     """
-    sql = text("""
+    clear_sql = text("""
+        UPDATE thread_events
+        SET chapter_no = NULL
+        WHERE thread_id = :tid
+          AND COALESCE(role, 'core') <> 'noise'
+          AND chapter_no IS NOT NULL
+    """)
+    assign_sql = text("""
         UPDATE thread_events te
         SET chapter_no = r.no
         FROM (
@@ -1271,15 +1286,16 @@ async def renumber_thread_chapters(thread_id: uuid.UUID, session=None) -> int:
               AND COALESCE(role, 'core') <> 'noise'
         ) r
         WHERE te.chapter_id = r.chapter_id
-          AND (te.chapter_no IS DISTINCT FROM r.no)
     """)
     owns = session is None
     if owns:
         async with async_session() as session:
-            res = await session.execute(sql, {"tid": thread_id})
+            await session.execute(clear_sql, {"tid": thread_id})
+            res = await session.execute(assign_sql, {"tid": thread_id})
             await session.commit()
             return res.rowcount or 0
-    res = await session.execute(sql, {"tid": thread_id})
+    await session.execute(clear_sql, {"tid": thread_id})
+    res = await session.execute(assign_sql, {"tid": thread_id})
     return res.rowcount or 0
 
 
